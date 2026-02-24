@@ -648,8 +648,14 @@ function displayHybridResults(results: SearchResult[], query: string, plain?: bo
 
 				console.log(`  ${statusNames[status]}:`);
 				for (const task of tasks) {
-					const priority = (task.priority || "medium").toUpperCase();
-					console.log(`    [${priority}] ${task.taskId} - ${task.content.substring(0, 60)}...`);
+					const scorePercent = Math.round(task.score * 100);
+					console.log(`    #${task.taskId} [${task.status}] [${task.priority}] (${scorePercent}%)`);
+					console.log(
+						`      ${task.content.substring(0, 80).replace(/\n/g, " ")}${task.content.length > 80 ? "..." : ""}`,
+					);
+					if (task.matchedBy && task.matchedBy.length > 0) {
+						console.log(`      Matched by: ${task.matchedBy.join(", ")}`);
+					}
 				}
 			}
 		}
@@ -659,7 +665,14 @@ function displayHybridResults(results: SearchResult[], query: string, plain?: bo
 			console.log("Docs:");
 
 			for (const doc of docResults) {
-				console.log(`  ${doc.docPath} - ${doc.section || "content"}`);
+				const scorePercent = Math.round(doc.score * 100);
+				console.log(`  ${doc.docPath} (${scorePercent}%)`);
+				if (doc.section) {
+					console.log(`    Section: ${doc.section}`);
+				}
+				if (doc.matchedBy && doc.matchedBy.length > 0) {
+					console.log(`    Matched by: ${doc.matchedBy.join(", ")}`);
+				}
 			}
 		}
 	} else {
