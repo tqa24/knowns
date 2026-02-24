@@ -40,6 +40,7 @@ import {
 	handleListDocs,
 	handleListTasks,
 	handleListTemplates,
+	handleReindexSearch,
 	handleRunTemplate,
 	handleSearch,
 	handleSearchDocs,
@@ -174,6 +175,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 			// Unified search handler
 			case "search":
 				return await handleSearch(args, getFileStore());
+
+			// Reindex search handler
+			case "reindex_search":
+				return await handleReindexSearch(args, getFileStore());
 
 			// Validate handler
 			case "validate":

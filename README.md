@@ -1,73 +1,130 @@
 <p align="center">
-  <img src="images/cover.png" alt="Knowns - Task & Documentation Management" width="100%">
+  <img src="images/cover.png" alt="Knowns — The Memory Layer for AI-Native Development" width="100%">
 </p>
 
-<h1 align="center">Knowns</h1>
+# Knowns
 
-<p align="center">
-  <strong>What your AI should have knowns.</strong>
-</p>
+[![npm](https://img.shields.io/npm/v/knowns.svg?style=flat-square)](https://www.npmjs.com/package/knowns)
+[![GitHub stars](https://img.shields.io/github/stars/knowns-dev/knowns?style=flat-square)](#)
+[![Contributors](https://img.shields.io/github/contributors/knowns-dev/knowns?style=flat-square)](#)
+[![Last Commit](https://img.shields.io/github/last-commit/knowns-dev/knowns?style=flat-square)](#)
+[![License](https://img.shields.io/github/license/knowns-dev/knowns?style=flat-square)](#)
 
-<p align="center">
-  CLI-first knowledge layer that gives AI persistent memory of your project.
-</p>
+> Turn stateless AI into a project-aware engineering partner.
 
-<p align="center">
-  <a href="https://www.npmjs.com/package/knowns"><img src="https://img.shields.io/npm/v/knowns.svg?style=flat-square" alt="npm version"></a>
-  <a href="https://www.npmjs.com/package/knowns"><img src="https://img.shields.io/npm/dm/knowns.svg?style=flat-square" alt="npm downloads"></a>
-  <a href="https://github.com/knowns-dev/knowns/actions"><img src="https://img.shields.io/github/actions/workflow/status/knowns-dev/knowns/ci.yml?branch=main&style=flat-square&label=CI" alt="CI"></a>
-  <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square" alt="License: MIT"></a>
-  <br>
-  <a href="#"><img src="https://img.shields.io/node/v/knowns?style=flat-square" alt="node version"></a>
-  <a href="#"><img src="https://img.shields.io/badge/TypeScript-5.0-blue?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript"></a>
-  <a href="#"><img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey?style=flat-square" alt="platform"></a>
-  <a href="https://github.com/knowns-dev/knowns/stargazers"><img src="https://img.shields.io/github/stars/knowns-dev/knowns?style=flat-square" alt="GitHub stars"></a>
-  <a href="#"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square" alt="PRs Welcome"></a>
-  <a href="https://discord.knowns.dev"><img src="https://img.shields.io/badge/Discord-Join%20Us-5865F2?style=flat-square&logo=discord&logoColor=white" alt="Discord"></a>
-</p>
+**Knowns is the memory layer for AI-native software development — enabling AI to understand your project instantly.**
+
+Instead of starting from zero every session, AI works with structured, persistent project context.
+
+No repeated explanations.  
+No pasted docs.  
+No lost architectural knowledge.
+
+Just AI that already understands your system.
+
+⭐ If you believe AI should truly understand software projects, consider giving **Knowns** a star.
+
+## Table of Contents
+
+- [Why Knowns?](#why-knowns)
+- [What is Knowns?](#what-is-knowns---really)
+- [Core Capabilities](#core-capabilities)
+- [How It Works](#how-it-works)
+- [Installation](#installation)
+- [What You Can Build](#what-you-can-build-with-knowns)
+- [Quick Reference](#quick-reference)
+- [Claude Code Skills Workflow](#claude-code-skills-workflow)
+- [Documentation](#documentation)
+- [Roadmap](#roadmap)
+- [Development](#development)
+- [Links](#links)
 
 ---
 
-> **TL;DR:** Knowns is a CLI-first knowledge layer that lets AI reliably read and reuse your project context — instead of asking the same questions every session.
+## Why Knowns?
 
-## The Problem
+AI is powerful — but fundamentally **stateless**.
 
-AI assistants are stateless — they forget your architecture, patterns, and decisions every session.
+Every session forces developers to:
 
-```
-Session 1: "Implement feature X" → AI: "How does your auth work?" → You explain
+- Re-explain architecture
+- Paste documentation
+- Repeat conventions
+- Clarify past decisions
+- Rebuild context
 
-Session 2: "Implement feature Y" → AI: "How does your auth work?" → You explain AGAIN
+This breaks flow and limits AI’s effectiveness.
 
-Session 100: Still explaining the same thing...
-```
+### AI doesn't lack intelligence.
 
-## The Solution
+### It lacks the right context.
+
+**Knowns fixes that.**
+
+---
+
+## What is Knowns - Really?
+
+Knowns provides **persistent, structured project understanding** so AI can operate with full awareness of your software environment.
+
+Think of it as your project's **external brain**.
+
+Knowns connects:
+
+- Specs
+- Tasks
+- Documentation
+- Decisions
+- Team knowledge
+
+So AI doesn’t just generate code — it understands what it’s building.
+
+---
+
+## Core Capabilities
+
+### 🧠 Persistent Project Memory
+
+Give AI long-term understanding of your codebase and workflows.
+
+### 🔗 Structured Knowledge
+
+Connect specs, tasks, and docs into a unified context layer.
+
+### ⚡ Smart Context Delivery
+
+Automatically provide relevant context to AI — reducing noise and token usage.
+
+### 🤝 AI-Native Workflow
+
+Transform AI from a tool into a true engineering collaborator.
+
+### 🔐 Self-Hostable
+
+Keep your knowledge private and fully under your control.
+
+---
+
+## How It Works
+
+Knowns sits **above your existing tools** and makes them readable by AI.
+
+Your stack stays the same.
+
+But now:
+
+- Specs → understood
+- Tasks → connected
+- Docs → usable
+- Decisions → remembered
+
+AI stops guessing — and starts contributing.
+
+---
+
+## Installation
 
 ```bash
-# Document once
-knowns doc create "Auth Pattern" -d "JWT with guards" -f patterns
-
-# Reference everywhere
-knowns task create "Add login" -d "Follow @doc/patterns/auth-pattern"
-
-# AI reads context automatically — never forgets
-```
-
-**How it works:**
-
-1. **You plan** — Create tasks with acceptance criteria in Web UI or CLI
-2. **You link** — Reference docs like `@doc/patterns/auth` in task descriptions
-3. **AI executes** — Tell AI _"Work on task 42"_, it reads the task, follows the refs, and implements
-
-Knowns resolves `@doc/...` and `@task-...` into real files. AI reads them via [MCP](./docs/mcp-integration.md) or `--plain` output — no copy-paste needed.
-
-## Install
-
-```bash
-# Homebrew (macOS/Linux) - no Node.js required
-brew install knowns-dev/tap/knowns
-
 # npm
 npm install -g knowns
 
@@ -77,39 +134,26 @@ bun install -g knowns
 # npx (no install)
 npx knowns
 
-
 knowns init
 knowns browser  # Open Web UI
 ```
 
 ---
 
-## Why Knowns over Notion / Jira / Obsidian?
+## What You Can Build With Knowns
 
-|                     | Knowns                         | Notion/Jira         | Obsidian       |
-| ------------------- | ------------------------------ | ------------------- | -------------- |
-| **AI-readable**     | `--plain` output, MCP server   | Copy-paste manually | Plugins needed |
-| **File-based**      | Git-friendly `.knowns/` folder | Cloud-locked        | Local files    |
-| **CLI-first**       | Full CLI + Web UI              | Web only            | GUI only       |
-| **Context linking** | `@doc/...` `@task-42` refs     | Manual links        | Wiki links     |
-| **Source of truth** | Local files (Git-versioned)    | Remote database     | Local vault    |
-| **Minimal setup**   | `knowns init` and done         | Complex setup       | Many plugins   |
-
-**Best for:** Dev teams who pair with AI and want persistent project memory.
-
-## Features
-
-| Feature              | Description                                        |
-| -------------------- | -------------------------------------------------- |
-| **Task Management**  | Create, track tasks with acceptance criteria       |
-| **Documentation**    | Nested folders with markdown + mermaid support     |
-| **Time Tracking**    | Built-in timers and reports                        |
-| **Context Linking**  | `@task-42` and `@doc/patterns/auth` references     |
-| **Validation**       | Check broken refs with `knowns validate`           |
-| **Template System**  | Code generation with Handlebars (`.hbs`) templates |
-| **Import System**    | Import docs/templates from git, npm, or local      |
-| **AI Integration**   | Full MCP Server with AC/plan/notes operations      |
-| **Web UI**           | Kanban board, doc browser, mermaid diagrams        |
+| Feature             | Description                                        |
+| ------------------- | -------------------------------------------------- |
+| **Task Management** | Create, track tasks with acceptance criteria       |
+| **Documentation**   | Nested folders with markdown + mermaid support     |
+| **Semantic Search** | Search by meaning with local AI models (offline)   |
+| **Time Tracking**   | Built-in timers and reports                        |
+| **Context Linking** | `@task-42` and `@doc/patterns/auth` references     |
+| **Validation**      | Check broken refs with `knowns validate`           |
+| **Template System** | Code generation with Handlebars (`.hbs`) templates |
+| **Import System**   | Import docs/templates from git, npm, or local      |
+| **AI Integration**  | Full MCP Server with AC/plan/notes operations      |
+| **Web UI**          | Kanban board, doc browser, mermaid diagrams        |
 
 ---
 
@@ -202,16 +246,18 @@ Claude: [Creates conventional commit]
 
 ### All Skills
 
-| Skill | Description |
-|-------|-------------|
-| `/kn-init` | Initialize session - read docs, understand project |
-| `/kn-plan <id>` | Take task, gather context, create implementation plan |
+| Skill                | Description                                             |
+| -------------------- | ------------------------------------------------------- |
+| `/kn-init`           | Initialize session - read docs, understand project      |
+| `/kn-plan <id>`      | Take task, gather context, create implementation plan   |
 | `/kn-implement <id>` | Execute plan, track progress, check acceptance criteria |
-| `/kn-research` | Search codebase, find patterns, explore before coding |
-| `/kn-commit` | Create conventional commit with verification |
-| `/kn-doc` | Create or update documentation |
-| `/kn-extract` | Extract reusable patterns into docs/templates |
-| `/kn-template` | List, run, or create code templates |
+| `/kn-research`       | Search codebase, find patterns, explore before coding   |
+| `/kn-commit`         | Create conventional commit with verification            |
+| `/kn-spec`           | Create specification document for features (SDD)        |
+| `/kn-verify`         | Run SDD verification and coverage report                |
+| `/kn-doc`            | Create or update documentation                          |
+| `/kn-extract`        | Extract reusable patterns into docs/templates           |
+| `/kn-template`       | List, run, or create code templates                     |
 
 ---
 
@@ -222,6 +268,7 @@ Claude: [Creates conventional commit]
 | [Command Reference](./docs/commands.md)        | All CLI commands with examples             |
 | [Workflow Guide](./docs/workflow.md)           | Task lifecycle from creation to completion |
 | [Reference System](./docs/reference-system.md) | How `@doc/` and `@task-` linking works     |
+| [Semantic Search](./docs/semantic-search.md)   | Setup and usage of AI-powered search       |
 | [Templates](./docs/templates.md)               | Code generation with Handlebars            |
 | [Web UI](./docs/web-ui.md)                     | Kanban board and document browser          |
 | [MCP Integration](./docs/mcp-integration.md)   | Claude Desktop setup with full MCP tools   |
