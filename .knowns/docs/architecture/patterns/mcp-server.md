@@ -1,7 +1,7 @@
 ---
 title: MCP Server Pattern
 createdAt: '2025-12-29T07:02:33.684Z'
-updatedAt: '2025-12-29T07:12:42.894Z'
+updatedAt: '2026-03-08T18:21:23.560Z'
 description: Documentation for the Model Context Protocol (MCP) server pattern
 tags:
   - architecture
@@ -11,206 +11,228 @@ tags:
 ---
 ## Overview
 
-MCP (Model Context Protocol) is a protocol that allows AI models to interact with tools via JSON-RPC. Knowns implements an MCP server so Claude can access tasks and documentation directly.
-
+MCP (Model Context Protocol) is a protocol that allows AI models to interact with tools via JSON-RPC. Knowns implements an MCP server using the `mcp-go` library (`github.com/mark3labs/mcp-go`) so Claude and other AI agents can access tasks and documentation directly.
 ## Location
 
 ```
-src/mcp/server.ts (24KB)
+internal/mcp/
+├── server.go              # MCP server setup, tool registration
+└── handlers/
+    ├── board.go           # Board/kanban tools
+    ├── doc.go             # Document tools
+    ├── project.go         # Project detection/selection
+    ├── search.go          # Search tools
+    ├── task.go            # Task CRUD tools
+    ├── template.go        # Template/codegen tools
+    ├── time.go            # Time tracking tools
+    └── validate.go        # Validation tools
 ```
-
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────┐
-│                   Claude Desktop                      │
-│                                                       │
-│  "Work on task 42"                                   │
-│         │                                            │
-│         ▼                                            │
-│  ┌────────────────┐                                  │
-│  │ MCP Client     │                                  │
-│  │ (built-in)     │                                  │
-│  └───────┬────────┘                                  │
-└──────────│───────────────────────────────────────────┘
-           │ JSON-RPC over stdio
-           │
-┌──────────▼───────────────────────────────────────────┐
-│              Knowns MCP Server                        │
-│  ┌────────────────────────────────────────────────┐  │
-│  │             Tool Definitions                    │  │
-│  │  - create_task    - list_tasks                 │  │
-│  │  - get_task       - update_task                │  │
-│  │  - start_time     - stop_time                  │  │
-│  │  - list_docs      - get_doc                    │  │
-│  └────────────────────────────────────────────────┘  │
-│                        │                              │
-│  ┌────────────────────▼───────────────────────────┐  │
-│  │             Tool Handlers                       │  │
-│  │  async handleCreateTask(args) { ... }          │  │
-│  │  async handleGetTask(args) { ... }             │  │
-│  └────────────────────────────────────────────────┘  │
-│                        │                              │
-│  ┌────────────────────▼───────────────────────────┐  │
-│  │             FileStore                           │  │
-│  │  Read/Write .knowns/ files                     │  │
-│  └────────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────┘
++------------------------------------------------------+
+|                   Claude Desktop                      |
+|                                                       |
+|  "Work on task 42"                                   |
+|         |                                            |
+|         v                                            |
+|  +----------------+                                  |
+|  | MCP Client     |                                  |
+|  | (built-in)     |                                  |
+|  +-------+--------+                                  |
++----------|-------------------------------------------+
+           | JSON-RPC over stdio
+           |
++----------v-------------------------------------------+
+|              Knowns MCP Server (mcp-go)               |
+|  +------------------------------------------------+  |
+|  |             Tool Definitions                    |  |
+|  |  - create_task    - list_tasks                 |  |
+|  |  - get_task       - update_task                |  |
+|  |  - start_time     - stop_time                  |  |
+|  |  - list_docs      - get_doc                    |  |
+|  +------------------------------------------------+  |
+|                        |                              |
+|  +---------------------v--------------------------+  |
+|  |             Handler Functions                   |  |
+|  |  handleCreateTask(args) -> (result, error)     |  |
+|  |  handleGetTask(args) -> (result, error)        |  |
+|  +------------------------------------------------+  |
+|                        |                              |
+|  +---------------------v--------------------------+  |
+|  |             Store                               |  |
+|  |  Read/Write .knowns/ files                     |  |
+|  +------------------------------------------------+  |
++------------------------------------------------------+
 ```
-
 ## Key Components
 
-### 1. Tool Definitions (Zod Schemas)
+### 1. Tool Definitions (mcp-go)
 
-```typescript
-import { z } from "zod";
+Tools are defined using `mcp.NewTool()` with JSON Schema for input validation:
 
-const createTaskSchema = z.object({
-  title: z.string().describe("Task title"),
-  description: z.string().optional().describe("Task description"),
-  status: z.enum(["todo", "in-progress", "in-review", "done"]).optional(),
-  priority: z.enum(["low", "medium", "high"]).optional(),
-  labels: z.array(z.string()).optional(),
-  acceptanceCriteria: z.array(z.string()).optional(),
-});
+```go
+package mcp
 
-const getTaskSchema = z.object({
-  taskId: z.string().describe("Task ID to retrieve"),
-});
+import (
+    "github.com/mark3labs/mcp-go/mcp"
+)
 
-const listTasksSchema = z.object({
-  status: z.string().optional(),
-  assignee: z.string().optional(),
-  labels: z.array(z.string()).optional(),
-});
+var createTaskTool = mcp.NewTool("create_task",
+    mcp.WithDescription("Create a new task"),
+    mcp.WithString("title",
+        mcp.Required(),
+        mcp.Description("Task title"),
+    ),
+    mcp.WithString("description",
+        mcp.Description("Task description"),
+    ),
+    mcp.WithString("status",
+        mcp.Description("Task status"),
+        mcp.Enum("todo", "in-progress", "in-review", "done"),
+    ),
+    mcp.WithString("priority",
+        mcp.Description("Task priority"),
+        mcp.Enum("low", "medium", "high"),
+    ),
+)
+
+var getTaskTool = mcp.NewTool("get_task",
+    mcp.WithDescription("Get task details by ID"),
+    mcp.WithString("taskId",
+        mcp.Required(),
+        mcp.Description("Task ID to retrieve"),
+    ),
+)
 ```
 
 ### 2. Tool Registration
 
-```typescript
-server.setRequestHandler(ListToolsRequestSchema, async () => {
-  return {
-    tools: [
-      {
-        name: "create_task",
-        description: "Create a new task",
-        inputSchema: zodToJsonSchema(createTaskSchema),
-      },
-      {
-        name: "get_task",
-        description: "Get task details by ID",
-        inputSchema: zodToJsonSchema(getTaskSchema),
-      },
-      {
-        name: "list_tasks",
-        description: "List tasks with optional filters",
-        inputSchema: zodToJsonSchema(listTasksSchema),
-      },
-      // ... more tools
-    ],
-  };
-});
+Tools and their handlers are registered on the MCP server:
+
+```go
+// internal/mcp/server.go
+package mcp
+
+import (
+    "github.com/mark3labs/mcp-go/server"
+)
+
+func NewMCPServer(store *storage.Store) *server.MCPServer {
+    s := server.NewMCPServer(
+        "knowns-mcp",
+        "1.0.0",
+        server.WithToolCapabilities(true),
+        server.WithResourceCapabilities(true, false),
+    )
+
+    // Register tools with handlers
+    s.AddTool(createTaskTool, handlers.HandleCreateTask(store))
+    s.AddTool(getTaskTool, handlers.HandleGetTask(store))
+    s.AddTool(listTasksTool, handlers.HandleListTasks(store))
+    s.AddTool(updateTaskTool, handlers.HandleUpdateTask(store))
+    // ... more tools
+
+    return s
+}
 ```
 
 ### 3. Tool Handlers
 
-```typescript
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params;
+Each handler is a function that receives parsed arguments and returns a result:
 
-  switch (name) {
-    case "create_task": {
-      const validated = createTaskSchema.parse(args);
-      const task = await fileStore.createTask({
-        title: validated.title,
-        description: validated.description,
-        status: validated.status || "todo",
-        priority: validated.priority || "medium",
-        labels: validated.labels || [],
-        acceptanceCriteria: validated.acceptanceCriteria?.map(text => ({
-          text,
-          completed: false,
-        })) || [],
-      });
-      return {
-        content: [{ type: "text", text: JSON.stringify(task, null, 2) }],
-      };
+```go
+// internal/mcp/handlers/task.go
+package handlers
+
+import (
+    "context"
+    "encoding/json"
+    "fmt"
+
+    "github.com/mark3labs/mcp-go/mcp"
+)
+
+// HandleCreateTask returns a handler for creating tasks.
+func HandleCreateTask(store *storage.Store) server.ToolHandlerFunc {
+    return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+        title := request.Params.Arguments["title"].(string)
+        description, _ := request.Params.Arguments["description"].(string)
+        priority, _ := request.Params.Arguments["priority"].(string)
+
+        task, err := store.CreateTask(storage.CreateTaskInput{
+            Title:       title,
+            Description: description,
+            Priority:    priority,
+        })
+        if err != nil {
+            return nil, fmt.Errorf("create task: %w", err)
+        }
+
+        data, _ := json.MarshalIndent(task, "", "  ")
+        return mcp.NewToolResultText(string(data)), nil
     }
+}
 
-    case "get_task": {
-      const validated = getTaskSchema.parse(args);
-      const task = await fileStore.getTask(validated.taskId);
-      if (!task) {
-        throw new Error(`Task ${validated.taskId} not found`);
-      }
+// HandleGetTask returns a handler for retrieving tasks.
+func HandleGetTask(store *storage.Store) server.ToolHandlerFunc {
+    return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+        taskID := request.Params.Arguments["taskId"].(string)
 
-      // Auto-fetch linked documentation
-      const linkedDocs = await fetchLinkedDocs(task.description);
+        task, err := store.GetTask(taskID)
+        if err != nil {
+            return nil, fmt.Errorf("task %s not found: %w", taskID, err)
+        }
 
-      return {
-        content: [
-          { type: "text", text: JSON.stringify(task, null, 2) },
-          ...linkedDocs.map(doc => ({
-            type: "text",
-            text: `\n--- Linked Doc: ${doc.name} ---\n${doc.content}`,
-          })),
-        ],
-      };
+        data, _ := json.MarshalIndent(task, "", "  ")
+        return mcp.NewToolResultText(string(data)), nil
     }
-
-    // ... more handlers
-  }
-});
+}
 ```
 
 ### 4. Resource Providers
 
 MCP also allows exposing resources (docs) for AI to read:
 
-```typescript
+```go
 // List available resources
-server.setRequestHandler(ListResourcesRequestSchema, async () => {
-  const docs = await fileStore.getAllDocs();
-  return {
-    resources: docs.map(doc => ({
-      uri: `knowns://docs/${doc.path}`,
-      name: doc.title,
-      description: doc.description,
-      mimeType: "text/markdown",
-    })),
-  };
-});
+s.AddResourceTemplate(
+    mcp.NewResourceTemplate(
+        "knowns://docs/{path}",
+        "Project documentation",
+    ),
+    handleReadDoc(store),
+)
 
-// Read a specific resource
-server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
-  const { uri } = request.params;
-  const path = uri.replace("knowns://docs/", "");
-  const content = await fileStore.getDocContent(path);
-  return {
-    contents: [{ uri, mimeType: "text/markdown", text: content }],
-  };
-});
+func handleReadDoc(store *storage.Store) server.ResourceTemplateHandlerFunc {
+    return func(ctx context.Context, request mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
+        path := extractPathFromURI(request.Params.URI)
+        content, err := store.GetDocContent(path)
+        if err != nil {
+            return nil, err
+        }
+        return []mcp.ResourceContents{
+            mcp.TextResourceContents(request.Params.URI, content, "text/markdown"),
+        }, nil
+    }
+}
 ```
 
 ### 5. Stdio Transport
 
 MCP server runs as a subprocess, communicating via stdin/stdout:
 
-```typescript
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+```go
+// cmd/knowns/main.go (or internal/cli/mcp.go)
+import (
+    "github.com/mark3labs/mcp-go/server"
+)
 
-const server = new Server(
-  { name: "knowns-mcp", version: "1.0.0" },
-  { capabilities: { tools: {}, resources: {} } }
-);
-
-// Register handlers...
-
-const transport = new StdioServerTransport();
-await server.connect(transport);
+func runMCPServer(store *storage.Store) error {
+    mcpServer := mcp.NewMCPServer(store)
+    return server.ServeStdio(mcpServer)
+}
 ```
-
 ## Tools Exposed
 
 | Tool | Description | Input |
@@ -232,22 +254,22 @@ await server.connect(transport);
 
 When Claude calls `get_task`, the server automatically fetches docs linked in the description:
 
-```typescript
-async function fetchLinkedDocs(description: string): Promise<DocContent[]> {
-  const refs = extractDocReferences(description);
-  // @doc/architecture/patterns/command -> .knowns/docs/patterns/auth.md
+```go
+// fetchLinkedDocs extracts and resolves doc references from task descriptions.
+func fetchLinkedDocs(store *storage.Store, description string) []DocContent {
+    refs := extractDocReferences(description)
+    // @doc/architecture/patterns/command -> .knowns/docs/architecture/patterns/command.md
 
-  const docs = [];
-  for (const ref of refs) {
-    const content = await fileStore.getDocContent(ref.path);
-    if (content) {
-      docs.push({ name: ref.path, content });
+    var docs []DocContent
+    for _, ref := range refs {
+        content, err := store.GetDocContent(ref.Path)
+        if err == nil {
+            docs = append(docs, DocContent{Name: ref.Path, Content: content})
+        }
     }
-  }
-  return docs;
+    return docs
 }
 ```
-
 ## Configuration
 
 In Claude Desktop config:
@@ -267,43 +289,48 @@ In Claude Desktop config:
 ## Benefits
 
 1. **AI-Native**: Claude directly interacts with project data
-2. **Type-Safe**: Zod schemas validate inputs
+2. **Type-Safe**: mcp-go validates inputs via JSON Schema
 3. **Auto-Context**: Automatically fetches linked docs
-4. **Extensible**: Easy to add new tools
+4. **Extensible**: Easy to add new tools with `AddTool()`
 5. **Standard Protocol**: Compatible with any MCP client
-
+6. **Single binary**: No Node.js runtime required -- ships as a Go binary
 ## Adding New Tools
 
-1. Define schema:
+1. Define the tool with its schema:
 
-```typescript
-const myToolSchema = z.object({
-  param1: z.string(),
-  param2: z.number().optional(),
-});
+```go
+// internal/mcp/server.go (or a dedicated tools file)
+var myTool = mcp.NewTool("my_tool",
+    mcp.WithDescription("What this tool does"),
+    mcp.WithString("param1",
+        mcp.Required(),
+        mcp.Description("First parameter"),
+    ),
+    mcp.WithNumber("param2",
+        mcp.Description("Optional number parameter"),
+    ),
+)
 ```
 
-2. Register tool:
+2. Create the handler:
 
-```typescript
-// In ListToolsRequestSchema handler
-{
-  name: "my_tool",
-  description: "What this tool does",
-  inputSchema: zodToJsonSchema(myToolSchema),
+```go
+// internal/mcp/handlers/my_handler.go
+func HandleMyTool(store *storage.Store) server.ToolHandlerFunc {
+    return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+        param1 := request.Params.Arguments["param1"].(string)
+        // Implementation
+        return mcp.NewToolResultText(result), nil
+    }
 }
 ```
 
-3. Add handler:
+3. Register in server setup:
 
-```typescript
-case "my_tool": {
-  const validated = myToolSchema.parse(args);
-  // Implementation
-  return { content: [{ type: "text", text: result }] };
-}
+```go
+// internal/mcp/server.go
+s.AddTool(myTool, handlers.HandleMyTool(store))
 ```
-
 ## Related Docs
 
 - @doc/architecture/patterns/command - CLI Command Pattern

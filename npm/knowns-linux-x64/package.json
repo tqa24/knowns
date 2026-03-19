@@ -1,0 +1,13 @@
+{
+  "name": "@knowns/linux-x64",
+  "version": "0.0.0",
+  "description": "Knowns binary for linux x64",
+  "os": ["linux"],
+  "cpu": ["x64"],
+  "main": "knowns",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/howznguyen/knowns"
+  }
+}

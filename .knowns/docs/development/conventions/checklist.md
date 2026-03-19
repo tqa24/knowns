@@ -1,84 +1,89 @@
 ---
-title: "Implementation Checklist"
-description: "Step-by-step checklist for implementing new features following DDD patterns"
-createdAt: "2025-12-25T15:16:58.867Z"
-updatedAt: "2025-12-25T15:25:52.985Z"
-tags: ["conventions"]
+title: Implementation Checklist
+description: Step-by-step checklist for implementing new features in the Go codebase
+createdAt: '2025-12-25T15:16:58.867Z'
+updatedAt: '2026-03-08T18:22:51.606Z'
+tags:
+  - conventions
 ---
 
 ---
 
 ## New Feature
 
-### Domain Layer (`src/domain/{module}/`)
+### Models (`internal/models/`)
 
-- [ ] Create entity extending `Entity<Props>` or `EntityWithEvents<Props>`
-- [ ] Define enum for entity status
-- [ ] Create domain events (if state changes)
-- [ ] Define repository interface (abstract class)
+- [ ] Define struct with exported fields and JSON/YAML tags
+- [ ] Define constants using `iota` for status/enum types
+- [ ] Add constructor function `New{Entity}(...)` with validation
+- [ ] Implement `Validate()` method if needed
 
-### Value Objects (`src/core/value-objects/`)
+### Storage Layer (`internal/storage/`)
 
-- [ ] Create value objects for complex types
-- [ ] Implement `create()` factory with validation
-- [ ] Implement `isValid()` static method
-- [ ] Implement `toPlain()` for serialization
+- [ ] Add methods to `Store` struct (e.g., `CreateTask`, `GetTask`, `UpdateTask`)
+- [ ] Implement markdown frontmatter parsing with `go-yaml`
+- [ ] Handle file I/O with `os` package (read/write/rename)
+- [ ] Add version history support if needed
 
-### Exceptions (`src/core/exceptions/`)
+### CLI Layer (`internal/cli/`)
 
-- [ ] Create domain exceptions extending `DomainException`
-- [ ] Define unique `code` for each
-- [ ] Use appropriate HTTP status codes
+- [ ] Create `cobra.Command` in appropriate file (e.g., `task.go`)
+- [ ] Register subcommand in `init()` function
+- [ ] Add flags with `cmd.Flags()` or `cmd.PersistentFlags()`
+- [ ] Implement `RunE` handler with proper error return
+- [ ] Support `--plain` flag for AI-readable output
+- [ ] Support `--json` flag for structured output
 
-### Application Layer (`src/application/{module}/`)
+### MCP Layer (`internal/mcp/handlers/`)
 
-- [ ] Create repository port in `ports/`
-- [ ] Create use cases in `use-cases/`
-- [ ] Create event handlers in `event-handlers/`
+- [ ] Add tool definition with input schema
+- [ ] Add handler function in appropriate handler file
+- [ ] Register tool in `internal/mcp/server.go`
 
-### Infrastructure Layer (`src/infra/`)
+### Testing
 
-- [ ] Create Prisma mapper (5 methods) in `persistence/prisma/mapper/`
-- [ ] Create Prisma repository in `persistence/prisma/repositories/`
-- [ ] Create DTOs in `http/dtos/`
-- [ ] Create controller in `http/controllers/`
+- [ ] Write unit tests in `*_test.go` files alongside source
+- [ ] Use `testing.T` and table-driven tests
+- [ ] Run with `go test ./internal/...`
+- [ ] Run specific package: `go test ./internal/storage/`
+- [ ] Check coverage: `go test -cover ./internal/...`
 
-### Module Registration
+### Build and Run
 
-- [ ] Register use cases as providers
-- [ ] Bind repository port to implementation
-- [ ] Register event handlers
-- [ ] Export necessary providers
+- [ ] Build: `make build` or `go build ./cmd/knowns`
+- [ ] Test: `make test` or `go test ./...`
+- [ ] Lint: `make lint` or `golangci-lint run`
+- [ ] Format: `gofmt -w .` or `goimports -w .`
 
----
+### Package Structure
 
+```
+cmd/
+  knowns/          # Main entry point (main.go)
+internal/
+  cli/             # Cobra commands
+  codegen/         # Template engine (text/template)
+  mcp/             # MCP server (mcp-go)
+    handlers/      # Tool handler files
+  models/          # Domain types and structs
+  search/          # Search engine
+  server/          # HTTP server (if applicable)
+  storage/         # File-based storage (markdown + frontmatter)
+  util/            # Shared utilities
+```
 ## Security
 
-- [ ] `@UseGuards(JwtGuard, EmailVerifiedGuard, RoleGuard)`
-- [ ] `@Roles()` for required roles
-- [ ] `@Public()` for public endpoints
-- [ ] `@SkipEmailVerification()` where needed
-- [ ] Validate inputs with class-validator
+- [ ] Validate all user input before processing
+- [ ] Use `filepath.Clean()` to prevent path traversal
+- [ ] Never log sensitive data
+- [ ] Handle errors explicitly (no silent swallowing)
+## Error Handling
 
----
-
-## Event-Driven
-
-- [ ] Entity extends `EntityWithEvents<Props>`
-- [ ] Events in `src/domain/{module}/events/`
-- [ ] Handlers in `src/application/{module}/event-handlers/`
-- [ ] Repository dispatches events after persistence
-
-
-| Question | If Yes → |
-|----------|----------|
-| `@doc/architecture/patterns/server` | Create Atom |
-| @doc/architecture/patterns/server | Create Molecule |
-| Is it a distinct UI section with business logic? | Create Organism |
-| Does it define page structure without content? | Create Template |
-| Does it render a complete view with data? | Create Page |
-
+- [ ] Return `error` as the last return value
+- [ ] Wrap errors with context: `fmt.Errorf("failed to create task: %w", err)`
+- [ ] Use `errors.Is()` / `errors.As()` for error checking
+- [ ] Log errors at the CLI layer, return them from internal packages
 ## Related Docs
 
-- @doc/architecture/patterns/server - Express Server Pattern
+- @doc/architecture/patterns/command - Cobra Command Pattern
 - @doc/architecture/patterns/storage - File-Based Storage Pattern

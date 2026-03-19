@@ -1,7 +1,7 @@
 ---
 title: AI Integration
 createdAt: '2026-01-23T04:07:54.465Z'
-updatedAt: '2026-01-23T04:08:08.973Z'
+updatedAt: '2026-03-08T18:17:55.455Z'
 description: 'Multi-AI platform support: skills, MCP, configurations'
 tags:
   - feature
@@ -50,6 +50,20 @@ Knowns supports multiple AI platforms. Skills are defined once in `.knowns/skill
 ## Quick Start
 
 ```bash
+# Init with AI platforms
+knowns init --ai claude,antigravity,cursor,gemini
+
+# Create skill
+knowns skill create my-skill
+
+# Sync to all platforms
+knowns skill sync --all
+
+# Setup MCP (auto-configures for installed binary)
+knowns mcp setup
+```
+
+---
 # Init with AI platforms
 knowns init --ai claude,antigravity,cursor,gemini
 

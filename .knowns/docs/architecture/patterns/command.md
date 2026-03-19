@@ -1,7 +1,7 @@
 ---
 title: Command Pattern
 createdAt: '2025-12-29T07:01:51.223Z'
-updatedAt: '2026-01-25T09:51:47.984Z'
+updatedAt: '2026-03-08T18:19:48.970Z'
 description: Documentation for the Command Pattern used in CLI architecture
 tags:
   - architecture
@@ -10,199 +10,260 @@ tags:
 ---
 ## Overview
 
-The Command Pattern is the primary pattern used to build Knowns CLI. Each command is an independent module that can be extended and tested separately.
-
+The Command Pattern is the primary pattern used to build the Knowns CLI. Each command is defined using the Cobra library (`github.com/spf13/cobra`) as an independent module that can be extended and tested separately.
 ## Structure
 
 ```text
-src/commands/
-├── index.ts           # Re-exports all commands
-├── task.ts            # Task CRUD (46KB - most complex)
-├── doc.ts             # Document management (14KB)
-├── time.ts            # Time tracking (17KB)
-├── search.ts          # Full-text search (8KB)
-├── browser.ts         # Web UI launcher (2KB)
-├── config.ts          # Configuration (8KB)
-├── init.ts            # Project initialization (5KB)
-├── board.ts           # Kanban board commands (6KB)
-└── agents.ts          # AI agent coordination (4KB)
+internal/cli/
+├── root.go            # Root command, PersistentPreRun, global flags
+├── task.go            # Task CRUD (largest command file)
+├── doc.go             # Document management
+├── time.go            # Time tracking
+├── search.go          # Full-text search
+├── browser.go         # Web UI launcher
+├── config.go          # Configuration
+├── init.go            # Project initialization
+├── board.go           # Kanban board commands
+├── agents.go          # AI agent coordination
+├── validate.go        # Validation commands
+├── template.go        # Template/codegen commands
+├── helpers.go         # Shared CLI helpers (formatting, output)
+├── styles.go          # Terminal styling (lipgloss)
+└── pager.go           # Pager support for long output
 ```
-
 ## Pattern Implementation
 
 ### 1. Command Definition
 
-Each command is defined as a `Command` object from Commander.js:
+Each command is defined as a `*cobra.Command` and registered in an `init()` function:
 
-```typescript
-import { Command } from "commander";
+```go
+// internal/cli/task.go
+package cli
 
-const createCommand = new Command("create")
-  .description("Create new task")
-  .argument("<title>", "Task title")
-  .option("-d, --description <text>", "Task description")
-  .option("--ac <criterion>", "Acceptance criterion", collect, [])
-  .option("-l, --labels <labels>", "Comma-separated labels")
-  .option("--priority <priority>", "Task priority")
-  .action(async (title, options) => {
-    // Handler logic
-    const store = new FileStore(projectRoot);
-    const task = await store.createTask({
-      title,
-      description: options.description,
-      labels: options.labels?.split(",") || [],
-      priority: options.priority || "medium",
-      acceptanceCriteria: options.ac.map(text => ({ text, completed: false })),
-    });
-    console.log(`Created task ${task.id}`);
-  });
+import (
+    "fmt"
+    "github.com/spf13/cobra"
+)
+
+var taskCreateCmd = &cobra.Command{
+    Use:   "create <title>",
+    Short: "Create a new task",
+    Args:  cobra.ExactArgs(1),
+    RunE: func(cmd *cobra.Command, args []string) error {
+        title := args[0]
+        description, _ := cmd.Flags().GetString("description")
+        labels, _ := cmd.Flags().GetStringSlice("labels")
+        priority, _ := cmd.Flags().GetString("priority")
+        ac, _ := cmd.Flags().GetStringSlice("ac")
+
+        store := storage.NewStore(projectRoot)
+        task, err := store.CreateTask(storage.CreateTaskInput{
+            Title:       title,
+            Description: description,
+            Labels:      labels,
+            Priority:    priority,
+            AcceptanceCriteria: ac,
+        })
+        if err != nil {
+            return fmt.Errorf("failed to create task: %w", err)
+        }
+        fmt.Printf("Created task %s
+", task.ID)
+        return nil
+    },
+}
+
+func init() {
+    taskCreateCmd.Flags().StringP("description", "d", "", "Task description")
+    taskCreateCmd.Flags().StringSlice("ac", nil, "Acceptance criterion (repeatable)")
+    taskCreateCmd.Flags().StringP("labels", "l", "", "Comma-separated labels")
+    taskCreateCmd.Flags().String("priority", "medium", "Task priority")
+    taskCmd.AddCommand(taskCreateCmd)
+}
 ```
 
 ### 2. Subcommand Aggregation
 
-Commands are grouped by domain:
+Commands are grouped by domain using parent commands:
 
-```typescript
-// task.ts
-const taskCommand = new Command("task")
-  .description("Manage tasks");
-
-taskCommand.addCommand(createCommand);
-taskCommand.addCommand(listCommand);
-taskCommand.addCommand(viewCommand);
-taskCommand.addCommand(editCommand);
-taskCommand.addCommand(deleteCommand);
-
-export { taskCommand };
-```
-
-### 3. Root Program Registration
-
-All top-level commands are registered to the main program:
-
-```typescript
-// index.ts (entry point)
-import { Command } from "commander";
-import { taskCommand, docCommand, timeCommand, searchCommand } from "./commands";
-
-const program = new Command()
-  .name("knowns")
-  .description("Knowledge layer for development teams")
-  .version("1.0.0");
-
-program.addCommand(taskCommand);
-program.addCommand(docCommand);
-program.addCommand(timeCommand);
-program.addCommand(searchCommand);
-program.addCommand(browserCommand);
-program.addCommand(configCommand);
-program.addCommand(initCommand);
-
-program.parse(process.argv);
-```
-
-## Key Patterns
-
-### Option Collection
-
-To collect multiple values for the same option:
-
-```typescript
-function collect(value: string, previous: string[]): string[] {
-  return previous.concat([value]);
+```go
+// internal/cli/task.go
+var taskCmd = &cobra.Command{
+    Use:   "task",
+    Short: "Manage tasks",
 }
 
-.option("--ac <criterion>", "Add acceptance criterion", collect, [])
+func init() {
+    taskCmd.AddCommand(taskCreateCmd)
+    taskCmd.AddCommand(taskListCmd)
+    taskCmd.AddCommand(taskViewCmd)
+    taskCmd.AddCommand(taskEditCmd)
+    taskCmd.AddCommand(taskDeleteCmd)
+}
+```
+
+### 3. Root Command Registration
+
+All top-level commands are registered to the root command:
+
+```go
+// internal/cli/root.go
+package cli
+
+import (
+    "github.com/spf13/cobra"
+)
+
+var rootCmd = &cobra.Command{
+    Use:   "knowns",
+    Short: "Knowledge layer for development teams",
+}
+
+func init() {
+    rootCmd.AddCommand(taskCmd)
+    rootCmd.AddCommand(docCmd)
+    rootCmd.AddCommand(timeCmd)
+    rootCmd.AddCommand(searchCmd)
+    rootCmd.AddCommand(browserCmd)
+    rootCmd.AddCommand(configCmd)
+    rootCmd.AddCommand(initCmd)
+}
+
+func Execute() error {
+    return rootCmd.Execute()
+}
+```
+## Key Patterns
+
+### Repeatable Flags (StringSlice)
+
+To collect multiple values for the same flag:
+
+```go
+cmd.Flags().StringSlice("ac", nil, "Add acceptance criterion")
 // Usage: --ac "First" --ac "Second" --ac "Third"
+
+// Retrieve in RunE:
+ac, _ := cmd.Flags().GetStringSlice("ac")
 ```
 
 ### Plain Output Mode
 
 Support output for AI agents:
 
-```typescript
-.option("--plain", "Output in plain text (for AI)")
-.action(async (id, options) => {
-  const task = await store.getTask(id);
+```go
+var taskViewCmd = &cobra.Command{
+    Use:   "view <id>",
+    Short: "View task details",
+    RunE: func(cmd *cobra.Command, args []string) error {
+        plain, _ := cmd.Flags().GetBool("plain")
+        task, err := store.GetTask(args[0])
+        if err != nil {
+            return err
+        }
 
-  if (options.plain) {
-    // Plain text format for AI consumption
-    console.log(`Task ${task.id} - ${task.title}`);
-    console.log(`Status: ${task.status}`);
-    console.log(`Priority: ${task.priority}`);
-    // ...
-  } else {
-    // Rich formatted output with colors
-    console.log(chalk.bold(`Task #${task.id}`));
-    // ...
-  }
-});
+        if plain {
+            // Plain text format for AI consumption
+            fmt.Printf("Task %s - %s
+", task.ID, task.Title)
+            fmt.Printf("Status: %s
+", task.Status)
+            fmt.Printf("Priority: %s
+", task.Priority)
+        } else {
+            // Rich formatted output with colors (lipgloss)
+            renderTaskRich(task)
+        }
+        return nil
+    },
+}
+
+func init() {
+    taskViewCmd.Flags().Bool("plain", false, "Output in plain text (for AI)")
+}
 ```
 
 ### Error Handling
 
-Consistent error handling pattern:
+Consistent error handling using `RunE` (returns error instead of calling `os.Exit`):
 
-```typescript
-.action(async (id, options) => {
-  try {
-    const task = await store.getTask(id);
-    if (!task) {
-      console.error(`Error: Task ${id} not found`);
-      process.exit(1);
-    }
-    // ...
-  } catch (error) {
-    console.error(`Error: ${error.message}`);
-    process.exit(1);
-  }
-});
+```go
+var taskViewCmd = &cobra.Command{
+    Use:  "view <id>",
+    RunE: func(cmd *cobra.Command, args []string) error {
+        task, err := store.GetTask(args[0])
+        if err != nil {
+            return fmt.Errorf("task %s not found: %w", args[0], err)
+        }
+        // ... render task
+        return nil
+    },
+}
 ```
-
 ## Benefits
 
 1. **Modularity**: Each command is a separate file, easy to maintain
 
-2. **Extensibility**: Adding new commands only requires creating a file and registering
+2. **Extensibility**: Adding new commands only requires creating a file and registering via `init()`
 
 3. **Testability**: Test each command independently
 
-4. **Discoverability**: Commander.js auto-generates help text
+4. **Discoverability**: Cobra auto-generates help text and shell completions
 
-5. **Consistency**: Same pattern for all commands
+5. **Consistency**: Same `cobra.Command` pattern for all commands
 
+6. **Error propagation**: `RunE` returns errors to the root for consistent handling
 ## Adding New Commands
 
-1. Create a new file in `src/commands/`:
+1. Create a new file in `internal/cli/`:
 
-```typescript
-// src/commands/mycommand.ts
-import { Command } from "commander";
-import { FileStore } from "../storage";
+```go
+// internal/cli/mycommand.go
+package cli
 
-const myCommand = new Command("mycommand")
-  .description("Description of my command")
-  .option("--option <value>", "Option description")
-  .action(async (options) => {
-    // Implementation
-  });
+import (
+    "fmt"
+    "github.com/spf13/cobra"
+)
 
-export { myCommand };
+var myCmd = &cobra.Command{
+    Use:   "mycommand",
+    Short: "Description of my command",
+    RunE: func(cmd *cobra.Command, args []string) error {
+        option, _ := cmd.Flags().GetString("option")
+        // Implementation
+        return nil
+    },
+}
+
+func init() {
+    myCmd.Flags().String("option", "", "Option description")
+    rootCmd.AddCommand(myCmd)
+}
 ```
 
-2. Export from `src/commands/index.ts`:
+2. The `init()` function automatically registers the command when the package is loaded -- no need to manually import or wire anything.
 
-```typescript
-export { myCommand } from "./mycommand";
+3. For subcommands, create a parent command and add children in `init()`:
+
+```go
+var parentCmd = &cobra.Command{
+    Use:   "parent",
+    Short: "Parent command group",
+}
+
+var parentSubCmd = &cobra.Command{
+    Use:   "sub",
+    Short: "Subcommand",
+    RunE:  func(cmd *cobra.Command, args []string) error { return nil },
+}
+
+func init() {
+    parentCmd.AddCommand(parentSubCmd)
+    rootCmd.AddCommand(parentCmd)
+}
 ```
-
-3. Register in `src/index.ts`:
-
-```typescript
-import { myCommand } from "./commands";
-program.addCommand(myCommand);
-```
-
 ## Related Docs
 
 - @doc/architecture/patterns/mcp-server - MCP Server Pattern

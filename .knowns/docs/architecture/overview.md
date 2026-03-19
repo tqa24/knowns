@@ -1,7 +1,7 @@
 ---
 title: Architecture Overview
 createdAt: '2025-12-29T07:06:54.131Z'
-updatedAt: '2026-01-05T16:25:51.965Z'
+updatedAt: '2026-03-08T18:17:38.612Z'
 description: High-level overview of Knowns architecture and how patterns connect
 tags:
   - architecture
@@ -17,17 +17,15 @@ Knowns is a CLI-first knowledge layer and task management system for development
 
 | Layer | Technology |
 |-------|------------|
-| Runtime | Bun / Node.js |
-| Language | TypeScript 5.7 |
-| CLI | Commander.js |
-| Server | Express 5 + SSE (Server-Sent Events) |
-| Web UI | React 19 + Vite + TailwindCSS 4 |
+| Language | Go 1.23+ |
+| CLI | Cobra + Lipgloss/Bubbletea |
+| Server | Chi (HTTP) + Gorilla (WebSocket) |
+| Web UI | React 19 + Vite + TailwindCSS 4 (embedded via go:embed) |
 | UI Components | Radix UI (shadcn/ui) |
 | Storage | File-based (Markdown + YAML Frontmatter) |
-| AI Integration | Model Context Protocol (MCP) |
-| Testing | Vitest |
-| Linting | Biome |
-
+| AI Integration | Model Context Protocol (mcp-go) |
+| Testing | go test + testify |
+| Build | Make + goreleaser |
 ## Layered Architecture
 
 ```
@@ -42,13 +40,13 @@ Knowns is a CLI-first knowledge layer and task management system for development
       ▼           ▼           ▼                 ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                    Command Layer                             │
-│  task.ts | doc.ts | time.ts | search.ts | browser.ts | ...  │
+│  task.go | doc.go | time.go | search.go | browser.go | ...  │
 └──────────────────────────┬──────────────────────────────────┘
                            │
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                Storage & Service Layer                       │
-│      FileStore | VersionStore | AIService | Markdown         │
+│      FileStore | VersionStore | SearchEngine | Markdown      │
 └──────────────────────────┬──────────────────────────────────┘
                            │
                            ▼
@@ -63,90 +61,107 @@ Knowns is a CLI-first knowledge layer and task management system for development
 │    .knowns/tasks/ | .knowns/docs/ | config.json | versions   │
 └─────────────────────────────────────────────────────────────┘
 ```
-
 ## Module Organization
 
 ```
-src/
-├── index.ts                    # CLI entry point
-├── commands/                   # CLI Command Pattern
-│   ├── task.ts                # Task CRUD (most complex)
-│   ├── doc.ts                 # Document management
-│   ├── time.ts                # Time tracking
-│   ├── search.ts              # Full-text search
-│   ├── browser.ts             # Web UI launcher
-│   ├── config.ts              # Configuration
-│   ├── init.ts                # Project initialization
-│   ├── board.ts               # Kanban commands
-│   └── agents.ts              # AI agent coordination
+cmd/
+└── knowns/
+    └── main.go                 # CLI entry point
+
+internal/
+├── cli/                        # CLI Command Layer (Cobra)
+│   ├── root.go                # Root command + global flags
+│   ├── task.go                # Task CRUD (most complex)
+│   ├── doc.go                 # Document management
+│   ├── time.go                # Time tracking
+│   ├── search.go              # Full-text search
+│   ├── browser.go             # Web UI launcher
+│   ├── config.go              # Configuration
+│   ├── init.go                # Project initialization
+│   ├── board.go               # Kanban commands
+│   └── agents.go              # AI agent coordination
 │
-├── models/                     # Domain Models (DDD)
-│   ├── task.ts                # Task interface + helpers
-│   ├── project.ts             # Project configuration
-│   └── version.ts             # Version history
+├── models/                     # Domain Models
+│   ├── task.go                # Task struct + helpers
+│   ├── project.go             # Project configuration
+│   └── version.go             # Version history
 │
 ├── storage/                    # Persistence Layer
-│   ├── file-store.ts          # Main storage class
-│   ├── markdown.ts            # Parsing + serialization
-│   └── version-store.ts       # Version history
+│   ├── file_store.go          # Main storage implementation
+│   ├── markdown.go            # Parsing + serialization
+│   └── version_store.go       # Version history
 │
-├── server/                     # Web Server & API
-│   ├── index.ts               # Express server
+├── server/                     # Web Server & API (Chi)
+│   ├── server.go              # HTTP server + WebSocket
 │   └── routes/
-│       └── events.ts          # SSE endpoint
+│       ├── tasks.go           # Task endpoints
+│       ├── docs.go            # Doc endpoints
+│       ├── events.go          # SSE/WebSocket endpoint
+│       └── ...
 │
-├── mcp/                        # Model Context Protocol
-│   └── server.ts              # Claude integration
+├── mcp/                        # Model Context Protocol (mcp-go)
+│   ├── server.go              # MCP server setup
+│   └── handlers/              # Tool handlers
+│       ├── task.go
+│       ├── doc.go
+│       └── ...
 │
-├── services/                   # Business Logic
-│   └── ai-service.ts          # AI-assisted features
+├── search/                     # Search Engine
+│   ├── engine.go              # Search implementation
+│   ├── chunker.go             # Text chunking
+│   └── store.go               # Index storage
 │
-├── ui/                         # React Web UI (SPA)
+├── codegen/                    # Code Generation (Templates)
+│   ├── engine.go
+│   ├── renderer.go
+│   └── parser.go
+│
+└── util/                       # Shared Utilities
+    ├── mention_refs.go        # Reference transformation
+    ├── doc_links.go           # Doc link resolution
+    └── notify_server.go       # Server notifications
+
+ui/                             # React Web UI (embedded via go:embed)
+├── src/
 │   ├── App.tsx
 │   ├── components/
 │   ├── contexts/
 │   │   └── SSEContext.tsx     # Real-time event handling
 │   ├── pages/
 │   └── api/
-│
-└── utils/                      # Shared Utilities
-    ├── mention-refs.ts        # Reference transformation
-    ├── doc-links.ts           # Doc link resolution
-    └── notify-server.ts       # Server notifications
+└── dist/                       # Built assets (embedded into binary)
 ```
-
 ## Key Patterns
 
 ### 1. Command Pattern
-- Location: `src/commands/`
-- Each command is an independent module
-- Uses Commander.js
+- Location: `internal/cli/`
+- Each command is a `cobra.Command` registered via `init()`
+- Uses Cobra for parsing, Lipgloss/Bubbletea for styling
 - Details: @doc/architecture/patterns/command
 
 ### 2. MCP Server Pattern
-- Location: `src/mcp/server.ts`
-- JSON-RPC over stdio
-- Exposes tools for AI
+- Location: `internal/mcp/`
+- JSON-RPC over stdio via mcp-go
+- Exposes tools for AI agents
 - Details: @doc/architecture/patterns/mcp-server
 
 ### 3. File-Based Storage Pattern
-- Location: `src/storage/`
+- Location: `internal/storage/`
 - Markdown + YAML Frontmatter
 - Git-friendly, human-readable
 - Details: @doc/architecture/patterns/storage
 
 ### 4. Real-time Server Pattern
-- Location: `src/server/index.ts`
-- Express REST API + SSE
-- Multi-client sync via EventSource
+- Location: `internal/server/`
+- Chi REST API + Gorilla WebSocket
+- Multi-client sync via WebSocket/SSE
 - Details: @doc/architecture/patterns/server
 
 ### 5. React UI Pattern
-- Location: `src/ui/`
-- React 19 + Radix UI
+- Location: `ui/`
+- React 19 + Radix UI, embedded into Go binary via go:embed
 - Hooks + Context state management
 - Details: @doc/architecture/patterns/ui
-
 ## Data Flow
 
 ### CLI -> FileStore -> Files
@@ -155,13 +170,13 @@ src/
 User: knowns task create "Title"
        │
        ▼
-CLI Parser (Commander.js)
+CLI Parser (Cobra)
        │
        ▼
-Command Handler (task.ts)
+Command Handler (cli/task.go)
        │
        ▼
-FileStore.createTask()
+FileStore.CreateTask()
        │
        ▼
 Write to .knowns/tasks/task-X.md
@@ -170,7 +185,7 @@ Write to .knowns/tasks/task-X.md
 notifyServer("task-created")
        │
        ▼
-SSE broadcast to browsers
+WebSocket broadcast to browsers
 ```
 
 ### MCP -> Claude Integration
@@ -179,13 +194,13 @@ SSE broadcast to browsers
 Claude Desktop
        │
        ▼ (JSON-RPC over stdio)
-MCP Server (server.ts)
+MCP Server (mcp/server.go)
        │
        ▼
-Tool Handler (e.g., get_task)
+Tool Handler (e.g., handlers/task.go)
        │
        ▼
-FileStore.getTask()
+FileStore.GetTask()
        │
        ▼
 Return task + linked docs to Claude
@@ -196,25 +211,25 @@ Return task + linked docs to Claude
 ```
 Browser (React)
        │
-       ▼ (HTTP + SSE)
-Express Server
+       ▼ (HTTP + WebSocket)
+Chi Server
        │
        ▼
-REST API Handler
+REST API Handler (routes/*.go)
        │
        ▼
 FileStore operations
        │
        ▼
-Broadcast changes via SSE
+Broadcast changes via WebSocket
 ```
-
 ## Design Philosophy
 
 ### 1. CLI-First
 - CLI is the primary interface
-- Web UI is secondary (optional)
+- Web UI is secondary (optional, embedded in binary)
 - AI integration via MCP
+- Single binary distribution (no runtime dependencies)
 
 ### 2. Local-First
 - Data stored locally (.knowns/)
@@ -222,7 +237,7 @@ Broadcast changes via SSE
 - Git-friendly
 
 ### 3. AI-Ready
-- MCP server for Claude
+- MCP server for Claude (via mcp-go)
 - Reference system for context
 - Plain output mode for AI agents
 
@@ -233,32 +248,31 @@ Broadcast changes via SSE
 
 ### 5. Multi-Access
 - CLI, Web UI, MCP can run simultaneously
-- Real-time sync via SSE
+- Real-time sync via WebSocket
 - Single source of truth: files
-
 ## Extension Points
 
 ### Adding a New Command
-1. Create file in `src/commands/`
-2. Export from `src/commands/index.ts`
-3. Register in `src/index.ts`
+1. Create file in `internal/cli/` (e.g., `internal/cli/mycommand.go`)
+2. Define a `cobra.Command` struct with Use, Short, Long, RunE fields
+3. Register the command via `init()` using `rootCmd.AddCommand(myCmd)`
 
 ### Adding a New MCP Tool
-1. Define Zod schema
-2. Register in ListToolsRequestSchema handler
-3. Add handler case in CallToolRequestSchema
+1. Create handler file in `internal/mcp/handlers/` (e.g., `handlers/mytool.go`)
+2. Define the tool schema (name, description, input parameters)
+3. Register the handler in `internal/mcp/server.go`
 
 ### Adding a New API Endpoint
-1. Edit `src/server/routes/`
-2. Add route module
-3. Register in `routes/index.ts`
-4. Broadcast changes via SSE
+1. Create route file in `internal/server/routes/` (e.g., `routes/myroute.go`)
+2. Define handler functions using Chi router patterns
+3. Register routes in `internal/server/server.go`
+4. Broadcast changes via WebSocket if needed
 
 ### Adding a New UI Component
-1. Create in `src/ui/components/`
-2. Use primitives from `ui/` folder
+1. Create in `ui/src/components/`
+2. Use primitives from shadcn/ui
 3. Import into pages
-
+4. Rebuild UI with `make ui-build` (assets embedded into binary)
 ## Related Documentation
 
 | Pattern | Description | Location |

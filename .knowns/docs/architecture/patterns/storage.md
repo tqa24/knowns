@@ -1,7 +1,7 @@
 ---
 title: Storage Pattern
 createdAt: '2025-12-29T07:03:35.974Z'
-updatedAt: '2025-12-29T07:13:44.530Z'
+updatedAt: '2026-03-08T18:20:29.588Z'
 description: Documentation for File-Based Storage with Markdown Frontmatter
 tags:
   - architecture
@@ -11,17 +11,20 @@ tags:
 ## Overview
 
 Knowns uses file-based storage with Markdown + YAML Frontmatter instead of traditional databases. Philosophy: **"Files are the database"**.
-
 ## Location
 
 ```
-src/storage/
-├── file-store.ts      # Main storage class (11KB)
-├── markdown.ts        # Parsing/serialization (6KB)
-├── version-store.ts   # Version history (4KB)
-└── index.ts           # Barrel export
+internal/storage/
+├── store.go              # Main Store struct and constructor
+├── task_store.go         # Task CRUD operations
+├── doc_store.go          # Document CRUD operations
+├── config_store.go       # Project config operations
+├── template_store.go     # Template operations
+├── time_store.go         # Time tracking storage
+├── version_store.go      # Version history
+├── workspace_store.go    # Workspace/project detection
+└── util.go               # Shared utilities (markdown parsing, etc.)
 ```
-
 ## File Structure
 
 ```
@@ -85,146 +88,248 @@ Progress notes here...
 
 ## Core Components
 
-### 1. FileStore Class
+### 1. Store Struct
 
-```typescript
-class FileStore {
-  private projectRoot: string;
+```go
+// internal/storage/store.go
+package storage
 
-  constructor(projectRoot: string) {
-    this.projectRoot = projectRoot;
-  }
+import (
+    "fmt"
+    "os"
+    "path/filepath"
+)
 
-  // === Task Operations ===
-  async createTask(data: CreateTaskInput): Promise<Task> {
-    const id = await this.generateTaskId();
-    const task: Task = {
-      id,
-      title: data.title,
-      description: data.description || "",
-      status: data.status || "todo",
-      priority: data.priority || "medium",
-      labels: data.labels || [],
-      assignee: data.assignee,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      acceptanceCriteria: data.acceptanceCriteria || [],
-      timeSpent: 0,
-      timeEntries: [],
-    };
+// Store provides file-based storage for tasks, docs, and config.
+type Store struct {
+    ProjectRoot string
+    tasksDir    string
+    docsDir     string
+    configPath  string
+}
 
-    const markdown = serializeTaskMarkdown(task);
-    const filename = `task-${id} - ${sanitize(task.title)}.md`;
-    await writeFile(join(this.tasksDir, filename), markdown);
+// NewStore creates a new Store rooted at the given project directory.
+func NewStore(projectRoot string) *Store {
+    knownsDir := filepath.Join(projectRoot, ".knowns")
+    return &Store{
+        ProjectRoot: projectRoot,
+        tasksDir:    filepath.Join(knownsDir, "tasks"),
+        docsDir:     filepath.Join(knownsDir, "docs"),
+        configPath:  filepath.Join(knownsDir, "config.json"),
+    }
+}
+```
 
-    return task;
-  }
+```go
+// internal/storage/task_store.go
 
-  async getTask(id: string): Promise<Task | null> {
-    const files = await glob(`task-${id} - *.md`, { cwd: this.tasksDir });
-    if (files.length === 0) return null;
+// CreateTask creates a new task and writes it to disk.
+func (s *Store) CreateTask(input CreateTaskInput) (*Task, error) {
+    id, err := s.generateTaskID()
+    if err != nil {
+        return nil, fmt.Errorf("generate task ID: %w", err)
+    }
 
-    const content = await readFile(join(this.tasksDir, files[0]), "utf-8");
-    return parseTaskMarkdown(content);
-  }
+    task := &Task{
+        ID:          id,
+        Title:       input.Title,
+        Description: input.Description,
+        Status:      "todo",
+        Priority:    input.Priority,
+        Labels:      input.Labels,
+        CreatedAt:   time.Now(),
+        UpdatedAt:   time.Now(),
+    }
+    if task.Priority == "" {
+        task.Priority = "medium"
+    }
 
-  async updateTask(id: string, updates: Partial<Task>): Promise<Task> {
-    const task = await this.getTask(id);
-    if (!task) throw new Error(`Task ${id} not found`);
+    markdown := serializeTaskMarkdown(task)
+    filename := fmt.Sprintf("task-%s - %s.md", id, sanitize(task.Title))
+    err = os.WriteFile(filepath.Join(s.tasksDir, filename), []byte(markdown), 0644)
+    if err != nil {
+        return nil, fmt.Errorf("write task file: %w", err)
+    }
 
-    const updated = { ...task, ...updates, updatedAt: new Date() };
-    const markdown = serializeTaskMarkdown(updated);
+    return task, nil
+}
+
+// GetTask retrieves a task by ID.
+func (s *Store) GetTask(id string) (*Task, error) {
+    pattern := fmt.Sprintf("task-%s - *.md", id)
+    matches, err := filepath.Glob(filepath.Join(s.tasksDir, pattern))
+    if err != nil {
+        return nil, err
+    }
+    if len(matches) == 0 {
+        return nil, fmt.Errorf("task %s not found", id)
+    }
+
+    data, err := os.ReadFile(matches[0])
+    if err != nil {
+        return nil, err
+    }
+    return parseTaskMarkdown(string(data))
+}
+
+// UpdateTask updates a task and saves it to disk.
+func (s *Store) UpdateTask(id string, updates map[string]interface{}) (*Task, error) {
+    task, err := s.GetTask(id)
+    if err != nil {
+        return nil, err
+    }
+
+    // Apply updates to task fields...
+    task.UpdatedAt = time.Now()
+
+    markdown := serializeTaskMarkdown(task)
 
     // Rename file if title changed
-    const oldFile = await this.findTaskFile(id);
-    const newFilename = `task-${id} - ${sanitize(updated.title)}.md`;
+    oldFile := s.findTaskFile(id)
+    newFilename := fmt.Sprintf("task-%s - %s.md", id, sanitize(task.Title))
 
-    if (oldFile !== newFilename) {
-      await rename(join(this.tasksDir, oldFile), join(this.tasksDir, newFilename));
+    if filepath.Base(oldFile) != newFilename {
+        os.Rename(oldFile, filepath.Join(s.tasksDir, newFilename))
     }
 
-    await writeFile(join(this.tasksDir, newFilename), markdown);
+    err = os.WriteFile(filepath.Join(s.tasksDir, newFilename), []byte(markdown), 0644)
+    if err != nil {
+        return nil, err
+    }
 
     // Save version history
-    await this.versionStore.saveVersion(id, updates, updated);
+    s.SaveVersion(id, task)
 
-    return updated;
-  }
+    return task, nil
+}
 
-  async getAllTasks(): Promise<Task[]> {
-    const files = await glob("task-*.md", { cwd: this.tasksDir });
-    const tasks = await Promise.all(
-      files.map(async (file) => {
-        const content = await readFile(join(this.tasksDir, file), "utf-8");
-        return parseTaskMarkdown(content);
-      })
-    );
-    return tasks;
-  }
-
-  async deleteTask(id: string): Promise<void> {
-    const file = await this.findTaskFile(id);
-    if (file) {
-      await unlink(join(this.tasksDir, file));
+// GetAllTasks returns all tasks from disk.
+func (s *Store) GetAllTasks() ([]*Task, error) {
+    matches, err := filepath.Glob(filepath.Join(s.tasksDir, "task-*.md"))
+    if err != nil {
+        return nil, err
     }
-  }
 
-  // === Subtask Operations ===
-  async getSubtasks(parentId: string): Promise<Task[]> {
-    const all = await this.getAllTasks();
-    return all.filter((t) => t.id.startsWith(`${parentId}.`));
-  }
-
-  // === Project Operations ===
-  async getProject(): Promise<Project | null> {
-    const configPath = join(this.projectRoot, ".knowns", "config.json");
-    if (!existsSync(configPath)) return null;
-    return JSON.parse(await readFile(configPath, "utf-8"));
-  }
+    var tasks []*Task
+    for _, match := range matches {
+        data, err := os.ReadFile(match)
+        if err != nil {
+            continue
+        }
+        task, err := parseTaskMarkdown(string(data))
+        if err != nil {
+            continue
+        }
+        tasks = append(tasks, task)
+    }
+    return tasks, nil
 }
 ```
 
 ### 2. Markdown Parser
 
-```typescript
-import matter from "gray-matter";
+```go
+// internal/storage/util.go
+package storage
 
-function parseTaskMarkdown(content: string): Task {
-  const { data: frontmatter, content: body } = matter(content);
+import (
+    "strings"
+    "gopkg.in/yaml.v3"
+)
 
-  return {
-    id: frontmatter.id,
-    title: frontmatter.title,
-    status: frontmatter.status,
-    priority: frontmatter.priority,
-    assignee: frontmatter.assignee,
-    labels: frontmatter.labels || [],
-    createdAt: new Date(frontmatter.createdAt),
-    updatedAt: new Date(frontmatter.updatedAt),
-    timeSpent: frontmatter.timeSpent || 0,
-    description: extractSection(body, "DESCRIPTION"),
-    acceptanceCriteria: parseAcceptanceCriteria(extractSection(body, "AC")),
-    implementationPlan: extractSection(body, "PLAN"),
-    implementationNotes: extractSection(body, "NOTES"),
-    timeEntries: [], // Loaded from time-entries.json
-  };
+// parseTaskMarkdown parses a markdown file with YAML frontmatter into a Task.
+func parseTaskMarkdown(content string) (*Task, error) {
+    frontmatter, body, err := splitFrontmatter(content)
+    if err != nil {
+        return nil, err
+    }
+
+    var task Task
+    if err := yaml.Unmarshal([]byte(frontmatter), &task); err != nil {
+        return nil, fmt.Errorf("parse frontmatter: %w", err)
+    }
+
+    task.Description = extractSection(body, "DESCRIPTION")
+    task.AcceptanceCriteria = parseAcceptanceCriteria(extractSection(body, "AC"))
+    task.ImplementationPlan = extractSection(body, "PLAN")
+    task.ImplementationNotes = extractSection(body, "NOTES")
+
+    return &task, nil
 }
 
-function serializeTaskMarkdown(task: Task): string {
-  const frontmatter = {
-    id: task.id,
-    title: task.title,
-    status: task.status,
-    priority: task.priority,
-    assignee: task.assignee,
-    labels: task.labels,
-    createdAt: task.createdAt.toISOString(),
-    updatedAt: task.updatedAt.toISOString(),
-    timeSpent: task.timeSpent,
-  };
+// serializeTaskMarkdown converts a Task to markdown with YAML frontmatter.
+func serializeTaskMarkdown(task *Task) string {
+    fm, _ := yaml.Marshal(task.frontmatterFields())
 
-  const body = `# ${task.title}
+    var sb strings.Builder
+    sb.WriteString("---
+")
+    sb.Write(fm)
+    sb.WriteString("---
 
+")
+    sb.WriteString("# " + task.Title + "
+
+")
+
+    if task.Description != "" {
+        sb.WriteString("## Description
+
+")
+        sb.WriteString(task.Description + "
+
+")
+    }
+
+    // ... write AC, Plan, Notes sections
+
+    return sb.String()
+}
+
+// splitFrontmatter separates YAML frontmatter from markdown body.
+func splitFrontmatter(content string) (string, string, error) {
+    if !strings.HasPrefix(content, "---
+") {
+        return "", content, nil
+    }
+    parts := strings.SplitN(content[4:], "
+---
+", 2)
+    if len(parts) != 2 {
+        return "", content, fmt.Errorf("malformed frontmatter")
+    }
+    return parts[0], parts[1], nil
+}
+```
+
+### 3. Section Markers
+
+Sections in task markdown are delimited by `## Heading` markers:
+
+```go
+// extractSection extracts content between section markers.
+func extractSection(body, sectionName string) string {
+    // Find "## SectionName" and extract until next "##" or EOF
+    // ...
+}
+```
+
+### 4. Version Store
+
+```go
+// internal/storage/version_store.go
+
+// SaveVersion saves a version snapshot for a task.
+func (s *Store) SaveVersion(taskID string, task *Task) error {
+    versionsDir := filepath.Join(s.ProjectRoot, ".knowns", ".versions")
+    os.MkdirAll(versionsDir, 0755)
+
+    filename := fmt.Sprintf("%s.versions.json", taskID)
+    // Append version entry to JSON array file
+    // ...
+    return nil
+}
+```
 ## Description
 <!-- DESCRIPTION:BEGIN -->
 ${task.description || ""}
@@ -365,18 +470,25 @@ task-2          (sibling of 1)
 task-2.1        (child of 2)
 ```
 
-```typescript
-async function generateSubtaskId(parentId: string): string {
-  const subtasks = await this.getSubtasks(parentId);
-  const maxSubIndex = subtasks.reduce((max, t) => {
-    const parts = t.id.split(".");
-    const subIndex = parseInt(parts[parts.length - 1], 10);
-    return Math.max(max, subIndex);
-  }, 0);
-  return `${parentId}.${maxSubIndex + 1}`;
+```go
+// generateSubtaskID creates a new subtask ID under the given parent.
+func (s *Store) generateSubtaskID(parentID string) (string, error) {
+    subtasks, err := s.GetSubtasks(parentID)
+    if err != nil {
+        return "", err
+    }
+
+    maxSubIndex := 0
+    for _, t := range subtasks {
+        parts := strings.Split(t.ID, ".")
+        subIndex, _ := strconv.Atoi(parts[len(parts)-1])
+        if subIndex > maxSubIndex {
+            maxSubIndex = subIndex
+        }
+    }
+    return fmt.Sprintf("%s.%d", parentID, maxSubIndex+1), nil
 }
 ```
-
 ## Benefits
 
 1. **Git-friendly**: Version control for free

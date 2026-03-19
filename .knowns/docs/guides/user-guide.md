@@ -1,7 +1,7 @@
 ---
 title: User Guide
 createdAt: '2025-12-29T11:49:48.531Z'
-updatedAt: '2026-01-12T11:43:37.177Z'
+updatedAt: '2026-03-08T18:18:51.018Z'
 description: Comprehensive user documentation for Knowns CLI and Web UI
 tags:
   - docs
@@ -19,13 +19,16 @@ Complete guide for using Knowns - a CLI-first knowledge layer and task managemen
 ### Installation
 
 ```bash
-# Install globally via npm
+# Install via npm (downloads platform-specific Go binary)
 npm install -g knowns
 
-# Or via bun
-bun add -g knowns
+# Install via Go
+go install github.com/howznguyen/knowns/cmd/knowns@latest
 
-# Or use npx (no installation)
+# Install via curl (Linux/macOS)
+curl -fsSL https://raw.githubusercontent.com/howznguyen/knowns/main/install/install.sh | sh
+
+# Or use npx (no global install)
 npx knowns <command>
 ```
 
@@ -40,17 +43,17 @@ knowns init [project-name]
 The wizard prompts for 4 settings:
 
 ```
-🚀 Knowns Project Setup Wizard
+Knowns Project Setup Wizard
    Configure your project settings
 
-? Project name › my-project
-? Git tracking mode › Git Tracked (recommended for teams)
-? AI Guidelines type › CLI
-? Select AI agent files › CLAUDE.md, AGENTS.md
+? Project name > my-project
+? Git tracking mode > Git Tracked (recommended for teams)
+? AI Guidelines type > CLI
+? Select AI agent files > CLAUDE.md, AGENTS.md
 
-✓ Project initialized: my-project
-✓ Created: CLAUDE.md
-✓ Created: AGENTS.md
+Project initialized: my-project
+Created: CLAUDE.md
+Created: AGENTS.md
 
 Get started:
   knowns task create "My first task"
@@ -73,8 +76,8 @@ When selecting **MCP**, a `.mcp.json` file is auto-created for Claude Code:
 {
   "mcpServers": {
     "knowns": {
-      "command": "npx",
-      "args": ["-y", "knowns", "mcp"]
+      "command": "knowns",
+      "args": ["mcp"]
     }
   }
 }
@@ -223,8 +226,8 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 {
   "mcpServers": {
     "knowns": {
-      "command": "npx",
-      "args": ["-y", "knowns", "mcp"]
+      "command": "knowns",
+      "args": ["mcp"]
     }
   }
 }

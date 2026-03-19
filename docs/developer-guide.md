@@ -1,655 +1,113 @@
 # Knowns Developer Guide
 
-Technical documentation for contributors and developers building on Knowns.
+Technical notes for contributors working on the current Go codebase.
 
 ---
 
-## Architecture Overview
-
-Knowns follows a layered architecture with CLI as the primary interface.
-
-### Tech Stack
+## Tech Stack
 
 | Layer | Technology |
-|-------|------------|
-| Runtime | Bun / Node.js |
-| Language | TypeScript 5.7 |
-| CLI | Commander.js |
-| Server | Express 5 + SSE (Server-Sent Events) |
-| Web UI | React 19 + Vite + TailwindCSS 4 |
-| UI Components | Radix UI (shadcn/ui) |
-| Storage | File-based (Markdown + YAML Frontmatter) |
-| AI Integration | Model Context Protocol (MCP) |
-| Testing | Vitest (unit) |
-| Linting | Biome |
+| ----- | ---------- |
+| Runtime | Go |
+| CLI | Cobra |
+| Storage | File-based `.knowns/` data |
+| Web server | Go HTTP server |
+| Web UI | React app embedded into the binary |
+| AI integration | MCP server + generated instruction files |
+| Search | Keyword + optional semantic search |
 
-### Module Structure
+---
 
-```
-src/
-├── index.ts                    # CLI entry point
-├── commands/                   # CLI Command Pattern
-│   ├── task.ts                # Task CRUD
-│   ├── doc.ts                 # Document management
-│   ├── time.ts                # Time tracking
-│   ├── search.ts              # Full-text search
-│   ├── browser.ts             # Web UI launcher
-│   ├── agents.ts              # AI guidelines utilities (used by init/sync)
-│   └── ...
-├── instructions/               # AI Agent Guidelines
-│   └── guidelines/
-│       └── unified/           # Single source for CLI/MCP
-│           ├── index.ts       # Renders both variants
-│           ├── core-rules.md  # Uses {{#if mcp}} conditionals
-│           └── ...            # Other guideline templates
-├── models/                     # Domain Models
-│   ├── task.ts                # Task interface + helpers
-│   ├── project.ts             # Project configuration
-│   └── version.ts             # Version history
-├── storage/                    # Persistence Layer
-│   ├── file-store.ts          # Main storage class
-│   ├── markdown.ts            # Parsing + serialization
-│   └── version-store.ts       # Version history
-├── server/                     # Web Server & API
-│   └── index.ts               # Express + SSE
-├── mcp/                        # Model Context Protocol
-│   └── server.ts              # Claude integration
-├── ui/                         # React Web UI
-│   ├── App.tsx
-│   ├── components/
-│   │   ├── atoms/             # Basic components
-│   │   ├── molecules/         # Composite components
-│   │   ├── organisms/         # Complex components
-│   │   ├── templates/         # Page layouts
-│   │   └── ui/                # shadcn/ui primitives
-│   ├── pages/
-│   ├── contexts/
-│   └── api/
-└── utils/                      # Shared Utilities
+## Codebase Map
+
+Main repo structure:
+
+```text
+cmd/knowns/          CLI entrypoint
+internal/cli/        Cobra commands
+internal/models/     Domain models and config structs
+internal/storage/    Persistence for tasks, docs, versions, config
+internal/server/     HTTP server, routes, browser backend
+internal/mcp/        MCP server implementation
+internal/search/     Search and semantic-search support
+ui/                  React UI source and embedded assets
+tests/               End-to-end and integration coverage
 ```
 
 ---
 
-## Domain Model
+## Important Runtime Behavior
 
-### Task Model
+### Browser UI
 
-```typescript
-interface Task {
-  id: string;              // Unique identifier (e.g., "42")
-  title: string;           // Task title
-  description?: string;    // Markdown description
-  status: TaskStatus;      // todo | in-progress | in-review | blocked | done
-  priority: Priority;      // low | medium | high
-  labels: string[];        // Tags/categories
-  assignee?: string;       // @username or @me
-  parent?: string;         // Parent task ID
-  acceptanceCriteria: AcceptanceCriterion[];
-  implementationPlan?: string;   // Markdown plan
-  implementationNotes?: string;  // Markdown notes
-  createdAt: string;       // ISO timestamp
-  updatedAt: string;       // ISO timestamp
-}
+- `knowns browser` starts the local web server
+- default port is `3001` unless overridden by `settings.serverPort`
+- the browser only auto-opens when `--open` is passed
 
-interface AcceptanceCriterion {
-  text: string;
-  checked: boolean;
-}
-```
+### Sync
 
-### Document Model
+- `knowns sync` handles instruction-file and skill syncing
+- `knowns agents --sync` remains as a compatibility path for instruction files
+- platform filtering is done with `--platform` or `settings.platforms`
 
-```typescript
-interface Doc {
-  filename: string;        // File name without extension
-  path: string;            // Full path from docs root
-  title: string;           // Display title
-  description?: string;    // Short description
-  tags: string[];          // Tags for filtering
-  content: string;         // Markdown content
-  createdAt: string;       // ISO timestamp
-  updatedAt: string;       // ISO timestamp
-}
-```
+### Search
 
-### Project Configuration
-
-```typescript
-interface ProjectConfig {
-  name: string;
-  prefix?: string;         // Task ID prefix
-  labels?: string[];       // Predefined labels
-  users?: User[];          // Team members
-  timeTracking?: TimeTrackingConfig;
-}
-```
+- `knowns search <query>` performs search
+- `knowns search --reindex` rebuilds the index
+- `knowns search --status-check` shows semantic-search status
 
 ---
 
-## Storage System
+## Config Model
 
-### File Structure
+Project config is defined in `internal/models/config.go`.
 
-```
-.knowns/
-├── config.json           # Project configuration
-├── tasks/
-│   ├── task-1 - Title.md
-│   ├── task-2 - Another.md
-│   └── .versions/        # Version history
-│       ├── task-1/
-│       │   ├── v1.json
-│       │   └── v2.json
-│       └── task-2/
-│           └── v1.json
-└── docs/
-    ├── readme.md
-    ├── ai/                   # AI integration docs
-    ├── architecture/         # Technical patterns & features
-    │   ├── patterns/
-    │   └── features/
-    ├── core/                 # Core concepts
-    ├── development/          # For contributors
-    │   └── conventions/
-    ├── github/               # GitHub-specific
-    ├── guides/               # User guides
-    ├── roadmap/              # Future plans
-    └── templates/            # Template system
-```
+Important fields include:
 
-### Markdown + Frontmatter Format
-
-```markdown
----
-id: "42"
-title: Task Title
-status: in-progress
-priority: high
-labels: [feature, auth]
-assignee: "@harry"
-createdAt: 2025-12-25T10:00:00.000Z
-updatedAt: 2025-12-29T15:30:00.000Z
----
-
-## Description
-
-Task description in Markdown.
-
-## Acceptance Criteria
-
-- [x] First criterion (checked)
-- [ ] Second criterion (unchecked)
-
-## Implementation Plan
-
-1. Step one
-2. Step two
-
-## Implementation Notes
-
-Notes added after completion.
-```
-
-### FileStore API
-
-```typescript
-class FileStore {
-  // Tasks
-  async createTask(data: CreateTaskInput): Promise<Task>
-  async getTask(id: string): Promise<Task | null>
-  async getTasks(filters?: TaskFilters): Promise<Task[]>
-  async updateTask(id: string, updates: TaskUpdates): Promise<Task>
-  async deleteTask(id: string): Promise<void>
-
-  // Documents
-  async createDoc(data: CreateDocInput): Promise<Doc>
-  async getDoc(path: string): Promise<Doc | null>
-  async getDocs(filters?: DocFilters): Promise<Doc[]>
-  async updateDoc(path: string, updates: DocUpdates): Promise<Doc>
-
-  // Search
-  async search(query: string, options?: SearchOptions): Promise<SearchResult[]>
-}
-```
+- `name`, `id`, `createdAt`
+- `settings.defaultAssignee`, `settings.defaultPriority`, `settings.defaultLabels`
+- `settings.statuses`, `settings.statusColors`, `settings.visibleColumns`
+- `settings.semanticSearch`
+- `settings.serverPort`
+- `settings.platforms`
+- `settings.autoSyncOnUpdate`
+- `settings.enableChatUI`
+- `settings.opencodeServer`, `settings.opencodeModels`
 
 ---
 
-## SSE Protocol (Server-Sent Events)
+## CLI Conventions
 
-### Connection
-
-```
-GET http://localhost:6420/api/events
-```
-
-SSE is a unidirectional (server → client) protocol that auto-reconnects on connection loss.
-
-### Event Types
-
-#### Server -> Client
-
-```typescript
-// Task updated
-event: tasks:updated
-data: { task: Task }
-
-// Full refresh needed
-event: tasks:refresh
-data: {}
-
-// Timer update
-event: time:updated
-data: { active: TimerState }
-
-// Docs updated
-event: docs:updated
-data: { docPath: string }
-```
-
-### Connection Flow
-
-1. Client connects to SSE endpoint (`/api/events`)
-2. Server sends `connected` event
-3. On any data change, server broadcasts to all clients
-4. Client updates local state
-5. On reconnection (e.g., after sleep), client triggers full refresh
-
-### CLI Integration
-
-When CLI modifies data, it notifies the server:
-
-```typescript
-// src/utils/notify-server.ts
-export async function notifyServer(type: string, data?: any) {
-  try {
-    await fetch('http://localhost:6420/api/notify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type, data })
-    });
-  } catch {
-    // Server not running, ignore
-  }
-}
-```
+- Root commands are registered under `internal/cli/`
+- command help is the source of truth for public syntax
+- shorthand behavior exists for some groups, for example `knowns task <id>` and `knowns doc <path>`
+- prefer updating docs from actual `knowns ... --help` output to avoid drift
 
 ---
 
-## MCP Server Implementation
-
-### Protocol
-
-JSON-RPC 2.0 over stdio.
-
-### Available Tools
-
-```typescript
-const tools = [
-  {
-    name: "get_task",
-    description: "Get task details by ID",
-    inputSchema: {
-      type: "object",
-      properties: {
-        id: { type: "string", description: "Task ID" }
-      },
-      required: ["id"]
-    }
-  },
-  {
-    name: "list_tasks",
-    description: "List tasks with optional filters",
-    inputSchema: {
-      type: "object",
-      properties: {
-        status: { type: "string" },
-        assignee: { type: "string" },
-        priority: { type: "string" }
-      }
-    }
-  },
-  {
-    name: "create_task",
-    description: "Create a new task",
-    inputSchema: {
-      type: "object",
-      properties: {
-        title: { type: "string" },
-        description: { type: "string" },
-        priority: { type: "string" },
-        labels: { type: "array", items: { type: "string" } }
-      },
-      required: ["title"]
-    }
-  }
-  // ... more tools
-];
-```
-
-### Adding a New Tool
-
-1. Define Zod schema in `src/mcp/server.ts`
-2. Register in `ListToolsRequestSchema` handler
-3. Add handler case in `CallToolRequestSchema`
-
-```typescript
-// Example: Adding a new tool
-{
-  name: "my_new_tool",
-  description: "Does something useful",
-  inputSchema: zodToJsonSchema(MyToolInputSchema)
-}
-
-// Handler
-case "my_new_tool": {
-  const input = MyToolInputSchema.parse(request.params.arguments);
-  const result = await doSomething(input);
-  return { content: [{ type: "text", text: JSON.stringify(result) }] };
-}
-```
-
----
-
-## Search & Embedding Module
-
-### Architecture
-
-The search module provides hybrid semantic search using local embedding models.
-
-```
-src/search/
-├── types.ts           # Types: Chunk, ModelConfig, EmbeddingResult
-├── embedding.ts       # EmbeddingService - model loading & inference
-├── chunker.ts         # Document/Task chunking
-├── store.ts           # SearchIndexStore - SQLite-based index
-├── engine.ts          # HybridSearchEngine - semantic + keyword
-└── index-service.ts   # Incremental index updates
-```
-
-### Embedding Service
-
-```typescript
-import { EmbeddingService, ExtendedEmbeddingConfig } from "@search/embedding";
-
-// Create service with config
-const config: ExtendedEmbeddingConfig = {
-  model: "gte-small",
-  huggingFaceId: "Xenova/gte-small",  // Optional for custom models
-  dimensions: 384,                      // Optional
-  maxTokens: 512,                       // Optional
-};
-
-const service = new EmbeddingService(config);
-
-// Load model (downloads if not present)
-await service.loadModel((progress) => {
-  console.log(`Download progress: ${progress}%`);
-});
-
-// Generate embeddings
-const result = await service.embed("Some text to embed");
-// result = { embedding: number[], tokenCount: number }
-
-// Embed chunks with attached embeddings
-const embeddedChunks = await service.embedChunks(chunks);
-
-// Check model status
-const status = await service.getModelStatus();
-// { model, downloaded, valid, path, sizeBytes, fileCount }
-```
-
-### Model Resolution
-
-Models are resolved in this priority order:
-
-1. **Built-in models** (`EMBEDDING_MODELS` in `types.ts`)
-2. **Custom models** (`~/.knowns/custom-models.json`)
-3. **Project config** (`huggingFaceId` in settings)
-
-```typescript
-// Built-in models
-const EMBEDDING_MODELS = {
-  "gte-small": {
-    name: "gte-small",
-    dimensions: 384,
-    maxTokens: 512,
-    huggingFaceId: "Xenova/gte-small",
-  },
-  // ...
-};
-
-// Custom models format (~/.knowns/custom-models.json)
-[
-  {
-    "id": "my-custom-model",
-    "huggingFaceId": "Xenova/some-model",
-    "dimensions": 1024,
-    "maxTokens": 512,
-    "custom": true
-  }
-]
-```
-
-### Adding a New Built-in Model
-
-1. Add config to `EMBEDDING_MODELS` in `src/search/types.ts`
-2. Add to `RECOMMENDED_MODELS` in `src/commands/model.ts`
-
-```typescript
-// src/search/types.ts
-export const EMBEDDING_MODELS: Record<string, ModelConfig> = {
-  // ...existing models...
-  "new-model": {
-    name: "new-model",
-    dimensions: 768,
-    maxTokens: 512,
-    huggingFaceId: "Xenova/new-model",
-  },
-};
-```
-
-### Search Index
-
-The search index uses SQLite for persistence:
-
-```typescript
-import { SearchIndexStore } from "@search/store";
-
-const store = new SearchIndexStore(projectRoot, model);
-
-// Initialize database
-await store.initDatabase();
-
-// Add chunks
-await store.addChunks(embeddedChunks);
-
-// Save to disk
-await store.save(embeddedChunks);
-
-// Search
-const results = await store.search(queryEmbedding, {
-  type: "all",
-  limit: 20,
-});
-```
-
-### Model Storage
-
-Models are stored globally:
-
-- **Location**: `~/.knowns/models/<huggingFaceId>/`
-- **Format**: Transformers.js ONNX format
-- **Shared**: All projects use the same downloaded models
-
----
-
-## Guidelines System
-
-AI agent guidelines use a unified template system with Handlebars conditionals for CLI/MCP variants.
-
-### Unified Templates
-
-All guidelines are defined once in `src/instructions/guidelines/unified/`:
-
-```
-src/instructions/guidelines/unified/
-├── index.ts                 # Renders CLI/MCP variants
-├── core-rules.md           # {{#if mcp}}...{{else}}...{{/if}}
-├── commands-reference.md
-├── context-optimization.md
-├── workflow-creation.md
-├── workflow-execution.md
-├── workflow-completion.md
-└── common-mistakes.md
-```
-
-### How It Works
-
-```typescript
-// src/instructions/guidelines/unified/index.ts
-import { renderString } from "../../../codegen/renderer";
-
-function createGuidelines(mode: "cli" | "mcp") {
-  return {
-    core: render(coreRulesMd, mode),
-    commands: render(commandsReferenceMd, mode),
-    // ...
-    getFull(withMarkers = false): string { ... },
-    getCompact(): string { ... },
-    getForStage(stage): string { ... },
-  };
-}
-
-export const CLIGuidelines = createGuidelines("cli");
-export const MCPGuidelines = createGuidelines("mcp");
-```
-
-### Handlebars Conditionals
-
-Use `{{#if mcp}}` and `{{#unless mcp}}` for variant-specific content:
-
-```markdown
-{{#if mcp}}
-**Use MCP tools for ALL operations.**
-{{else}}
-**Use CLI commands for ALL operations.**
-{{/if}}
-```
-
-### Adding New Guidelines
-
-1. Edit the unified template in `src/instructions/guidelines/unified/`
-2. Use `{{#if mcp}}` for MCP-specific content
-3. Use `{{#unless mcp}}` for CLI-only content
-4. Run `knowns sync` to update CLAUDE.md and AGENTS.md
-
-### Commander.js Option Inheritance
-
-When parent command has options that should pass to subcommands:
-
-```typescript
-const parentCommand = new Command("parent")
-  .enablePositionalOptions()
-  .passThroughOptions()
-  .option("--flag", "Description")
-```
-
-Also ensure `.enablePositionalOptions()` is on root program in `src/index.ts`.
-
----
-
-## Contributing Guidelines
-
-### Development Setup
+## Development Commands
 
 ```bash
-# Clone repository
-git clone https://github.com/knowns-dev/knowns.git
-cd knowns
-
-# Install dependencies
-npm install
-
-# Start development server
-npm run dev
+make build
+make dev
+make test
+make test-e2e
+make lint
+make ui
 ```
 
-### Code Style
+Use `go run ./cmd/knowns --help` and subcommand help while updating docs or CLI behavior.
 
-- **Formatter**: Biome
-- **Run lint**: `npm run lint`
-- **Auto-fix**: `npm run lint:fix`
+---
 
-### Testing
+## Documentation Rule
 
-```bash
-# Unit tests
-npm test
+This repo has accumulated older Node/TypeScript-era docs. If code and docs disagree, trust the Go implementation and CLI help first, then update docs to match.
 
-# Unit tests with coverage
-npm test -- --coverage
-```
+---
 
-### Git Workflow
+## Related
 
-1. Create feature branch from `develop`
-2. Make changes with clear commits
-3. Run tests and lint
-4. Create PR to `develop`
-
-### Commit Message Format
-
-```
-<type>: <description>
-
-[optional body]
-```
-
-Types:
-- `feat`: New feature
-- `fix`: Bug fix
-- `docs`: Documentation
-- `refactor`: Code refactoring
-- `test`: Adding tests
-- `chore`: Maintenance
-
-### Adding a New Command
-
-1. Create file in `src/commands/`
-2. Export from `src/commands/index.ts`
-3. Register in `src/index.ts`
-
-Example:
-
-```typescript
-// src/commands/my-command.ts
-import { Command } from "commander";
-
-export function registerMyCommand(program: Command) {
-  program
-    .command("my-command")
-    .description("Does something")
-    .option("-o, --option <value>", "An option")
-    .action(async (options) => {
-      // Implementation
-    });
-}
-```
-
-### Adding UI Components
-
-Follow Atomic Design:
-- **Atoms**: Basic elements (Button, Input)
-- **Molecules**: Combinations (SearchBox, FormField)
-- **Organisms**: Complex (TaskCard, Board)
-- **Templates**: Page layouts
-
-Use shadcn/ui primitives from `src/ui/components/ui/`.
-
-### Pull Request Checklist
-
-- [ ] Tests pass (`npm test`)
-- [ ] Lint passes (`npm run lint`)
-- [ ] Build works (`npm run build`)
-- [ ] Documentation updated if needed
-- [ ] Commit messages follow convention
+- [Architecture](../ARCHITECTURE.md) - Higher-level system overview
+- [Configuration](./configuration.md) - Runtime config fields
+- [Command Reference](./commands.md) - Current CLI surface

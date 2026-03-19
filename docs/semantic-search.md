@@ -29,19 +29,19 @@ The model downloads automatically to `~/.knowns/models/` (shared across projects
 
 ```bash
 # 1. Enable in config
-knowns config set search.semantic.enabled true
+knowns config set settings.semanticSearch.enabled true
 
 # 2. Download model (if not already)
 knowns model download gte-small
 
 # 3. Build search index
-knowns search reindex
+knowns search --reindex
 ```
 
 ### Verify Setup
 
 ```bash
-knowns search status
+knowns search --status-check
 # → Semantic: enabled (gte-small)
 # → Index: 145 items, last updated 2m ago
 # → Model: ~/.knowns/models/gte-small (67MB)
@@ -70,14 +70,8 @@ knowns model list
 # Download a model
 knowns model download gte-small
 
-# Download with alias
-knowns model download Xenova/gte-small --as gte-small
-
 # Remove a model
 knowns model remove gte-small
-
-# Show model info
-knowns model info gte-small
 ```
 
 ### First Download
@@ -163,20 +157,20 @@ In `.knowns/config.json`:
 | --------------- | ------- | ------------- | --------------------------------------- |
 | `enabled`       | boolean | `false`       | Enable/disable semantic search          |
 | `model`         | string  | `"gte-small"` | Model ID to use                         |
-| `huggingFaceId` | string  | -             | Full HuggingFace ID (for custom models) |
+| `huggingFaceId` | string  | -             | HuggingFace ID for the selected model    |
 | `dimensions`    | number  | -             | Embedding dimensions (auto-detected)    |
 
 ### CLI Config Commands
 
 ```bash
 # Enable semantic search
-knowns config set search.semantic.enabled true
+knowns config set settings.semanticSearch.enabled true
 
 # Change model
-knowns config set search.semantic.model gte-base
+knowns config set settings.semanticSearch.model gte-base
 
 # View current config
-knowns config get search.semantic
+knowns config get settings.semanticSearch
 ```
 
 ---
@@ -215,7 +209,7 @@ Index updates automatically when:
 
 - Tasks created/updated
 - Docs created/updated
-- Manual reindex via `knowns search reindex`
+- Manual reindex via `knowns search --reindex`
 
 ### Chunking Strategy
 
@@ -270,7 +264,7 @@ Warning: Search index is stale (last updated 7 days ago)
 **Fix:**
 
 ```bash
-knowns search reindex
+knowns search --reindex
 ```
 
 ### Search Returns No Results
@@ -278,7 +272,7 @@ knowns search reindex
 1. Check if semantic search is enabled:
 
    ```bash
-   knowns search status
+   knowns search --status-check
    ```
 
 2. Check if index exists:
@@ -289,7 +283,7 @@ knowns search reindex
 
 3. Rebuild index:
    ```bash
-   knowns search reindex
+   knowns search --reindex
    ```
 
 ### Slow First Search
@@ -302,8 +296,8 @@ Large models use more RAM. If memory is limited:
 
 ```bash
 # Use smaller model
-knowns config set search.semantic.model gte-small
-knowns search reindex
+knowns config set settings.semanticSearch.model gte-small
+knowns search --reindex
 ```
 
 ### Clone Repo - Search Not Working
@@ -319,9 +313,9 @@ knowns search --reindex
 ## Tips
 
 1. **Start with `gte-small`** - Best balance of speed and quality
-2. **Reindex after bulk changes** - `knowns search reindex`
+2. **Reindex after bulk changes** - `knowns search --reindex`
 3. **Use `--type` filter** - Faster and more relevant results
-4. **Check status regularly** - `knowns search status`
+4. **Check status regularly** - `knowns search --status-check`
 
 ---
 

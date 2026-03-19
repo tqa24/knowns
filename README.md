@@ -1,16 +1,22 @@
 <p align="center">
-  <img src="images/cover.png" alt="Knowns — The Memory Layer for AI-Native Development" width="100%">
+  <img src="./images/logo.png" alt="Knowns logo" width="240">
 </p>
 
 # Knowns
 
+[![Go](https://img.shields.io/badge/go-%3E%3D1.24.2-00ADD8?style=flat-square&logo=go)](https://go.dev/)
 [![npm](https://img.shields.io/npm/v/knowns.svg?style=flat-square)](https://www.npmjs.com/package/knowns)
 [![CI](https://github.com/knowns-dev/knowns/actions/workflows/ci.yml/badge.svg)](https://github.com/knowns-dev/knowns/actions/workflows/ci.yml)
-[![Node](https://img.shields.io/node/v/knowns?style=flat-square&label=node)](https://nodejs.org/)
 [![Platform](https://img.shields.io/badge/platform-win%20%7C%20mac%20%7C%20linux-lightgrey?style=flat-square)](#installation)
 [![License](https://img.shields.io/github/license/knowns-dev/knowns?style=flat-square)](LICENSE)
 
 > Turn stateless AI into a project-aware engineering partner.
+
+> [!WARNING]
+> Knowns is under active development. APIs, database schemas, and configuration formats may change between releases. Review the known limitations and security considerations before deploying to production.
+
+> [!IMPORTANT]
+> **v0.13+: Rewritten in Go.** To support AI Agent Workspaces (process management, live terminal, git worktree isolation), Knowns has been rewritten in Go as a native binary. CLI commands and `.knowns/` data format are fully backward-compatible. Install via `npm i -g knowns` still works (auto-downloads platform binary).
 
 **Knowns is the memory layer for AI-native software development — enabling AI to understand your project instantly.**
 
@@ -23,6 +29,10 @@ No lost architectural knowledge.
 Just AI that already understands your system.
 
 ⭐ If you believe AI should truly understand software projects, consider giving **Knowns** a star.
+
+<p align="center">
+  <img src="./images/task-workflow.gif" alt="Knowns task workflow demo" width="100%">
+</p>
 
 ## Table of Contents
 
@@ -124,18 +134,52 @@ AI stops guessing — and starts contributing.
 
 ## Installation
 
-```bash
-# npm
-npm install -g knowns
+### Pre-built binaries
 
-# bun
-bun install -g knowns
+```bash
+# Homebrew (macOS/Linux)
+brew install knowns-dev/tap/knowns
+```
+
+```bash
+# Shell installer (macOS/Linux)
+curl -fsSL https://raw.githubusercontent.com/knowns-dev/knowns/main/install/install.sh | sh
+
+# Or with wget
+wget -qO- https://raw.githubusercontent.com/knowns-dev/knowns/main/install/install.sh | sh
+```
+
+```powershell
+# PowerShell installer (Windows)
+irm https://raw.githubusercontent.com/knowns-dev/knowns/main/install/install.ps1 | iex
+```
+
+```bash
+# npm — installs platform-specific binary automatically
+npm install -g knowns
 
 # npx (no install)
 npx knowns
+```
 
+### From source (Go 1.24.2+)
+
+```bash
+# Install to GOPATH/bin
+go install github.com/howznguyen/knowns/cmd/knowns@latest
+
+# Or clone and build
+git clone https://github.com/knowns-dev/knowns.git
+cd knowns
+make build        # Output: dist/knowns
+make install      # Install to GOPATH/bin
+```
+
+### Get started
+
+```bash
 knowns init
-knowns browser  # Open Web UI
+knowns browser --open   # Start Web UI and open browser
 ```
 
 ---
@@ -153,6 +197,7 @@ knowns browser  # Open Web UI
 | **Template System** | Code generation with Handlebars (`.hbs`) templates |
 | **Import System**   | Import docs/templates from git, npm, or local      |
 | **AI Integration**  | Full MCP Server with AC/plan/notes operations      |
+| **AI Workspaces**   | Multi-phase agent orchestration with live terminal |
 | **Web UI**          | Kanban board, doc browser, mermaid diagrams        |
 
 ---
@@ -189,8 +234,8 @@ knowns search "query" --plain
 knowns validate                             # Check broken refs
 
 # AI Guidelines
-knowns agents sync                          # Sync CLAUDE.md, AGENTS.md
-knowns agents sync --type mcp               # MCP tools format
+knowns agents --sync                        # Sync/generate instruction files
+knowns sync                                 # Sync skills + instruction files
 ```
 
 ---
@@ -274,33 +319,57 @@ Claude: [Creates conventional commit]
 | [MCP Integration](./docs/mcp-integration.md)   | Claude Desktop setup with full MCP tools   |
 | [Configuration](./docs/configuration.md)       | Project structure and options              |
 | [Developer Guide](./docs/developer-guide.md)   | Technical docs for contributors            |
-| [Changelog](./CHANGELOG.md)                    | Version history                            |
+| [User Guide](./docs/user-guide.md)             | Getting started and daily usage            |
+| [Multi-Platform](./docs/multi-platform.md)     | Cross-platform build and distribution      |
 
 ---
 
 ## Roadmap
 
+### AI Agent Workspaces ✅ (Active)
+
+Multi-phase agent orchestration — assign tasks to AI agents with git worktree isolation, live terminal streaming, and automatic phase progression (research → plan → implement → review).
+
 ### Self-Hosted Team Sync 🚧 (Planned)
 
-Knowns will optionally support a self-hosted sync server — for teams that want shared visibility without giving up local-first workflows.
+Optional self-hosted sync server for shared visibility without giving up local-first workflows.
 
 - **Real-time visibility** — See who is working on what
 - **Shared knowledge** — Sync tasks and documentation across the team
-- **Progress tracking** — Track activity over time
 - **Full data control** — Self-hosted, no cloud dependency
-
-The CLI and local `.knowns/` folder remain the source of truth.
-The server acts only as a sync and visibility layer.
 
 ---
 
 ## Development
 
+Requires **Go 1.24.2+** and optionally **Node.js + pnpm** for UI development.
+
 ```bash
-npm install
-npm run dev      # Dev mode
-npm run build    # Build
-npm run test     # Test
+make build              # Build binary → dist/knowns
+make dev                # Build with race detector
+make test               # Run unit tests
+make test-e2e           # Run CLI + MCP E2E tests
+make test-e2e-semantic  # E2E tests including semantic search
+make lint               # Run golangci-lint
+make cross-compile      # Build for all 6 platforms
+make ui                 # Rebuild embedded Web UI (requires pnpm)
+```
+
+### Project structure
+
+```
+cmd/knowns/          # CLI entry point
+internal/
+  cli/               # Cobra commands
+  models/            # Domain models
+  storage/           # File-based storage (.knowns/)
+  server/            # HTTP server, SSE, WebSocket
+    routes/          # REST API handlers
+    workspace/       # Agent orchestrator, process manager, worktree
+  mcp/               # MCP server (stdio)
+  search/            # Semantic search (ONNX)
+ui/                  # Embedded React UI (built assets)
+tests/               # E2E tests
 ```
 
 ## Links

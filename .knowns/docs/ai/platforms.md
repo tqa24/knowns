@@ -1,8 +1,8 @@
 ---
 title: AI Platforms
 createdAt: '2026-01-23T04:07:55.100Z'
-updatedAt: '2026-01-23T04:08:23.052Z'
-description: 'Configuration for Claude Code, Antigravity, Cursor, Gemini CLI'
+updatedAt: '2026-03-12T17:59:05.289Z'
+description: 'Supported AI platforms: Claude Code, OpenCode. Reference configs for others.'
 tags:
   - feature
   - ai
@@ -10,145 +10,170 @@ tags:
 ---
 ## Overview
 
-Configuration for each AI platform.
+Knowns officially supports **Claude Code** and **OpenCode**. Other platforms can use Knowns via MCP — configs below are for reference only.
 
 **Related:** @doc/ai/mcp, @doc/ai/skills
 
 ---
 
-## Claude Code
+## Supported Platforms
 
-### Structure
+### Claude Code
+
+| Item | Value |
+|------|-------|
+| **MCP Config** | `.mcp.json` (project-level, auto-created by `knowns init`) |
+| **Instructions** | `CLAUDE.md` (auto-created by `knowns init`) |
+| **Skills** | `.claude/skills/` (auto-synced) |
+
 ```
 .claude/
 ├── CLAUDE.md              # Instructions
 ├── settings.json
 └── skills/
-    └── knowns-task/SKILL.md
+    └── kn-*/SKILL.md      # Synced from .knowns/skills/
 ```
 
-### MCP: `.mcp.json`
+MCP config (`.mcp.json`):
 ```json
 {
   "mcpServers": {
     "knowns": {
-      "command": "npx",
-      "args": ["-y", "knowns", "mcp"]
+      "command": "knowns",
+      "args": ["mcp"]
     }
   }
 }
 ```
 
+> Auto-configured by `knowns init`. No manual setup needed.
+
 ---
 
-## Google Antigravity
+### OpenCode
 
-### Structure
-```
-.agent/
-├── skills/                # SKILL.md (same as Claude\!)
-├── rules/
-└── workflows/
+| Item | Value |
+|------|-------|
+| **MCP Config** | `opencode.json` (project-level) or `~/.config/opencode/opencode.json` (global) |
+| **Instructions** | `OPENCODE.md` or project rules |
+| **Skills** | N/A |
 
-~/.gemini/antigravity/skills/  # Global
-```
-
-### MCP: `.agent/settings.json`
+MCP config (`opencode.json` in project root):
 ```json
 {
+  "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "servers": {
-      "knowns": {
-        "command": "npx",
-        "args": ["-y", "knowns", "mcp"]
-      }
-    }
-  }
-}
-```
-
-> **Portable:** Claude Code ↔ Antigravity use the same SKILL.md format
-
----
-
-## Gemini CLI
-
-### Structure
-```
-project/
-├── GEMINI.md              # Project instructions
-
-~/.gemini/
-├── settings.json          # MCP config
-└── commands/              # Custom /commands
-```
-
-### MCP: `~/.gemini/settings.json`
-```json
-{
-  "mcpServers": {
     "knowns": {
-      "command": "npx",
-      "args": ["-y", "knowns", "mcp"]
+      "type": "local",
+      "command": ["knowns", "mcp"],
+      "enabled": true
     }
   }
 }
 ```
 
----
+> **Note**: OpenCode uses global MCP config. Run `mcp__knowns__detect_projects` and `mcp__knowns__set_project` at session start.
 
-## Cursor
+#### OpenCode + Antigravity Auth (Community)
 
-### Structure
-```
-.cursor/
-├── rules/
-│   └── knowns.mdc
-└── mcp.json
-```
+Use [opencode-antigravity-auth](https://github.com/NoeFabris/opencode-antigravity-auth) to access Gemini/Claude models via Google OAuth:
 
-### .mdc Format
-```markdown
----
-description: "Knowns integration"
-alwaysApply: true
-globs: ["**/*.ts"]
----
-
-Rule content...
+```bash
+npm i -g opencode-antigravity-auth
+opencode auth login  # Choose Google -> OAuth with Google (Antigravity)
 ```
 
-### Rule Types
-| Type | Trigger |
-|------|---------|
-| Always Apply | Every chat |
-| Apply Intelligently | AI decides |
-| Apply to Specific Files | Glob match |
-| Apply Manually | @mention |
+> **Warning**: Google may block accounts using this plugin. Use at your own risk.
 
 ---
-
-## Other Platforms
-
-### Windsurf
-`.windsurfrules` - Single file, inline instructions
-
-### Cline
-`.clinerules/` - Markdown files
-
-### Continue
-`.continue/config.json` - Custom commands
-
-### GitHub Copilot
-`.github/copilot-instructions.md` - No MCP
-
----
-
 ## Comparison
 
-| Platform | Skills Location | Format | MCP Config |
-|----------|-----------------|--------|------------|
-| Claude Code | `.claude/skills/` | SKILL.md | `.mcp.json` |
-| Antigravity | `.agent/skills/` | SKILL.md | `.agent/settings.json` |
-| Gemini CLI | `~/.gemini/commands/` | .md | `~/.gemini/settings.json` |
-| Cursor | `.cursor/rules/` | .mdc | `.cursor/mcp.json` |
+| | Claude Code | OpenCode |
+|--|-------------|----------|
+| **MCP** | `.mcp.json` (project) | `opencode.json` (project/global) |
+| **Instructions** | `CLAUDE.md` | `OPENCODE.md` |
+| **Skills** | `.claude/skills/` | N/A |
+| **Auto-setup** | `knowns init` | `knowns init` |
+| **Project scope** | Per-project | Needs `set_project` |
+
+---
+
+## Other Platforms (Reference Only)
+
+These configs are **not officially supported** but may work with Knowns MCP.
+
+### Gemini CLI
+
+```json
+// ~/.gemini/settings.json
+{
+  "mcpServers": {
+    "knowns": {
+      "command": "knowns",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+### Antigravity (Google IDE)
+
+```json
+// ~/.gemini/antigravity/mcp_config.json
+{
+  "mcpServers": {
+    "knowns": {
+      "command": "knowns",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+### Cursor
+
+```json
+// .cursor/mcp.json
+{
+  "mcpServers": {
+    "knowns": {
+      "command": "knowns",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+### Continue
+
+```json
+// .continue/config.json
+{
+  "experimental": {
+    "modelContextProtocolServers": [
+      {
+        "name": "knowns",
+        "transport": {
+          "type": "stdio",
+          "command": "knowns",
+          "args": ["mcp"]
+        }
+      }
+    ]
+  }
+}
+```
+
+### Cline
+
+```json
+// .cline/mcp.json
+{
+  "mcpServers": {
+    "knowns": {
+      "command": "knowns",
+      "args": ["mcp"]
+    }
+  }
+}
+```

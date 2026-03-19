@@ -1,82 +1,33 @@
+# GEMINI
+
+Compatibility entrypoint for runtimes that auto-detect `GEMINI.md`.
+
 <!-- KNOWNS GUIDELINES START -->
-# Knowns Guidelines
 
-> These rules are NON-NEGOTIABLE. Violating them causes data corruption.
+## Canonical Guidance
 
-## Session Init (Required)
+- Knowns is the repository memory layer for humans and the AI-friendly working layer for agents.
+- The source of truth for repo-level agent guidance is `KNOWNS.md`.
+- Read `KNOWNS.md` first whenever the runtime supports reading repository files.
+- If this file and `KNOWNS.md` differ, follow `KNOWNS.md`.
 
-```json
-mcp__knowns__detect_projects({})
-mcp__knowns__set_project({ "projectRoot": "/path/to/project" })
-```
+## Minimum Rules
 
-**Skip this = tools fail or work on wrong project.**
+- Use Knowns as the canonical system for tasks, docs, templates, and workflow state.
+- Never manually edit Knowns-managed task or doc markdown.
+- Search first, then read only relevant docs and code.
+- Plan before implementation unless the user explicitly overrides that workflow.
+- Validate before considering work complete.
 
----
-
-## Critical Rules
-
-| Rule | Description |
-|------|-------------|
-| **Never edit .md** | Use MCP tools (preferred) or CLI. NEVER edit task/doc files directly |
-| **Docs first** | Read project docs BEFORE planning or coding |
-| **Plan → Approve → Code** | Share plan, WAIT for approval, then implement |
-| **AC after work** | Only check acceptance criteria AFTER completing work |
-| **Time tracking** | `start_time` when taking task, `stop_time` when done |
-| **Validate** | Run `validate` before marking task done |
-| **appendNotes** | Use `appendNotes` for progress. `notes` REPLACES all (destroys history) |
-
----
-
-## CLI Pitfalls
-
-### The `-a` flag trap
-
-| Command | `-a` means | NOT this |
-|---------|------------|----------|
-| `task create/edit` | `--assignee` | ~~acceptance criteria~~ |
-| `doc edit` | `--append` | ~~assignee~~ |
+## Quick Reference
 
 ```bash
-# WRONG - sets assignee to garbage!
-knowns task edit 35 -a "Criterion text"
-
-# CORRECT
-knowns task edit 35 --ac "Criterion text"
+knowns doc list --plain               # List docs
+knowns task list --plain              # List tasks
+knowns task <id> --plain              # View task
+knowns doc "<path>" --plain --smart  # View doc
+knowns search "query" --plain        # Search docs/tasks
+knowns guidelines --plain             # Full workflow reference
 ```
 
-### --plain flag
-
-**Only for view/list/search commands:**
-```bash
-knowns task <id> --plain      # ✓
-knowns task list --plain      # ✓
-knowns task create --plain    # ✗ ERROR
-knowns task edit --plain      # ✗ ERROR
-```
-
-### Subtasks
-
-```bash
-knowns task create "Sub" --parent 48    # ✓ raw ID
-knowns task create "Sub" --parent task-48  # ✗ WRONG
-```
-
----
-
-## References
-
-Tasks and docs can reference each other:
-
-| Type | Format |
-|------|--------|
-| Task | `@task-<id>` |
-| Doc | `@doc/<path>` |
-| Template | `@template/<name>` |
-
-**Always follow refs recursively** before planning.
-
----
-
-> **Full reference:** Run `knowns guidelines --plain` for complete documentation
 <!-- KNOWNS GUIDELINES END -->

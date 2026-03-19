@@ -1345,4 +1345,4 @@ Task IDs have been updated from 4-character to 6-character random base36:
 - **Safe limit**: ~6,600 tasks per project
 - **Backward compatible**: Legacy sequential IDs (`task-1`, `task-2`) still work
 
-See @doc/architecture/features/id-strategy for details.
+See @doc/features/id-strategy for details.

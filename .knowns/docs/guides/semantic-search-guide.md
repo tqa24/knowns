@@ -1,7 +1,7 @@
 ---
 title: Semantic Search Guide
 createdAt: '2026-02-24T08:44:32.489Z'
-updatedAt: '2026-02-24T08:49:03.146Z'
+updatedAt: '2026-03-08T18:18:32.324Z'
 description: Complete guide for setting up and using semantic search with local AI models
 tags:
   - guide
@@ -16,17 +16,18 @@ Search tasks and docs by **meaning**, not just keywords. Uses local AI models fo
 
 ## Architecture
 
+Knowns uses ONNX Runtime (via Go bindings) for local embedding inference. No external API calls required.
+
 ```mermaid
 graph TD
     A[Tasks/Docs] --> B[Chunker]
-    B --> C[Embedding Model]
+    B --> C[ONNX Runtime - Go]
     C --> D[Vector Index]
     E[Query] --> C
     C --> F[Hybrid Search]
     D --> F
     F --> G[Results]
 ```
-
 ## Quick Start
 
 ```bash
@@ -43,7 +44,7 @@ knowns search reindex
 
 ## Model Management
 
-Models stored at `~/.knowns/models/` (shared across projects).
+ONNX models are stored at `~/.knowns/models/` (shared across projects). The Go binary loads models directly via ONNX Runtime -- no Node.js or Python dependencies required.
 
 | Model | Size | Speed | Best For |
 |-------|------|-------|----------|
@@ -56,7 +57,6 @@ knowns model list              # List downloaded
 knowns model download gte-small # Download
 knowns model remove gte-small   # Remove
 ```
-
 ## Search Usage
 
 ```bash

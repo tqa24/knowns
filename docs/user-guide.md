@@ -9,6 +9,15 @@ Complete guide for using Knowns - a CLI-first knowledge layer and task managemen
 ### Installation
 
 ```bash
+# Homebrew (macOS/Linux)
+brew install knowns-dev/tap/knowns
+
+# Shell installer (macOS/Linux)
+curl -fsSL https://raw.githubusercontent.com/knowns-dev/knowns/main/install/install.sh | sh
+
+# Or with wget
+wget -qO- https://raw.githubusercontent.com/knowns-dev/knowns/main/install/install.sh | sh
+
 # npm (requires Node.js 18+)
 npm install -g knowns
 
@@ -17,6 +26,11 @@ bun install -g knowns
 
 # npx (no installation, requires Node.js)
 npx knowns <command>
+```
+
+```powershell
+# PowerShell installer (Windows)
+irm https://raw.githubusercontent.com/knowns-dev/knowns/main/install/install.ps1 | iex
 ```
 
 ### Initialize a Project
@@ -73,7 +87,7 @@ knowns task create "Setup project" -d "Initial project setup"
 knowns task list
 
 # Start the Web UI
-knowns browser
+knowns browser --open
 ```
 
 ---
@@ -93,15 +107,15 @@ knowns task create "Title" [options]
 |--------|-------|-------------|
 | `--description` | `-d` | Task description |
 | `--ac` | | Acceptance criteria (repeatable) |
-| `--labels` | `-l` | Comma-separated labels |
+| `--label` | `-l` | Task label (repeatable) |
 | `--priority` | | low \| medium \| high |
-| `--parent` | `-p` | Parent task ID |
+| `--parent` | | Parent task ID |
 | `--assignee` | `-a` | Assign to user (@me, @username) |
 
 **Examples:**
 
 ```bash
-knowns task create "Add login" -d "Implement user login" --ac "Login form works" --ac "JWT tokens stored" -l "auth,feature" --priority high
+knowns task create "Add login" -d "Implement user login" --ac "Login form works" --ac "JWT tokens stored" -l auth -l feature --priority high
 ```
 
 #### View Task
@@ -315,20 +329,6 @@ After changing models, rebuild the search index:
 knowns search --reindex
 ```
 
-#### Add Custom Model
-
-```bash
-knowns model add <huggingface-id> [--dims <n>] [--tokens <n>]
-```
-
-**Example:**
-
-```bash
-knowns model add Xenova/bge-large-en-v1.5 --dims 1024 --tokens 512
-knowns model download bge-large-en-v1.5
-knowns model set bge-large-en-v1.5
-```
-
 #### Check Status
 
 ```bash
@@ -367,7 +367,7 @@ knowns template run <name> [options]
 knowns template run react-component
 
 # With pre-filled values
-knowns template run react-component --name UserProfile --withTest
+knowns template run react-component -v name=UserProfile
 
 # Preview only
 knowns template run react-component --dry-run
@@ -376,7 +376,7 @@ knowns template run react-component --dry-run
 #### View Template
 
 ```bash
-knowns template view <name> [--with-doc] [--plain]
+knowns template view <name>
 ```
 
 #### Create Template
@@ -401,34 +401,18 @@ Skills are AI workflow instructions that sync across platforms.
 knowns skill list [--plain]
 ```
 
-#### Create Skill
-
-```bash
-knowns skill create <name> [-d "description"]
-```
-
 #### Sync Skills
 
 ```bash
-knowns skill sync [--platform <platforms>]
+knowns skill sync
 ```
 
-**Supported platforms:** `claude`, `antigravity`, `cursor`, `gemini`
+This command exists, but project/platform sync is mainly handled by `knowns import sync` and top-level `knowns sync`.
 
 **Examples:**
 
 ```bash
-# Sync to all platforms
 knowns skill sync
-
-# Sync to specific platforms
-knowns skill sync --platform claude,cursor
-```
-
-#### Check Status
-
-```bash
-knowns skill status
 ```
 
 ---
@@ -541,10 +525,10 @@ Related: @template/react-component
 ### Starting the Web UI
 
 ```bash
-knowns browser
+knowns browser --open
 ```
 
-This opens `http://localhost:6420` in your browser.
+This starts the Web UI server and opens it in your browser. Default port is `3001` unless overridden in config or via `--port`.
 
 ### Navigation
 
@@ -672,7 +656,7 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
   "mcpServers": {
     "knowns": {
       "command": "npx",
-      "args": ["knowns", "mcp"]
+      "args": ["knowns", "mcp", "--stdio"]
     }
   }
 }
@@ -722,17 +706,11 @@ Sync instruction files with Knowns guidelines:
 # Quick sync (CLAUDE.md, AGENTS.md) with full guidelines
 knowns sync
 
-# Sync all files
-knowns sync --all
+# Sync only skills
+knowns sync --skills
 
-# Sync with minimal instruction only
-knowns sync --minimal
-
-# Use MCP tools format
-knowns sync --type mcp
-
-# Use unified guidelines (CLI + MCP)
-knowns sync --type unified
+# Sync only instruction files for Claude
+knowns sync --instructions --platform claude
 ```
 
 ---
@@ -755,8 +733,8 @@ Stop the current timer with `knowns time stop` before starting a new one.
 
 #### Web UI won't start
 
-- Check if port 6420 is available
-- Try `knowns browser --port 6421`
+- Check if port 3001 is available
+- Try `knowns browser --port 3002`
 
 #### Tasks not syncing
 

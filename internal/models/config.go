@@ -1,0 +1,125 @@
+package models
+
+import "time"
+
+// Project is the root configuration stored in .knowns/config.json.
+type Project struct {
+	Name      string          `json:"name"`
+	ID        string          `json:"id"`
+	CreatedAt time.Time       `json:"createdAt"`
+	Settings  ProjectSettings `json:"settings"`
+}
+
+// ProjectSettings holds all user-configurable options for a project.
+type ProjectSettings struct {
+	DefaultAssignee string   `json:"defaultAssignee,omitempty"`
+	DefaultPriority string   `json:"defaultPriority"`
+	DefaultLabels   []string `json:"defaultLabels,omitempty"`
+
+	// TimeFormat is "12h" or "24h".
+	TimeFormat string `json:"timeFormat,omitempty"`
+
+	// GitTrackingMode controls whether .knowns/ files are git-tracked.
+	// Allowed values: "git-tracked", "git-ignored", "none".
+	GitTrackingMode string `json:"gitTrackingMode,omitempty"`
+
+	// Statuses is the ordered list of valid task statuses for this project.
+	Statuses []string `json:"statuses"`
+
+	StatusColors map[string]string `json:"statusColors,omitempty"`
+
+	// VisibleColumns lists which status columns are shown in the board view.
+	VisibleColumns []string `json:"visibleColumns,omitempty"`
+
+	SemanticSearch *SemanticSearchSettings `json:"semanticSearch,omitempty"`
+
+	// ServerPort overrides the default HTTP server port when non-zero.
+	ServerPort int `json:"serverPort,omitempty"`
+
+	// Platforms is the list of AI platforms enabled for this project.
+	// Supported values: "claude-code", "opencode", "gemini", "copilot", "agents".
+	// If empty, all platforms are treated as enabled (backwards-compatible default).
+	Platforms []string `json:"platforms,omitempty"`
+
+	// AutoSyncOnUpdate enables automatic skill/prompt sync when CLI version changes.
+	// When true, skills are re-synced silently on the first command after an upgrade.
+	AutoSyncOnUpdate *bool `json:"autoSyncOnUpdate,omitempty"`
+
+	// EnableChatUI controls whether the Chat UI (powered by OpenCode web) is
+	// shown in the browser. When nil/unset the UI defaults to showing it.
+	EnableChatUI *bool `json:"enableChatUI,omitempty"`
+
+	// OpenCodeServerConfig holds settings for connecting to OpenCode server.
+	OpenCodeServerConfig *OpenCodeServerConfig `json:"opencodeServer,omitempty"`
+
+	// OpenCodeModels holds project-level model manager preferences for OpenCode.
+	OpenCodeModels *OpenCodeModelSettings `json:"opencodeModels,omitempty"`
+}
+
+// OpenCodeServerConfig holds settings for the OpenCode server API.
+type OpenCodeServerConfig struct {
+	// Host is the OpenCode server hostname (default: 127.0.0.1).
+	Host string `json:"host,omitempty"`
+
+	// Port is the OpenCode server port (default: 4096).
+	Port int `json:"port,omitempty"`
+
+	// Password is the authentication password (optional).
+	Password string `json:"password,omitempty"`
+}
+
+// OpenCodeModelSettings stores project-level model manager preferences.
+type OpenCodeModelSettings struct {
+	Version         int               `json:"version"`
+	DefaultModel    *OpenCodeModelRef `json:"defaultModel,omitempty"`
+	VariantModels   map[string]string `json:"variantModels,omitempty"`
+	ActiveModels    []string          `json:"activeModels,omitempty"`
+	HiddenProviders []string          `json:"hiddenProviders,omitempty"`
+}
+
+// OpenCodeModelRef identifies a concrete OpenCode model.
+type OpenCodeModelRef struct {
+	ProviderID string `json:"providerID"`
+	ModelID    string `json:"modelID"`
+}
+
+// SemanticSearchSettings configures the optional embedding-based search index.
+type SemanticSearchSettings struct {
+	Enabled bool   `json:"enabled,omitempty"`
+	Model   string `json:"model"`
+
+	// HuggingFaceID is the full HuggingFace model identifier
+	// (e.g., "Xenova/gte-small").
+	HuggingFaceID string `json:"huggingFaceId,omitempty"`
+
+	// Dimensions is the embedding vector size for the chosen model.
+	Dimensions int `json:"dimensions,omitempty"`
+
+	// MaxTokens is the maximum token count accepted by the model.
+	MaxTokens int `json:"maxTokens,omitempty"`
+}
+
+// DefaultProjectSettings returns a ProjectSettings value populated with the
+// same defaults that the TypeScript CLI uses when initialising a new project.
+func DefaultProjectSettings() ProjectSettings {
+	return ProjectSettings{
+		DefaultPriority: "medium",
+		Statuses:        DefaultStatuses(),
+		StatusColors: map[string]string{
+			"todo":        "gray",
+			"in-progress": "blue",
+			"in-review":   "purple",
+			"done":        "green",
+			"blocked":     "red",
+			"on-hold":     "yellow",
+			"urgent":      "orange",
+		},
+		VisibleColumns: []string{
+			"todo",
+			"in-progress",
+			"blocked",
+			"done",
+			"in-review",
+		},
+	}
+}

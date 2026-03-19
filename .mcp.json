@@ -1,8 +1,11 @@
 {
-	"mcpServers": {
-		"knowns": {
-			"command": "npx",
-			"args": ["-y", "knowns", "mcp"]
-		}
-	}
+  "mcpServers": {
+    "knowns": {
+      "args": [
+        "mcp",
+        "--stdio"
+      ],
+      "command": "/Users/howznguyen/Workspaces/Knowns/knowns-go/bin/knowns"
+    }
+  }
 }

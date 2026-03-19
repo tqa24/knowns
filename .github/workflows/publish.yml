@@ -1,276 +1,88 @@
-name: Publish to npm
+name: Publish to npm (Manual)
+
+# Manual-only publish for re-publishing without a new tag.
+# For normal releases, use the Build & Release workflow (triggered by git tags).
 
 on:
-  push:
-    tags:
-      - "v*.*.*"
   workflow_dispatch:
     inputs:
       version:
         description: "Version to publish (e.g., 1.0.0)"
-        required: false
+        required: true
         type: string
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      id-token: write
+      contents: read
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
-          fetch-depth: 0
-
-      # ============================================
-      # Step 1: Update version from tag
-      # ============================================
-      - name: Update version from tag
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "Updating to version $VERSION"
-
-      # ============================================
-      # Step 2: Build npm dist (Node.js + pnpm)
-      # ============================================
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+          go-version: '1.26'
+      - uses: pnpm/action-setup@v4
         with:
           version: 9
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          registry-url: "https://registry.npmjs.org"
-          cache: "pnpm"
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'pnpm'
+          cache-dependency-path: ui/pnpm-lock.yaml
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      # Build UI
+      - name: Build UI
+        run: cd ui && pnpm install --frozen-lockfile && pnpm run build
 
-      - name: Update package.json version
-        if: startsWith(github.ref, 'refs/tags/v')
+      # Cross-compile Go binaries with embedded UI
+      - name: Build all platform binaries
         run: |
-          pnpm version $VERSION --no-git-tag-version --allow-same-version
-          pnpm biome format --write package.json
+          VERSION=${{ inputs.version }}
+          LDFLAGS="-s -w -X github.com/howznguyen/knowns/internal/util.Version=${VERSION}"
 
-      - name: Run linter
-        run: pnpm run lint
+          echo "Building for all platforms..."
+          CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build -ldflags "$LDFLAGS" -o npm/knowns-darwin-arm64/knowns   ./cmd/knowns
+          CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build -ldflags "$LDFLAGS" -o npm/knowns-darwin-x64/knowns    ./cmd/knowns
+          CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build -ldflags "$LDFLAGS" -o npm/knowns-linux-arm64/knowns   ./cmd/knowns
+          CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -ldflags "$LDFLAGS" -o npm/knowns-linux-x64/knowns    ./cmd/knowns
+          CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -ldflags "$LDFLAGS" -o npm/knowns-win-arm64/knowns.exe ./cmd/knowns
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "$LDFLAGS" -o npm/knowns-win-x64/knowns.exe  ./cmd/knowns
 
-      - name: Run tests
-        run: pnpm test
-
-      - name: Build npm dist
-        run: pnpm run build
-
-      - name: Verify npm build
-        run: |
-          ls -la dist/
-          test -f dist/index.js || (echo "Error: dist/index.js not found" && exit 1)
-
-      # ============================================
-      # Step 3: Build standalone binaries (Bun cross-compile)
-      # ============================================
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - name: Install dependencies (bun)
-        run: bun install
-
-      - name: Build standalone binaries
-        run: |
-          echo "Building standalone binaries for v$VERSION..."
-          bun build --compile --target=bun-darwin-arm64 ./src/index.ts --outfile=knowns-darwin-arm64
-          bun build --compile --target=bun-darwin-x64 ./src/index.ts --outfile=knowns-darwin-x64
-          bun build --compile --target=bun-linux-x64 ./src/index.ts --outfile=knowns-linux-x64
-          chmod +x knowns-darwin-arm64 knowns-darwin-x64 knowns-linux-x64
-
+      # Test Linux binary
       - name: Test Linux binary
         run: |
-          ./knowns-linux-x64 --version
-          ./knowns-linux-x64 --version | grep -q "$VERSION" || echo "Warning: Version mismatch"
+          chmod +x npm/knowns-linux-x64/knowns
+          npm/knowns-linux-x64/knowns --version
 
-      - name: Create tarballs
+      # Update versions
+      - name: Update package versions
         run: |
-          for bin in knowns-darwin-arm64 knowns-darwin-x64 knowns-linux-x64; do
-            tar -czvf ${bin}.tar.gz ${bin}
-            sha256sum ${bin}.tar.gz > ${bin}.tar.gz.sha256
+          VERSION=${{ inputs.version }}
+          for pkg in npm/knowns-*/; do
+            cd "$pkg"
+            npm version "$VERSION" --no-git-tag-version --allow-same-version
+            cd ../..
           done
-          ls -la *.tar.gz
+          cd npm/knowns
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+          cd ../..
 
-      # ============================================
-      # Step 4: Publish to npm
-      # ============================================
-      - name: Publish to npm
-        run: pnpm publish --provenance --access public --no-git-checks
+      # Publish
+      - name: Publish platform packages
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      # ============================================
-      # Step 5: Upload binaries to GitHub Release
-      # ============================================
-      - name: Upload binaries to Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          for file in *.tar.gz *.sha256; do
-            echo "Uploading $file..."
-            gh release upload "v${VERSION}" "$file" --clobber
+          for pkg in npm/knowns-*/; do
+            cd "$pkg"
+            npm publish --access public || true
+            cd ../..
           done
 
-      # ============================================
-      # Step 6: Update Homebrew tap
-      # ============================================
-      - name: Update Homebrew tap
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Publish main package
         env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          if [ -z "$GH_TOKEN" ]; then
-            echo "HOMEBREW_TAP_TOKEN not set, skipping Homebrew update"
-            exit 0
-          fi
-
-          # Get SHA256 for each platform
-          SHA_DARWIN_ARM64=$(cat knowns-darwin-arm64.tar.gz.sha256 | awk '{print $1}')
-          SHA_DARWIN_X64=$(cat knowns-darwin-x64.tar.gz.sha256 | awk '{print $1}')
-          SHA_LINUX_X64=$(cat knowns-linux-x64.tar.gz.sha256 | awk '{print $1}')
-
-          echo "SHA256 checksums:"
-          echo "  darwin-arm64: $SHA_DARWIN_ARM64"
-          echo "  darwin-x64: $SHA_DARWIN_X64"
-          echo "  linux-x64: $SHA_LINUX_X64"
-
-          # Clone homebrew tap repo
-          git clone https://x-access-token:${GH_TOKEN}@github.com/knowns-dev/homebrew-tap.git
-          cd homebrew-tap
-
-          # Update formula using node script
-          node -e "
-          const fs = require('fs');
-          const formula = \`class Knowns < Formula
-            desc \"AI-first CLI for task management and documentation\"
-            homepage \"https://cli.knowns.dev\"
-            version \"${VERSION}\"
-            license \"MIT\"
-
-            on_macos do
-              on_arm do
-                url \"https://github.com/knowns-dev/knowns/releases/download/v${VERSION}/knowns-darwin-arm64.tar.gz\"
-                sha256 \"${SHA_DARWIN_ARM64}\"
-              end
-              on_intel do
-                url \"https://github.com/knowns-dev/knowns/releases/download/v${VERSION}/knowns-darwin-x64.tar.gz\"
-                sha256 \"${SHA_DARWIN_X64}\"
-              end
-            end
-
-            on_linux do
-              on_intel do
-                url \"https://github.com/knowns-dev/knowns/releases/download/v${VERSION}/knowns-linux-x64.tar.gz\"
-                sha256 \"${SHA_LINUX_X64}\"
-              end
-            end
-
-            def install
-              if OS.mac? && Hardware::CPU.arm?
-                bin.install \"knowns-darwin-arm64\" => \"knowns\"
-              elsif OS.mac? && Hardware::CPU.intel?
-                bin.install \"knowns-darwin-x64\" => \"knowns\"
-              elsif OS.linux? && Hardware::CPU.intel?
-                bin.install \"knowns-linux-x64\" => \"knowns\"
-              end
-              bin.install_symlink \"knowns\" => \"kn\"
-            end
-
-            test do
-              assert_match version.to_s, shell_output(\"#{bin}/knowns --version\")
-            end
-          end\`;
-          fs.writeFileSync('Formula/knowns.rb', formula.replace(/^  /gm, ''));
-          "
-
-          # Commit and push
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Formula/knowns.rb
-          git commit -m "Update knowns to v${VERSION}"
-          git push
-
-      # ============================================
-      # Step 7: Commit version bump to main
-      # ============================================
-      - name: Commit version bump
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          git config user.name "howznguyen"
-          git config user.email "howznguyen@knowns.dev"
-          git add package.json pnpm-lock.yaml
-          git commit -m "chore: bump version to $VERSION" || echo "No changes to commit"
-          git push origin HEAD:main
-
-      # ============================================
-      # Step 8: Discord notification
-      # ============================================
-      - name: Get changelog from Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        id: changelog
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          CHANGELOG=$(gh release view "v${VERSION}" --repo ${{ github.repository }} --json body -q '.body' 2>/dev/null || echo "")
-          CHANGELOG=$(echo "$CHANGELOG" | sed '/^\*\*Full Changelog\*\*:/d')
-          if [ -z "$CHANGELOG" ]; then
-            CHANGELOG="See full release notes on GitHub."
-          fi
-          if [ ${#CHANGELOG} -gt 1500 ]; then
-            CHANGELOG="${CHANGELOG:0:1500}..."
-          fi
-          CHANGELOG=$(echo "$CHANGELOG" | jq -Rs .)
-          echo "content=$CHANGELOG" >> $GITHUB_OUTPUT
-
-      - name: Send Discord notification
-        if: startsWith(github.ref, 'refs/tags/v') && success()
-        env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          VERSION: ${{ env.VERSION }}
-          CHANGELOG: ${{ steps.changelog.outputs.content }}
-        run: |
-          if [ -z "$DISCORD_WEBHOOK" ]; then
-            echo "Discord webhook not configured, skipping notification"
-            exit 0
-          fi
-
-          curl -H "Content-Type: application/json" \
-            -X POST \
-            -d "{
-              \"embeds\": [{
-                \"title\": \"🚀 Knowns CLI v${VERSION} Released!\",
-                \"description\": ${CHANGELOG},
-                \"color\": 5814783,
-                \"fields\": [
-                  {
-                    \"name\": \"📦 Install/Update\",
-                    \"value\": \"\`\`\`bash\n# npm\nnpm install -g knowns@${VERSION}\n\n# bun\nbun add -g knowns@${VERSION}\n\`\`\`\",
-                    \"inline\": false
-                  },
-                  {
-                    \"name\": \"🔗 Links\",
-                    \"value\": \"[npm](https://www.npmjs.com/package/knowns/v/${VERSION}) • [GitHub Release](https://github.com/knowns-dev/knowns/releases/tag/v${VERSION}) • [Docs](https://cli.knowns.dev)\",
-                    \"inline\": false
-                  }
-                ],
-                \"footer\": {
-                  \"text\": \"Knowns CLI\"
-                },
-                \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
-              }]
-            }" \
-            "$DISCORD_WEBHOOK"
+          cd npm/knowns
+          npm publish --access public

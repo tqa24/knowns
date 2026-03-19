@@ -13,7 +13,7 @@ Template System is a lightweight code generator that creates files/folders from 
 - **Conditional files** - Generate files based on user choices
 - **Template-Doc linking** - Link templates to documentation
 - **AI-friendly** - Use from CLI or MCP tools
-- **Multi-platform** - Sync skills to Claude, Cursor, Gemini
+- **Import-friendly** - Templates can come from local or imported packages
 
 ---
 
@@ -27,7 +27,7 @@ knowns template list
 knowns template run react-component
 
 # Run with pre-filled answers
-knowns template run react-component --name UserProfile --withTest
+knowns template run react-component -v name=UserProfile -v withTest=true
 
 # Preview without creating files
 knowns template run react-component --dry-run
@@ -261,21 +261,19 @@ actions:
 # List templates
 knowns template list
 knowns template list --plain
+knowns template list --local
+knowns template list --imported
 
 # Run template
 knowns template run <name>
 knowns template run <name> --dry-run
-knowns template run <name> --name Value --flag
+knowns template run <name> -v name=Value
 
 # View template details
 knowns template view <name>
-knowns template view <name> --with-doc
 
 # Create new template
 knowns template create <name>
-
-# Validate template
-knowns template validate <name>
 ```
 
 ### Skill Commands
@@ -284,15 +282,11 @@ knowns template validate <name>
 # List skills
 knowns skill list
 
-# Create skill
-knowns skill create <name>
+# View a skill
+knowns skill view <name>
 
-# Sync to AI platforms
+# Sync imported skills
 knowns skill sync
-knowns skill sync --platform claude,cursor
-
-# Check sync status
-knowns skill status
 ```
 
 ---
@@ -315,6 +309,8 @@ Related template: @template/react-component
 ```
 
 AI can follow links to understand context before generating.
+
+At the CLI level, `knowns template view <name>` shows the template metadata, including its linked doc path when present.
 
 ---
 

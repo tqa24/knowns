@@ -1,52 +1,30 @@
-# dependencies (bun install)
-node_modules
+# Build output
+bin/
+tmp/
+*.exe
+knowns
 
-# output
-out
-dist
-*.tgz
+# npm platform binaries
+npm/knowns-*/knowns
+npm/knowns-*/knowns.exe
 
-# code coverage
-coverage
-*.lcov
-
-# logs
-logs
-_.log
-report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
-
-# dotenv environment variable files
-.env
-.env.development.local
-.env.test.local
-.env.production.local
-.env.local
-
-# caches
-.eslintcache
-.cache
-*.tsbuildinfo
-
-# IntelliJ based IDEs
-.idea
-
-# Finder (MacOS) folder config
+# OS
 .DS_Store
 
+# UI
+ui/node_modules/
+ui/dist/
+ui/playwright-report/
+ui/test-results/
+playwright-report/
+test-results/
 
-# Claude Code settings
-.claude/
-.clinerules/
-.cursor
-.windsurfrules
-.agents
-
-# knowns (ignore all except docs)
+# >>> KNOWNS >>>
+# Managed by Knowns CLI — do not edit manually.
+# Run 'knowns init' to regenerate this block.
 .knowns/*
 !.knowns/docs/
 !.knowns/docs/**
 !.knowns/templates/
 !.knowns/templates/**
-
-# knowns search index (rebuilt on demand)
-.knowns/search-index/
+# <<< KNOWNS <<<

@@ -1,7 +1,7 @@
 ---
 title: Release Process
 createdAt: '2026-01-06T07:55:21.590Z'
-updatedAt: '2026-01-06T08:45:48.430Z'
+updatedAt: '2026-03-08T18:19:26.454Z'
 description: Guide for releasing new versions of Knowns CLI
 tags:
   - release
@@ -26,9 +26,8 @@ PRs merged → Release Drafter creates draft
             Set version → Publish
                     │
                     ▼
-            CI auto: bump version → publish npm
+            CI auto: go build (cross-compile) → publish npm wrappers
 ```
-
 ## Semantic Versioning
 
 We follow [SemVer](https://semver.org/): `MAJOR.MINOR.PATCH`
@@ -74,10 +73,10 @@ Click **"Publish release"**
 ### 5. Automatic Actions
 
 CI will automatically:
-- Update `package.json` version
-- Commit to main
-- Publish to npm
-
+- Cross-compile Go binaries for all platforms (linux, darwin, windows / amd64, arm64)
+- Create platform-specific npm wrapper packages (`@knowns/cli-<platform>`)
+- Publish the `knowns` npm package (which installs the correct binary)
+- Upload binary artifacts to the GitHub Release
 ## Viewing Changelog
 
 All release notes are on GitHub:

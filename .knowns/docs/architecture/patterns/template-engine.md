@@ -1,7 +1,7 @@
 ---
 title: Template Engine Architecture
 createdAt: '2026-01-25T09:48:44.135Z'
-updatedAt: '2026-01-25T09:49:30.905Z'
+updatedAt: '2026-03-08T18:22:46.883Z'
 description: Internal architecture of the template engine for developers
 tags:
   - pattern
@@ -10,398 +10,474 @@ tags:
 ---
 ## Overview
 
-Template Engine is the core module that handles code generation in Knowns. This document describes the internal architecture for developers.
+Template Engine is the core module that handles code generation in Knowns. It uses Go's built-in `text/template` package. This document describes the internal architecture for developers.
 
 **Related:**
 - @doc/templates/overview - User-facing overview
 - @doc/templates/config - Config format
 
 ---
-
 ## Architecture Diagram
 
 ```
-src/templates/engine/
-├── models.ts          # TypeScript interfaces
-├── schema.ts          # Zod validation schemas
-├── parser.ts          # YAML config + file discovery
-├── renderer.ts        # Handlebars rendering
-├── runner.ts          # Execution orchestration (main entry)
-├── helpers.ts         # 30+ built-in Handlebars helpers
-├── skill-parser.ts    # SKILL.md parsing
-├── skill-sync.ts      # Multi-platform sync
-└── index.ts           # Public API exports
+internal/codegen/
+├── template_engine.go     # Core engine: parsing, rendering, execution
+├── helpers.go             # Built-in template functions (FuncMap)
+├── skill_sync.go          # Multi-platform skill sync
+```
+
+Supporting storage:
+
+```
+internal/storage/
+└── template_store.go      # Template CRUD, listing, discovery
 ```
 
 ---
-
 ## Execution Flow
 
 ```
 1. User runs:   knowns template run my-template --name UserProfile
-                    ↓
-2. Load:        parser.ts → load _template.yaml + discover .hbs files
-                    ↓
-3. Validate:    schema.ts → validate against Zod schemas
-                    ↓
-4. Prompt:      runner.ts → collect values (skip if pre-filled)
-                    ↓
+                    |
+2. Load:        template_engine.go -> load _template.yaml + discover .tmpl files
+                    |
+3. Validate:    Validate config against expected structure
+                    |
+4. Prompt:      Collect variable values (skip if pre-filled via --var flags)
+                    |
 5. Process:     For each action:
                   a. Evaluate "when" condition
-                  b. Render paths with context
-                  c. Render template content
+                  b. Render paths with template context
+                  c. Render template content via text/template
                   d. Write/modify files
-                    ↓
+                    |
 6. Report:      Return TemplateResult (created, modified, skipped, errors)
 ```
 
 ---
-
 ## Core Modules
 
-### 1. Models (`models.ts`)
+### 1. Types (in `template_engine.go`)
 
-Defines TypeScript interfaces:
+Defines Go structs for template configuration:
 
-```typescript
-// Main config structure
-interface TemplateConfig {
-  name: string;
-  description?: string;
-  version?: string;
-  destination?: string;
-  doc?: string;
-  prompts?: TemplatePrompt[];
-  actions: TemplateAction[];
-  messages?: { success?: string; failure?: string };
+```go
+// TemplateConfig represents the parsed _template.yaml file.
+type TemplateConfig struct {
+    Name        string           `yaml:"name"`
+    Description string           `yaml:"description,omitempty"`
+    Version     string           `yaml:"version,omitempty"`
+    Destination string           `yaml:"destination,omitempty"`
+    Doc         string           `yaml:"doc,omitempty"`
+    Prompts     []TemplatePrompt `yaml:"prompts,omitempty"`
+    Actions     []TemplateAction `yaml:"actions"`
+    Messages    *TemplateMessages `yaml:"messages,omitempty"`
 }
 
-// Prompt types
-interface TemplatePrompt {
-  name: string;
-  type: 'text' | 'confirm' | 'select' | 'multiselect' | 'number';
-  message: string;
-  initial?: any;
-  validate?: string;
-  when?: string;
-  choices?: PromptChoice[];
+// TemplatePrompt defines a variable to collect from the user.
+type TemplatePrompt struct {
+    Name     string         `yaml:"name"`
+    Type     string         `yaml:"type"` // text, confirm, select, number
+    Message  string         `yaml:"message"`
+    Initial  interface{}    `yaml:"initial,omitempty"`
+    Validate string         `yaml:"validate,omitempty"`
+    When     string         `yaml:"when,omitempty"`
+    Choices  []PromptChoice `yaml:"choices,omitempty"`
 }
 
-// Action types (discriminated union)
-type TemplateAction = AddAction | AddManyAction | ModifyAction | AppendAction;
-```
-
-### 2. Schema Validation (`schema.ts`)
-
-Zod schemas with two validation modes:
-
-```typescript
-// Strict - throws on error (internal code)
-validateTemplateConfig(config);
-
-// Safe - returns { success, error } (CLI/UI)
-const result = safeValidateTemplateConfig(config);
-if (!result.success) {
-  console.error(result.error.issues);
+// TemplateAction defines a file operation (add, addMany, modify, append).
+type TemplateAction struct {
+    Type         string `yaml:"type"`
+    Template     string `yaml:"template,omitempty"`
+    Path         string `yaml:"path,omitempty"`
+    Source       string `yaml:"source,omitempty"`
+    Destination  string `yaml:"destination,omitempty"`
+    Pattern      string `yaml:"pattern,omitempty"`
+    When         string `yaml:"when,omitempty"`
+    SkipIfExists bool   `yaml:"skipIfExists,omitempty"`
 }
 ```
 
-### 3. Parser (`parser.ts`)
+### 2. Config Validation
+
+Validation is done at parse time:
+
+```go
+// validateConfig checks the template config for required fields and valid values.
+func validateConfig(config *TemplateConfig) error {
+    if config.Name == "" {
+        return fmt.Errorf("template name is required")
+    }
+    if len(config.Actions) == 0 {
+        return fmt.Errorf("at least one action is required")
+    }
+    for i, action := range config.Actions {
+        if err := validateAction(action); err != nil {
+            return fmt.Errorf("action %d: %w", i, err)
+        }
+    }
+    return nil
+}
+```
+
+### 3. Parser (in `template_engine.go`)
 
 Loads and discovers template files:
 
-```typescript
-// Load template from directory
-const template = await loadTemplate('./my-template');
+```go
+// LoadTemplate loads a template from a directory containing _template.yaml.
+func LoadTemplate(dir string) (*TemplateConfig, error) {
+    configPath := filepath.Join(dir, "_template.yaml")
+    data, err := os.ReadFile(configPath)
+    if err != nil {
+        return nil, fmt.Errorf("read template config: %w", err)
+    }
 
-// List all templates
-const templates = await listTemplates('.knowns/templates');
+    var config TemplateConfig
+    if err := yaml.Unmarshal(data, &config); err != nil {
+        return nil, fmt.Errorf("parse template config: %w", err)
+    }
 
-// Quick config check
-const isValid = await isValidTemplate('./my-template');
+    if err := validateConfig(&config); err != nil {
+        return nil, fmt.Errorf("invalid template: %w", err)
+    }
+
+    return &config, nil
+}
 ```
 
-### 4. Renderer (`renderer.ts`)
+### 4. Renderer (in `template_engine.go`)
 
-Handlebars rendering with singleton pattern:
+Uses Go's `text/template` with custom FuncMap:
 
-```typescript
-// Singleton - helpers registered once
-let handlebarsInstance: typeof Handlebars | null = null;
+```go
+import "text/template"
 
-function getHandlebars(): typeof Handlebars {
-  if (!handlebarsInstance) {
-    handlebarsInstance = Handlebars.create();
-    registerHelpers(handlebarsInstance);
-  }
-  return handlebarsInstance;
+// renderString renders a template string with the given context.
+func renderString(tmplStr string, context map[string]interface{}) (string, error) {
+    tmpl, err := template.New("").Funcs(defaultFuncMap()).Parse(tmplStr)
+    if err != nil {
+        return "", fmt.Errorf("parse template: %w", err)
+    }
+
+    var buf bytes.Buffer
+    if err := tmpl.Execute(&buf, context); err != nil {
+        return "", fmt.Errorf("execute template: %w", err)
+    }
+    return buf.String(), nil
 }
 
-// Render functions
-renderString(template, context);     // Render string
-renderFile(templatePath, context);   // Render from file
-renderPath(pattern, context);        // Render path (removes .hbs)
-evaluateCondition(when, context);    // Evaluate when conditions
+// renderFile renders a .tmpl file with the given context.
+func renderFile(templatePath string, context map[string]interface{}) (string, error) {
+    data, err := os.ReadFile(templatePath)
+    if err != nil {
+        return "", err
+    }
+    return renderString(string(data), context)
+}
 ```
 
-### 5. Runner (`runner.ts`)
+### 5. Runner (in `template_engine.go`)
 
-Main orchestration - the entry point:
+Main orchestration -- the entry point:
 
-```typescript
-// Run by template object
-const result = await runTemplate(template, {
-  projectRoot: process.cwd(),
-  values: { name: 'UserProfile' },  // Pre-fill prompts
-  dryRun: true,                     // Preview only
-  force: false,                     // Overwrite existing
-  silent: false,                    // Suppress output
-});
+```go
+// RunTemplate executes a template with the given options.
+func RunTemplate(config *TemplateConfig, opts RunOptions) (*TemplateResult, error) {
+    result := &TemplateResult{}
 
-// Run by name
-const result = await runTemplateByName(
-  '.knowns/templates',
-  'react-component',
-  options
-);
+    for _, action := range config.Actions {
+        // Evaluate "when" condition
+        if action.When != "" && !evaluateCondition(action.When, opts.Values) {
+            continue
+        }
 
-// Result structure
-interface TemplateResult {
-  success: boolean;
-  created: string[];    // Files created
-  modified: string[];   // Files modified
-  skipped: string[];    // Files skipped
-  errors: string[];     // Error messages
+        switch action.Type {
+        case "add":
+            err := executeAddAction(action, opts, result)
+        case "addMany":
+            err := executeAddManyAction(action, opts, result)
+        case "modify":
+            err := executeModifyAction(action, opts, result)
+        case "append":
+            err := executeAppendAction(action, opts, result)
+        }
+    }
+
+    return result, nil
+}
+
+// RunOptions configures template execution.
+type RunOptions struct {
+    ProjectRoot string
+    Values      map[string]interface{} // Pre-filled prompt values
+    DryRun      bool                    // Preview only
+    Force       bool                    // Overwrite existing
+    Silent      bool                    // Suppress output
+}
+
+// TemplateResult reports what happened during template execution.
+type TemplateResult struct {
+    Success  bool     // Overall success
+    Created  []string // Files created
+    Modified []string // Files modified
+    Skipped  []string // Files skipped
+    Errors   []string // Error messages
 }
 ```
 
 ---
-
 ## Design Patterns
 
-### 1. Singleton Pattern (Handlebars)
+### 1. FuncMap Pattern (text/template)
 
-```typescript
-// Ensures helpers registered once, reused across renders
-let handlebarsInstance: typeof Handlebars | null = null;
-
-function getHandlebars(): typeof Handlebars {
-  if (!handlebarsInstance) {
-    handlebarsInstance = Handlebars.create();
-    registerHelpers(handlebarsInstance);
-  }
-  return handlebarsInstance;
+```go
+// defaultFuncMap returns the template function map with all built-in helpers.
+func defaultFuncMap() template.FuncMap {
+    return template.FuncMap{
+        "camelCase":    toCamelCase,
+        "pascalCase":   toPascalCase,
+        "snakeCase":    toSnakeCase,
+        "kebabCase":    toKebabCase,
+        "upper":        strings.ToUpper,
+        "lower":        strings.ToLower,
+        "title":        strings.Title,
+        "pluralize":    pluralize,
+        "singularize":  singularize,
+        "contains":     strings.Contains,
+        "replace":      strings.ReplaceAll,
+        "join":         strings.Join,
+        "eq":           reflect.DeepEqual,
+    }
 }
 ```
 
-### 2. Discriminated Union (Actions)
+### 2. Switch-Based Action Dispatch
 
-```typescript
-type TemplateAction = 
-  | { type: 'add'; template: string; path: string; ... }
-  | { type: 'addMany'; source: string; destination: string; ... }
-  | { type: 'modify'; path: string; pattern: string; ... }
-  | { type: 'append'; path: string; template: string; ... };
-
-// Pattern matching
-switch (action.type) {
-  case 'add': await executeAddAction(action, context);
-  case 'addMany': await executeAddManyAction(action, context);
-  case 'modify': await executeModifyAction(action, context);
-  case 'append': await executeAppendAction(action, context);
+```go
+switch action.Type {
+case "add":
+    err = executeAddAction(action, ctx)
+case "addMany":
+    err = executeAddManyAction(action, ctx)
+case "modify":
+    err = executeModifyAction(action, ctx)
+case "append":
+    err = executeAppendAction(action, ctx)
+default:
+    err = fmt.Errorf("unknown action type: %s", action.Type)
 }
 ```
 
-### 3. Two-Phase Validation
+### 3. Dry-Run Mode
 
-```typescript
-// Phase 1: Safe validation for UI
-const result = safeValidateTemplateConfig(config);
-if (!result.success) {
-  return showErrors(result.error);
+```go
+if opts.DryRun {
+    fmt.Printf("[dry-run] Would create: %s
+", targetPath)
+    result.Created = append(result.Created, targetPath)
+    continue
 }
-
-// Phase 2: Strict validation for internal code
-const validated = validateTemplateConfig(config); // throws if invalid
+// Actually write the file
+err := os.WriteFile(targetPath, []byte(rendered), 0644)
 ```
 
 ---
-
 ## Built-in Helpers
 
+All helpers are registered in `internal/codegen/helpers.go` as a `template.FuncMap`.
+
 ### Case Conversion
-| Helper | Input | Output |
-|--------|-------|--------|
-| `camelCase` | "user profile" | "userProfile" |
-| `pascalCase` | "user profile" | "UserProfile" |
-| `kebabCase` | "user profile" | "user-profile" |
-| `snakeCase` | "user profile" | "user_profile" |
-| `constantCase` | "user profile" | "USER_PROFILE" |
-| `titleCase` | "user profile" | "User Profile" |
+| Function | Input | Output | Usage in Template |
+|----------|-------|--------|-------------------|
+| `camelCase` | "user profile" | "userProfile" | `{{ camelCase .Name }}` |
+| `pascalCase` | "user profile" | "UserProfile" | `{{ pascalCase .Name }}` |
+| `kebabCase` | "user profile" | "user-profile" | `{{ kebabCase .Name }}` |
+| `snakeCase` | "user profile" | "user_profile" | `{{ snakeCase .Name }}` |
+| `constantCase` | "user profile" | "USER_PROFILE" | `{{ constantCase .Name }}` |
+| `titleCase` | "user profile" | "User Profile" | `{{ titleCase .Name }}` |
 
 ### String Manipulation
-| Helper | Description |
-|--------|-------------|
-| `lowerCase` | Convert to lowercase |
-| `upperCase` | Convert to uppercase |
-| `trim` | Trim whitespace |
-| `replace` | Find and replace |
-| `concat` | Concatenate strings |
+| Function | Description | Usage |
+|----------|-------------|-------|
+| `lower` | Convert to lowercase | `{{ lower .Name }}` |
+| `upper` | Convert to uppercase | `{{ upper .Name }}` |
+| `trim` | Trim whitespace | `{{ trim .Name }}` |
+| `replace` | Find and replace | `{{ replace .Name "old" "new" }}` |
+| `contains` | Check substring | `{{ if contains .Name "user" }}` |
 
 ### Pluralization
-| Helper | Input | Output |
-|--------|-------|--------|
-| `pluralize` | "user" | "users" |
-| `singularize` | "users" | "user" |
+| Function | Input | Output | Usage |
+|----------|-------|--------|-------|
+| `pluralize` | "user" | "users" | `{{ pluralize .Name }}` |
+| `singularize` | "users" | "user" | `{{ singularize .Name }}` |
 
-### Comparison
-| Helper | Description |
-|--------|-------------|
-| `eq` | Equal |
-| `ne` | Not equal |
-| `gt` | Greater than |
-| `gte` | Greater than or equal |
-| `lt` | Less than |
-| `lte` | Less than or equal |
+### Comparison and Logic
 
-### Logical
-| Helper | Description |
-|--------|-------------|
-| `and` | Logical AND |
-| `or` | Logical OR |
-| `not` | Logical NOT |
+Go `text/template` has built-in comparison functions:
 
-### Array
-| Helper | Description |
-|--------|-------------|
-| `includes` | Check if array includes value |
-| `join` | Join array with separator |
+| Function | Description | Usage |
+|----------|-------------|-------|
+| `eq` | Equal | `{{ if eq .Type "page" }}` |
+| `ne` | Not equal | `{{ if ne .Status "done" }}` |
+| `gt` | Greater than | `{{ if gt .Count 0 }}` |
+| `lt` | Less than | `{{ if lt .Count 10 }}` |
+| `and` | Logical AND | `{{ if and .A .B }}` |
+| `or` | Logical OR | `{{ if or .A .B }}` |
+| `not` | Logical NOT | `{{ if not .Flag }}` |
+
+### Array/Slice
+| Function | Description | Usage |
+|----------|-------------|-------|
+| `join` | Join slice with separator | `{{ join .Items ", " }}` |
+| `contains` | Check if slice contains | `{{ if contains .Labels "auth" }}` |
 
 ---
-
 ## Skill System
 
-### Skill Parser (`skill-parser.ts`)
+### Skill Parser (in `template_engine.go` or `skill_sync.go`)
 
 Parses SKILL.md files with YAML frontmatter:
 
-```typescript
-interface Skill {
-  name: string;
-  description: string;
-  triggers?: string[];
-  content: string;        // Markdown content
+```go
+// Skill represents a parsed SKILL.md file.
+type Skill struct {
+    Name        string   `yaml:"name"`
+    Description string   `yaml:"description"`
+    Triggers    []string `yaml:"triggers,omitempty"`
+    Content     string   // Markdown body content
 }
 
-// Load skill
-const skill = await loadSkill('.knowns/skills/my-skill');
-
-// List skills
-const skills = await listSkills('.knowns/skills');
+// LoadSkill parses a SKILL.md file from the given directory.
+func LoadSkill(dir string) (*Skill, error) {
+    data, err := os.ReadFile(filepath.Join(dir, "SKILL.md"))
+    if err != nil {
+        return nil, err
+    }
+    // Parse YAML frontmatter + markdown body
+    // ...
+    return &skill, nil
+}
 ```
 
-### Multi-Platform Sync (`skill-sync.ts`)
+### Multi-Platform Sync (`skill_sync.go`)
 
 Syncs skills to 6 AI platforms:
 
 | Platform | Directory | Format | MCP |
 |----------|-----------|--------|-----|
-| Claude Code | `.claude/skills/` | SKILL.md | ✅ |
-| Antigravity | `.agent/skills/` | SKILL.md | ✅ |
-| Cursor | `.cursor/rules/` | SKILL.md | ✅ |
-| Gemini CLI | `~/.gemini/` | GEMINI.md | ✅ |
-| Windsurf | `.windsurfrules` | Single file | ⚠️ |
-| Cline | `.clinerules/` | SKILL.md | ✅ |
+| Claude Code | `.claude/skills/` | SKILL.md | Yes |
+| Antigravity | `.agent/skills/` | SKILL.md | Yes |
+| Cursor | `.cursor/rules/` | SKILL.md | Yes |
+| Gemini CLI | `~/.gemini/` | GEMINI.md | Yes |
+| Windsurf | `.windsurfrules` | Single file | Partial |
+| Cline | `.clinerules/` | SKILL.md | Yes |
 
 ---
-
 ## Error Handling
 
-### TemplateParseError
+### TemplateError
 
-```typescript
-class TemplateParseError extends Error {
-  constructor(
-    message: string,
-    public issues: ZodIssue[],  // Validation issues
-    public path?: string        // File path
-  ) {
-    super(message);
-  }
+```go
+// TemplateError wraps template parsing and execution errors with context.
+type TemplateError struct {
+    Message string
+    Path    string // File path where error occurred
+    Err     error  // Underlying error
+}
+
+func (e *TemplateError) Error() string {
+    if e.Path != "" {
+        return fmt.Sprintf("%s: %s", e.Path, e.Message)
+    }
+    return e.Message
+}
+
+func (e *TemplateError) Unwrap() error {
+    return e.Err
 }
 ```
 
 ### Graceful Degradation
 
-```typescript
+```go
 // Actions with skipIfExists
-if (action.skipIfExists && existsSync(targetPath)) {
-  result.skipped.push(targetPath);
-  continue;
+if action.SkipIfExists {
+    if _, err := os.Stat(targetPath); err == nil {
+        result.Skipped = append(result.Skipped, targetPath)
+        continue
+    }
 }
 
 // Conditional actions
-if (action.when && !evaluateCondition(action.when, context)) {
-  continue;
+if action.When != "" && !evaluateCondition(action.When, context) {
+    continue
 }
 ```
 
 ---
-
 ## Extension Points
 
-### Custom Helpers
+### Custom Template Functions
 
-```typescript
-// In helpers.ts
-export function registerHelpers(handlebars: typeof Handlebars) {
-  // Add custom helper
-  handlebars.registerHelper('myHelper', (value) => {
-    return value.toUpperCase();
-  });
+```go
+// In internal/codegen/helpers.go
+func defaultFuncMap() template.FuncMap {
+    fm := template.FuncMap{
+        // ... built-in helpers
+    }
+
+    // Add custom helper
+    fm["myHelper"] = func(value string) string {
+        return strings.ToUpper(value)
+    }
+
+    return fm
 }
 ```
 
 ### Custom Actions
 
-Extend `TemplateAction` union and add handler in `runner.ts`:
+Extend the action type and add a handler in `template_engine.go`:
 
-```typescript
-// In models.ts
-interface CustomAction {
-  type: 'custom';
-  handler: string;
-  // ...
+```go
+// Add new action type
+case "custom":
+    err = executeCustomAction(action, opts, result)
+
+func executeCustomAction(action TemplateAction, opts RunOptions, result *TemplateResult) error {
+    // Custom implementation
+    return nil
 }
-
-// In runner.ts
-case 'custom': await executeCustomAction(action, context);
 ```
 
 ---
-
 ## Testing
 
 ```bash
 # Run all template engine tests
-bun test src/templates/engine/
+go test ./internal/codegen/...
 
-# Run specific test file
-bun test src/templates/engine/runner.test.ts
+# Run with verbose output
+go test -v ./internal/codegen/...
+
+# Run specific test
+go test -run TestRenderString ./internal/codegen/
 ```
 
 Test coverage includes:
 - Parser: Config loading, file discovery, validation
 - Renderer: String/file rendering, path patterns, conditions
 - Runner: Full execution flow, dry-run, force mode
-- Helpers: All 30+ helpers with edge cases
+- Helpers: All built-in template functions with edge cases
 
 ---
 
 ## Best Practices
 
-1. **Use types**: All template data is strongly typed
-2. **Validate early**: Use Zod schemas before processing
-3. **Singleton Handlebars**: Don't create multiple instances
-4. **Dry-run first**: Test templates before writing files
-5. **Handle errors gracefully**: Use `safeValidate` for user input
+1. **Use typed structs**: All template data flows through well-defined Go structs
+2. **Validate early**: Validate config at parse time, before execution
+3. **Reuse FuncMap**: Register all helpers once via `defaultFuncMap()`, reuse across renders
+4. **Dry-run first**: Test templates with `DryRun: true` before writing files
+5. **Handle errors explicitly**: Return `error` values, wrap with context using `fmt.Errorf`
+6. **Use text/template**: Not `html/template` -- code generation output is not HTML

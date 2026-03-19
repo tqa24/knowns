@@ -1,7 +1,7 @@
 ---
 title: Model Command
 createdAt: '2026-02-24T07:29:13.547Z'
-updatedAt: '2026-02-24T07:29:40.821Z'
+updatedAt: '2026-03-08T18:22:07.249Z'
 description: >-
   CLI command for managing embedding models - list, download, set, add custom
   models
@@ -45,7 +45,7 @@ knowns model ls  # Alias
 - HuggingFace ID
 - Dimensions and max tokens
 - Download status
-- Recommended models marked with ★
+- Recommended models marked with star
 
 ### `knowns model download`
 
@@ -60,7 +60,7 @@ knowns model dl <model-id>  # Alias
 
 | Model ID | Quality | Dimensions | Size | Best For |
 |----------|---------|------------|------|----------|
-| `gte-small` ★ | Balanced | 384 | ~50MB | Most projects |
+| `gte-small` (recommended) | Balanced | 384 | ~50MB | Most projects |
 | `all-MiniLM-L6-v2` | Fast | 384 | ~45MB | Large codebases |
 | `gte-base` | Quality | 768 | ~110MB | High accuracy |
 | `bge-small-en-v1.5` | Balanced | 384 | ~50MB | English text |
@@ -122,7 +122,7 @@ knowns model set bge-large-en-v1.5
 knowns search --reindex
 ```
 
-**Note:** The model must be a `feature-extraction` pipeline compatible with Transformers.js.
+**Note:** The model must be a `feature-extraction` pipeline compatible ONNX model from HuggingFace.
 
 ### `knowns model remove`
 

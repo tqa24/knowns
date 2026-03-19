@@ -1,0 +1,604 @@
+package tests
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"os/exec"
+	"strings"
+	"testing"
+)
+
+// setupMCPTest creates a test project + MCP client with project set.
+func setupMCPTest(t *testing.T) (*MCPClient, string) {
+	t.Helper()
+	dir := setupTestProject(t)
+	client := startMCPServer(t)
+	client.Initialize()
+	client.SetProject(dir)
+	return client, dir
+}
+
+// TestMCP_TaskLifecycle tests the full task lifecycle via MCP:
+// create → add AC → time start → in-progress + plan → check AC (x4)
+// → time stop → final notes → done → verify → time report
+func TestMCP_TaskLifecycle(t *testing.T) {
+	client, _ := setupMCPTest(t)
+
+	var taskID string
+
+	// Step 1: Create task
+	t.Run("create task", func(t *testing.T) {
+		result := client.CallTool("create_task", map[string]any{
+			"title":       "E2E MCP: Implement Auth Feature",
+			"description": "Implement JWT authentication for the API.",
+			"priority":    "high",
+			"labels":      []string{"e2e-test", "auth", "feature"},
+			"assignee":    "@me",
+		})
+		id, ok := result["id"].(string)
+		if !ok || id == "" {
+			t.Fatalf("no task id in response: %v", result)
+		}
+		taskID = id
+		t.Logf("created task: %s", taskID)
+	})
+
+	if taskID == "" {
+		t.Fatal("cannot continue without task ID")
+	}
+
+	// Step 2: Add 4 acceptance criteria
+	t.Run("add AC", func(t *testing.T) {
+		result := client.CallTool("update_task", map[string]any{
+			"taskId": taskID,
+			"addAc": []string{
+				"JWT tokens are generated on login",
+				"Tokens expire after 1 hour",
+				"Refresh token flow works",
+				"Unit tests have >90% coverage",
+			},
+		})
+		acs, ok := result["acceptanceCriteria"].([]any)
+		if !ok || len(acs) != 4 {
+			t.Fatalf("expected 4 AC, got: %v", result["acceptanceCriteria"])
+		}
+	})
+
+	// Step 3: Start time tracking
+	t.Run("start time", func(t *testing.T) {
+		result := client.CallTool("start_time", map[string]any{
+			"taskId": taskID,
+		})
+		if success, ok := result["success"].(bool); !ok || !success {
+			t.Fatalf("start_time failed: %v", result)
+		}
+	})
+
+	// Step 4: Set in-progress + add plan
+	t.Run("in-progress + plan", func(t *testing.T) {
+		result := client.CallTool("update_task", map[string]any{
+			"taskId": taskID,
+			"status": "in-progress",
+			"plan":   "1. Research JWT\n2. Design tokens\n3. Implement endpoints\n4. Write tests",
+		})
+		status, _ := result["status"].(string)
+		if status != "in-progress" {
+			t.Errorf("expected in-progress, got %q", status)
+		}
+	})
+
+	// Step 5: Check ACs one by one
+	for i := 1; i <= 4; i++ {
+		i := i
+		t.Run("check AC "+string(rune('0'+i)), func(t *testing.T) {
+			client.CallTool("update_task", map[string]any{
+				"taskId":      taskID,
+				"checkAc":     []int{i},
+				"appendNotes": "Completed AC step",
+			})
+		})
+	}
+
+	// Step 6: Stop time tracking
+	t.Run("stop time", func(t *testing.T) {
+		result := client.CallTool("stop_time", map[string]any{
+			"taskId": taskID,
+		})
+		if success, ok := result["success"].(bool); !ok || !success {
+			t.Fatalf("stop_time failed: %v", result)
+		}
+	})
+
+	// Step 7: Add final notes
+	t.Run("final notes", func(t *testing.T) {
+		client.CallTool("update_task", map[string]any{
+			"taskId": taskID,
+			"notes":  "## Summary\nImplemented JWT auth.\n\n## Changes\n- Login endpoint\n- Refresh endpoint\n- Auth middleware",
+		})
+	})
+
+	// Step 8: Mark done
+	t.Run("mark done", func(t *testing.T) {
+		client.CallTool("update_task", map[string]any{
+			"taskId": taskID,
+			"status": "done",
+		})
+	})
+
+	// Step 9: Verify final state
+	t.Run("verify state", func(t *testing.T) {
+		raw := client.CallToolRaw("get_task", map[string]any{
+			"taskId": taskID,
+		})
+
+		var task map[string]any
+		if err := json.Unmarshal([]byte(raw), &task); err != nil {
+			t.Fatalf("parse task: %v", err)
+		}
+
+		if task["status"] != "done" {
+			t.Errorf("expected done, got %v", task["status"])
+		}
+
+		acs, _ := task["acceptanceCriteria"].([]any)
+		if len(acs) != 4 {
+			t.Fatalf("expected 4 AC, got %d", len(acs))
+		}
+		for i, ac := range acs {
+			acMap, ok := ac.(map[string]any)
+			if !ok {
+				continue
+			}
+			if completed, _ := acMap["completed"].(bool); !completed {
+				t.Errorf("AC #%d not checked", i+1)
+			}
+		}
+
+		if task["implementationNotes"] == nil || task["implementationNotes"] == "" {
+			t.Error("missing implementation notes")
+		}
+		if task["implementationPlan"] == nil || task["implementationPlan"] == "" {
+			t.Error("missing implementation plan")
+		}
+	})
+
+	// Step 10: Time report
+	t.Run("time report", func(t *testing.T) {
+		result := client.CallTool("get_time_report", map[string]any{})
+		// Should have entries or total
+		if result["entries"] == nil && result["total"] == nil {
+			t.Logf("time report (may have 0 entries for fast tests): %v", result)
+		}
+	})
+}
+
+// TestMCP_DocumentWorkflow tests doc create → get → update → search.
+func TestMCP_DocumentWorkflow(t *testing.T) {
+	client, _ := setupMCPTest(t)
+
+	var docPath string
+
+	// Create doc
+	t.Run("create doc", func(t *testing.T) {
+		result := client.CallTool("create_doc", map[string]any{
+			"title":       "MCP E2E Test Doc",
+			"description": "Test document created by MCP E2E tests",
+			"tags":        []string{"test", "e2e", "mcp"},
+			"folder":      "tests",
+			"content":     "# MCP E2E Test Doc\n\n## Overview\nCreated by MCP E2E test suite.\n\n## Purpose\nTesting document workflow.",
+		})
+		path, ok := result["path"].(string)
+		if !ok || path == "" {
+			t.Fatalf("no path in response: %v", result)
+		}
+		docPath = path
+		t.Logf("created doc: %s", docPath)
+	})
+
+	if docPath == "" {
+		t.Fatal("cannot continue without doc path")
+	}
+
+	// Get doc (smart mode)
+	t.Run("get doc smart", func(t *testing.T) {
+		result := client.CallTool("get_doc", map[string]any{
+			"path":  docPath,
+			"smart": true,
+		})
+		// Small doc should return content directly
+		content, _ := result["content"].(string)
+		if content == "" {
+			t.Logf("doc response keys: %v", mapKeys(result))
+		}
+	})
+
+	// Update doc (append)
+	t.Run("update doc append", func(t *testing.T) {
+		result := client.CallTool("update_doc", map[string]any{
+			"path":          docPath,
+			"appendContent": "\n\n## References\n- Created by MCP E2E test",
+		})
+		path, _ := result["path"].(string)
+		if path == "" {
+			t.Logf("update response: %v", result)
+		}
+	})
+
+	// Search for doc
+	t.Run("search doc", func(t *testing.T) {
+		raw := client.CallToolRaw("search", map[string]any{
+			"query": "MCP E2E Test",
+			"type":  "doc",
+		})
+		if !strings.Contains(raw, "MCP E2E") && !strings.Contains(raw, docPath) {
+			t.Logf("search may not find new doc immediately: %s", truncate(raw, 300))
+		}
+	})
+}
+
+// TestMCP_SearchWorkflow tests keyword search and list_tasks by label.
+func TestMCP_SearchWorkflow(t *testing.T) {
+	client, _ := setupMCPTest(t)
+
+	// Create test data
+	createResult := client.CallTool("create_task", map[string]any{
+		"title":       "Searchable Task ABC123",
+		"description": "This task exists for search testing",
+		"labels":      []string{"search-test"},
+	})
+	taskID, _ := createResult["id"].(string)
+
+	client.CallTool("create_doc", map[string]any{
+		"title":   "Searchable Doc DEF456",
+		"content": "Content for search testing",
+		"tags":    []string{"search-test"},
+	})
+
+	// Keyword search for task
+	t.Run("search task by keyword", func(t *testing.T) {
+		raw := client.CallToolRaw("search", map[string]any{
+			"query": "ABC123",
+			"mode":  "keyword",
+			"type":  "task",
+		})
+		if taskID != "" && !strings.Contains(raw, taskID) {
+			t.Logf("task %s not found in search: %s", taskID, truncate(raw, 300))
+		}
+	})
+
+	// Keyword search for doc
+	t.Run("search doc by keyword", func(t *testing.T) {
+		raw := client.CallToolRaw("search", map[string]any{
+			"query": "DEF456",
+			"mode":  "keyword",
+			"type":  "doc",
+		})
+		if !strings.Contains(raw, "DEF456") {
+			t.Logf("doc not found in search: %s", truncate(raw, 300))
+		}
+	})
+
+	// List tasks by label
+	t.Run("list tasks by label", func(t *testing.T) {
+		if taskID == "" {
+			t.Skip("no task ID from create")
+		}
+		result := client.CallTool("list_tasks", map[string]any{
+			"label": "search-test",
+		})
+		arr, ok := result["_array"].([]any)
+		if ok {
+			found := false
+			for _, item := range arr {
+				if m, ok := item.(map[string]any); ok {
+					if m["id"] == taskID {
+						found = true
+						break
+					}
+				}
+			}
+			if !found {
+				t.Errorf("task %s not found in label filter results", taskID)
+			}
+		} else {
+			t.Logf("list_tasks response: %v", result)
+		}
+	})
+}
+
+// TestMCP_Board tests get_board returns valid structure.
+func TestMCP_Board(t *testing.T) {
+	client, _ := setupMCPTest(t)
+
+	client.CallTool("create_task", map[string]any{
+		"title": "Board Test Task",
+	})
+
+	t.Run("get board", func(t *testing.T) {
+		result := client.CallTool("get_board", map[string]any{})
+
+		columns, ok := result["columns"].([]any)
+		if !ok {
+			t.Fatalf("expected columns array, got: %v", result)
+		}
+		if len(columns) == 0 {
+			t.Error("expected at least one column")
+		}
+
+		total, ok := result["total"].(float64)
+		if !ok {
+			t.Errorf("expected total count, got: %v", result["total"])
+		}
+		if total < 1 {
+			t.Errorf("expected at least 1 task, got %v", total)
+		}
+	})
+}
+
+// TestMCP_Validation tests validate with various scopes.
+func TestMCP_Validation(t *testing.T) {
+	client, _ := setupMCPTest(t)
+
+	client.CallTool("create_task", map[string]any{
+		"title": "Validate Test Task",
+	})
+	client.CallTool("create_doc", map[string]any{
+		"title": "Validate Test Doc",
+		"tags":  []string{"test"},
+	})
+
+	t.Run("validate all", func(t *testing.T) {
+		result := client.CallTool("validate", map[string]any{
+			"scope": "all",
+		})
+		if _, ok := result["valid"].(bool); !ok {
+			t.Errorf("expected valid boolean, got: %v", result)
+		}
+		if result["scope"] != "all" {
+			t.Errorf("expected scope=all, got: %v", result["scope"])
+		}
+	})
+
+	t.Run("validate tasks", func(t *testing.T) {
+		result := client.CallTool("validate", map[string]any{
+			"scope": "tasks",
+		})
+		if result["scope"] != "tasks" {
+			t.Errorf("expected scope=tasks, got: %v", result["scope"])
+		}
+	})
+
+	t.Run("validate docs", func(t *testing.T) {
+		result := client.CallTool("validate", map[string]any{
+			"scope": "docs",
+		})
+		if result["scope"] != "docs" {
+			t.Errorf("expected scope=docs, got: %v", result["scope"])
+		}
+	})
+
+	t.Run("validate templates", func(t *testing.T) {
+		result := client.CallTool("validate", map[string]any{
+			"scope": "templates",
+		})
+		if result["scope"] != "templates" {
+			t.Errorf("expected scope=templates, got: %v", result["scope"])
+		}
+	})
+
+	t.Run("validate sdd", func(t *testing.T) {
+		result := client.CallTool("validate", map[string]any{
+			"scope": "sdd",
+		})
+		if result["scope"] != "sdd" {
+			t.Errorf("expected scope=sdd, got: %v", result["scope"])
+		}
+	})
+
+	t.Run("validate strict", func(t *testing.T) {
+		result := client.CallTool("validate", map[string]any{
+			"scope":  "all",
+			"strict": true,
+		})
+		strict, ok := result["strict"].(bool)
+		if !ok || !strict {
+			t.Errorf("expected strict=true, got: %v", result["strict"])
+		}
+	})
+}
+
+// TestMCP_ReopenWorkflow tests reopening a done task via MCP.
+func TestMCP_ReopenWorkflow(t *testing.T) {
+	client, _ := setupMCPTest(t)
+
+	// Create task
+	createResult := client.CallTool("create_task", map[string]any{
+		"title":    "MCP Reopen Test",
+		"assignee": "@me",
+	})
+	taskID, _ := createResult["id"].(string)
+	if taskID == "" {
+		t.Fatal("no task ID")
+	}
+
+	// Add 4 AC + set in-progress
+	client.CallTool("update_task", map[string]any{
+		"taskId": taskID,
+		"addAc":  []string{"AC 1", "AC 2", "AC 3", "AC 4"},
+		"status": "in-progress",
+	})
+
+	// Start timer, check all 4, stop timer, mark done
+	client.CallTool("start_time", map[string]any{"taskId": taskID})
+	client.CallTool("update_task", map[string]any{
+		"taskId":  taskID,
+		"checkAc": []int{1, 2, 3, 4},
+	})
+	client.CallTool("stop_time", map[string]any{"taskId": taskID})
+	client.CallTool("update_task", map[string]any{
+		"taskId": taskID,
+		"status": "done",
+	})
+
+	// Reopen
+	t.Run("reopen", func(t *testing.T) {
+		result := client.CallTool("update_task", map[string]any{
+			"taskId": taskID,
+			"status": "in-progress",
+		})
+		if result["status"] != "in-progress" {
+			t.Errorf("expected in-progress, got %v", result["status"])
+		}
+	})
+
+	// Add AC #5
+	t.Run("add AC 5", func(t *testing.T) {
+		client.CallTool("update_task", map[string]any{
+			"taskId":      taskID,
+			"addAc":       []string{"Post-completion fix: Handle edge case"},
+			"appendNotes": "Reopened: Adding edge case handling",
+		})
+	})
+
+	// Start timer, check AC #5, stop timer, mark done
+	t.Run("fix and complete", func(t *testing.T) {
+		client.CallTool("start_time", map[string]any{"taskId": taskID})
+		client.CallTool("update_task", map[string]any{
+			"taskId":      taskID,
+			"checkAc":     []int{5},
+			"appendNotes": "Implemented edge case handling",
+		})
+		client.CallTool("stop_time", map[string]any{"taskId": taskID})
+		client.CallTool("update_task", map[string]any{
+			"taskId": taskID,
+			"status": "done",
+		})
+	})
+
+	// Verify 5/5 AC
+	t.Run("verify 5/5 AC", func(t *testing.T) {
+		raw := client.CallToolRaw("get_task", map[string]any{
+			"taskId": taskID,
+		})
+
+		var task map[string]any
+		if err := json.Unmarshal([]byte(raw), &task); err != nil {
+			t.Fatalf("parse task: %v", err)
+		}
+
+		acs, _ := task["acceptanceCriteria"].([]any)
+		if len(acs) != 5 {
+			t.Fatalf("expected 5 AC, got %d", len(acs))
+		}
+		for i, ac := range acs {
+			acMap, ok := ac.(map[string]any)
+			if !ok {
+				continue
+			}
+			if completed, _ := acMap["completed"].(bool); !completed {
+				t.Errorf("AC #%d not checked", i+1)
+			}
+		}
+	})
+}
+
+// TestMCP_SemanticSearch tests reindex + search modes via MCP.
+// Requires ONNX Runtime + model. Skip unless TEST_SEMANTIC=1.
+func TestMCP_SemanticSearch(t *testing.T) {
+	if os.Getenv("TEST_SEMANTIC") != "1" {
+		t.Skip("skipping semantic search test (set TEST_SEMANTIC=1 to enable)")
+	}
+
+	client, dir := setupMCPTest(t)
+
+	// Create test data
+	client.CallTool("create_task", map[string]any{
+		"title":       "Semantic Auth Task",
+		"description": "Implement JWT authentication with RS256",
+		"labels":      []string{"auth", "semantic-test"},
+	})
+
+	client.CallTool("create_doc", map[string]any{
+		"title":   "Semantic Security Doc",
+		"content": "# Security Patterns\n\n## JWT Authentication\n- RS256 algorithm\n- Short-lived tokens\n- Refresh flow",
+		"tags":    []string{"security", "semantic-test"},
+	})
+
+	// Set model via CLI (MCP doesn't have model tools)
+	bin := getBinaryPath(t)
+	setModelCmd := exec.CommandContext(
+		context.Background(), bin, "model", "set", "all-MiniLM-L6-v2",
+	)
+	setModelCmd.Dir = dir
+	setModelCmd.Env = append(os.Environ(), "NO_COLOR=1")
+	if out, err := setModelCmd.CombinedOutput(); err != nil {
+		t.Fatalf("model set failed: %v\n%s", err, string(out))
+	}
+
+	// Step 1: Reindex via MCP
+	t.Run("reindex", func(t *testing.T) {
+		result := client.CallTool("reindex_search", map[string]any{})
+		success, ok := result["success"].(bool)
+		if !ok || !success {
+			t.Fatalf("reindex failed: %v", result)
+		}
+		taskCount, _ := result["taskCount"].(float64)
+		docCount, _ := result["docCount"].(float64)
+		if taskCount < 1 || docCount < 1 {
+			t.Errorf("expected at least 1 task and 1 doc indexed, got tasks=%v docs=%v", taskCount, docCount)
+		}
+		chunkCount, _ := result["chunkCount"].(float64)
+		t.Logf("reindex: %v tasks, %v docs, %v chunks", taskCount, docCount, chunkCount)
+	})
+
+	// Step 2: Keyword search via MCP
+	t.Run("keyword search", func(t *testing.T) {
+		raw := client.CallToolRaw("search", map[string]any{
+			"query": "JWT authentication",
+			"mode":  "keyword",
+		})
+		if raw == "" {
+			t.Error("empty search result")
+		}
+		t.Logf("keyword search result: %s", truncate(raw, 300))
+	})
+
+	// Step 3: Hybrid search via MCP
+	t.Run("hybrid search", func(t *testing.T) {
+		raw := client.CallToolRaw("search", map[string]any{
+			"query": "authentication security patterns",
+			"mode":  "hybrid",
+		})
+		if raw == "" {
+			t.Error("empty search result")
+		}
+		t.Logf("hybrid search result: %s", truncate(raw, 300))
+	})
+
+	// Step 4: Search filtered by type
+	t.Run("search docs only", func(t *testing.T) {
+		raw := client.CallToolRaw("search", map[string]any{
+			"query": "security",
+			"type":  "doc",
+		})
+		t.Logf("doc search result: %s", truncate(raw, 300))
+	})
+
+	t.Run("search tasks only", func(t *testing.T) {
+		raw := client.CallToolRaw("search", map[string]any{
+			"query": "authentication",
+			"type":  "task",
+		})
+		t.Logf("task search result: %s", truncate(raw, 300))
+	})
+}
+
+// mapKeys returns the keys of a map (for debugging).
+func mapKeys(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}

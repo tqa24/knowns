@@ -1,255 +1,99 @@
 # Skills
 
-Skills are reusable workflows that AI agents can invoke to perform common tasks.
-
----
-
-## Overview
-
-Skills are markdown files that provide:
-- Step-by-step instructions for AI agents
-- Context-aware guidance based on project state
-- Consistent workflows across different AI platforms
+Skills are reusable AI workflows bundled with Knowns.
 
 ---
 
 ## Built-in Skills
 
-Knowns includes 10 built-in skills:
+Knowns currently ships these built-in skills:
 
 | Skill | Trigger | Purpose |
-|-------|---------|---------|
-| `kn-init` | `/kn-init` | Initialize session, read project docs |
-| `kn-plan` | `/kn-plan` | Create implementation plan for a task |
-| `kn-research` | `/kn-research` | Research codebase before implementing |
-| `kn-implement` | `/kn-implement` | Implement task following the plan |
-| `kn-verify` | `/kn-verify` | Run SDD verification and coverage |
-| `kn-spec` | `/kn-spec` | Create specification document |
-| `kn-template` | `/kn-template` | Generate code from templates |
-| `kn-extract` | `/kn-extract` | Extract reusable patterns to docs |
-| `kn-doc` | `/kn-doc` | Work with documentation |
-| `kn-commit` | `/kn-commit` | Commit changes with verification |
+| ----- | ------- | ------- |
+| `kn-init` | `/kn-init` | Read project context and current state |
+| `kn-plan` | `/kn-plan` | Create an implementation plan |
+| `kn-research` | `/kn-research` | Research docs and code before changes |
+| `kn-implement` | `/kn-implement` | Execute an approved task |
+| `kn-verify` | `/kn-verify` | Validate work and report coverage |
+| `kn-spec` | `/kn-spec` | Create a spec document |
+| `kn-template` | `/kn-template` | Work with templates |
+| `kn-extract` | `/kn-extract` | Extract reusable knowledge |
+| `kn-doc` | `/kn-doc` | Create or update documentation |
+| `kn-commit` | `/kn-commit` | Commit changes safely |
 
 ---
 
-## Skill Structure
+## CLI Commands
 
-Each skill is stored in a folder with `SKILL.md`:
+The current CLI supports:
 
-```
-.claude/skills/
-├── kn-init/
-│   └── SKILL.md
-├── kn-plan/
-│   └── SKILL.md
-└── ...
-```
-
-### SKILL.md Format
-
-```markdown
----
-name: kn-init
-description: Initialize session
-triggers:
-  - /kn-init
-  - /kn:init
----
-
-# kn-init: Session Initialization
-
-## When to Use
-Use at the start of a new session...
-
-## Steps
-1. Detect project
-2. Read documentation
-3. Check current tasks
-
-## Example
-...
-```
-
----
-
-## Using Skills
-
-### Claude Code
-
-Type the trigger in chat:
-```
-/kn-init
-```
-
-Claude Code will load the skill and follow its instructions.
-
-### Antigravity (Gemini CLI)
-
-Same trigger format:
-```
-/kn-init
-```
-
-### Programmatic (MCP)
-
-Skills can also be invoked via MCP by reading the skill content:
-```json
-// The agent reads the skill and follows instructions
-```
-
----
-
-## Skill Locations
-
-| Platform | Directory |
-|----------|-----------|
-| Claude Code | `.claude/skills/` |
-| Antigravity | `.agent/skills/` |
-| Cursor | `.cursor/rules/` |
-| Cline | `.clinerules/` |
-
----
-
-## Syncing Skills
-
-Skills are automatically synced when CLI version changes (see [Auto-Sync](./auto-sync.md)).
-
-Manual sync:
 ```bash
-# Sync all skills
-knowns sync skills
-
-# Force overwrite
-knowns sync skills --force
+knowns skill list
+knowns skill view <name>
+knowns skill sync
 ```
+
+- `knowns skill list` shows available skills
+- `knowns skill view <name>` shows a skill definition
+- `knowns skill sync` syncs skills from imported packages
+
+Top-level project instruction syncing is handled by `knowns sync`, not by extra `knowns skill` subcommands.
 
 ---
 
-## Instruction Modes
+## Where Skills Live
 
-Skills support conditional content based on instruction mode:
+Built-in skill files are typically synced into Claude-compatible folders such as:
 
-| Mode | Description | MCP Tools | CLI Commands |
-|------|-------------|-----------|--------------|
-| `mcp` | MCP tools focus | ✓ | - |
-| `cli` | CLI commands focus | - | ✓ |
-
-Content is rendered using Handlebars:
-
-```markdown
-{{#if mcp}}
-Use `mcp__knowns__get_task({ "taskId": "42" })`
-{{/if}}
-
-{{#if cli}}
-Use `knowns task 42 --plain`
-{{/if}}
+```text
+.claude/skills/
+  kn-init/
+    SKILL.md
+  kn-plan/
+    SKILL.md
+  ...
 ```
+
+The exact synced output depends on the active platforms and sync implementation in the current CLI build.
 
 ---
 
 ## Typical Workflow
 
-```mermaid
-graph TD
-    A[kn-init] --> B[kn-research]
-    B --> C[kn-plan]
-    C --> D[kn-implement]
-    D --> E[kn-verify]
-    E --> F[kn-commit]
+Common flow when working with tasks:
 
-    A -.- A1["Initialize session, read docs"]
-    B -.- B1["Understand codebase"]
-    C -.- C1["Create implementation plan"]
-    D -.- D1["Implement following plan"]
-    E -.- E1["Verify and validate"]
-    F -.- F1["Commit changes"]
+```text
+/kn-init -> /kn-research -> /kn-plan -> /kn-implement -> /kn-verify -> /kn-commit
 ```
 
+This mirrors the Knowns workflow of reading context first, planning before implementation, validating before completion, and only then committing.
+
 ---
 
-## SDD Workflow (Spec-Driven)
+## Imported Skills
 
-For complex features, use the SDD workflow:
+Imported packages may provide additional skills.
 
-```mermaid
-graph TD
-    A["kn-spec 'feature'"] --> B["kn-plan --from @doc/specs/feature"]
-    B --> C["kn-implement id"]
-    C --> D{More tasks?}
-    D -->|Yes| E["Suggests next task"]
-    E --> C
-    D -->|No| F["Auto-runs kn-verify"]
-
-    A -.- A1["Create spec document"]
-    B -.- B1["Generate tasks from spec"]
-    C -.- C1["Implement each task"]
-    F -.- F1["Show coverage report"]
+```bash
+knowns import add <source>
+knowns import sync
+knowns skill sync
 ```
 
-### Auto-Verify Behavior
-
-When completing a task linked to a spec (`kn-implement`):
-
-| Condition | Behavior |
-|-----------|----------|
-| **More tasks pending** | Suggests next task: `/kn-plan <next-id>` |
-| **Last task of spec** | Auto-runs SDD verification + shows coverage report |
-
-This ensures specs are verified automatically when all tasks are complete.
+`knowns import sync` currently exists, but the CLI notes that full network sync behavior is not yet implemented in this build.
 
 ---
 
-## Creating Custom Skills
+## Custom Skills
 
-While built-in skills are auto-synced, you can create custom skills:
+You can add custom skill folders alongside synced skills, but the current CLI does not provide `knowns skill create`.
 
-1. Create folder in `.claude/skills/`:
-   ```
-   .claude/skills/my-skill/
-   └── SKILL.md
-   ```
-
-2. Add frontmatter and content:
-   ```markdown
-   ---
-   name: my-skill
-   description: My custom skill
-   triggers:
-     - /my-skill
-   ---
-
-   # My Custom Skill
-
-   ## Steps
-   1. Step one
-   2. Step two
-   ```
-
-3. Use in Claude Code:
-   ```
-   /my-skill
-   ```
-
-**Note:** Custom skills are NOT auto-synced. They will be preserved during auto-sync.
-
----
-
-## Deprecated Skill Formats
-
-Old formats are automatically cleaned up during sync:
-
-| Old Format | Status |
-|------------|--------|
-| `knowns.*` | Removed |
-| `kn:*` | Removed |
-
-Current format uses hyphen: `kn-init`, `kn-plan`, etc.
+If you add custom skills manually, keep them separate from generated content so future syncs are easier to manage.
 
 ---
 
 ## Related
 
-- [Auto-Sync](./auto-sync.md) - Automatic skill sync
-- [Multi-Platform Support](./multi-platform.md) - Platform-specific locations
-- [Templates](./templates.md) - Code generation templates
+- [Guidelines](./guidelines.md) - How full guidance is exposed
+- [Multi-Platform](./multi-platform.md) - Platform targets and sync behavior
+- [Command Reference](./commands.md) - Current CLI syntax

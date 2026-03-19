@@ -1,7 +1,7 @@
 ---
 title: Knowns CLI Guide
 createdAt: '2025-12-26T19:43:25.470Z'
-updatedAt: '2026-01-15T09:54:09.403Z'
+updatedAt: '2026-03-08T18:22:39.448Z'
 description: Complete guide for using Knowns CLI
 tags:
   - guide
@@ -15,14 +15,14 @@ Knowns is a CLI tool for managing tasks, documentation, and time tracking for de
 ## Installation
 
 ```bash
-# Install globally via npm
+# Install via npm (downloads platform-specific Go binary)
 npm install -g knowns
 
-# Or via bun
-bun add -g knowns
+# Install via Homebrew (macOS/Linux)
+brew install knowns-dev/tap/knowns
 
-# Or use npx (no installation)
-npx knowns <command>
+# Install via curl (Linux/macOS)
+curl -fsSL https://get.knowns.dev/install.sh | sh
 ```
 
 ## Initialize Project
@@ -36,31 +36,31 @@ knowns init [project-name]
 When running without a name, the wizard prompts for:
 
 ```
-🚀 Knowns Project Setup Wizard
+Knowns Project Setup Wizard
    Configure your project settings
 
-? Project name › my-project
-? Git tracking mode › Git Tracked (recommended for teams)
-? AI Guidelines type › CLI / MCP
-? Select AI agent files › CLAUDE.md, AGENTS.md
+? Project name > my-project
+? Git tracking mode > Git Tracked (recommended for teams)
+? AI Guidelines type > CLI / MCP
+? Select AI agent files > CLAUDE.md, AGENTS.md
 ```
 
 **Example session:**
 ```
 $ knowns init
 
-🚀 Knowns Project Setup Wizard
+Knowns Project Setup Wizard
    Configure your project settings
 
-? Project name › my-app
-? Git tracking mode › Git Tracked (recommended for teams)
-? AI Guidelines type › MCP
-? Select AI agent files › CLAUDE.md, AGENTS.md
+? Project name > my-app
+? Git tracking mode > Git Tracked (recommended for teams)
+? AI Guidelines type > MCP
+? Select AI agent files > CLAUDE.md, AGENTS.md
 
-✓ Created .mcp.json for Claude Code MCP auto-discovery
-✓ Project initialized: my-app
-✓ Created: CLAUDE.md
-✓ Created: AGENTS.md
+Created .mcp.json for Claude Code MCP auto-discovery
+Project initialized: my-app
+Created: CLAUDE.md
+Created: AGENTS.md
 
 Get started:
   knowns task create "My first task"
@@ -89,8 +89,8 @@ When selecting **MCP** in the wizard, a `.mcp.json` file is automatically create
 {
   "mcpServers": {
     "knowns": {
-      "command": "npx",
-      "args": ["-y", "knowns", "mcp"]
+      "command": "knowns",
+      "args": ["mcp"]
     }
   }
 }
@@ -167,7 +167,7 @@ knowns task edit <id> --ac "New criterion"
 knowns task edit <id> --check-ac 1
 knowns task edit <id> --uncheck-ac 1
 
-# Plan & Notes  
+# Plan & Notes
 knowns task edit <id> --plan "1. Step 1
 2. Step 2"
 knowns task edit <id> --notes "Summary"

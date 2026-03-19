@@ -1,0 +1,13 @@
+{
+  "name": "@knowns/win-arm64",
+  "version": "0.0.0",
+  "description": "Knowns binary for win arm64",
+  "os": ["windows"],
+  "cpu": ["arm64"],
+  "main": "knowns",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/howznguyen/knowns"
+  }
+}

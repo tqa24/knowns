@@ -1,284 +1,154 @@
 # Configuration
 
-Customize Knowns behavior with configuration options.
+Knowns stores project settings in `.knowns/config.json`.
 
-## Project Configuration
+---
 
-Located at `.knowns/config.json`:
+## Project Config Shape
 
-```json
-{
-  "project": "my-project",
-  "version": "1.0.0"
-}
-```
-
-### Options
-
-| Key | Type | Description |
-|-----|------|-------------|
-| `project` | string | Project name |
-| `version` | string | Config version |
-| `defaultAssignee` | string | Default assignee for new tasks |
-| `defaultPriority` | string | Default priority (`low`, `medium`, `high`) |
-| `defaultLabels` | string[] | Default labels for new tasks |
-| `timeFormat` | string | Time format (`12h` or `24h`) |
-| `gitTrackingMode` | string | Git tracking mode (`git-tracked` or `git-ignored`) |
-| `settings.semanticSearch` | object | Semantic search configuration (see below) |
-
-### Semantic Search Settings
-
-The `settings.semanticSearch` object configures the embedding model for semantic search:
+Current Go CLI config is centered around a root project object:
 
 ```json
 {
+  "name": "my-project",
+  "id": "proj_123",
+  "createdAt": "2026-03-19T10:00:00Z",
   "settings": {
+    "defaultAssignee": "@me",
+    "defaultPriority": "medium",
+    "defaultLabels": ["backend"],
+    "timeFormat": "24h",
+    "gitTrackingMode": "git-tracked",
+    "statuses": ["todo", "in-progress", "blocked", "done", "in-review"],
+    "statusColors": {
+      "todo": "gray",
+      "in-progress": "blue",
+      "blocked": "red",
+      "done": "green"
+    },
+    "visibleColumns": ["todo", "in-progress", "blocked", "done", "in-review"],
     "semanticSearch": {
       "enabled": true,
       "model": "gte-small",
       "huggingFaceId": "Xenova/gte-small",
       "dimensions": 384,
       "maxTokens": 512
-    }
+    },
+    "serverPort": 3001,
+    "platforms": ["claude-code", "opencode", "gemini", "copilot", "agents"]
   }
 }
 ```
 
+---
+
+## Common Settings
+
 | Key | Type | Description |
-|-----|------|-------------|
-| `enabled` | boolean | Enable/disable semantic search |
-| `model` | string | Model ID (e.g., `gte-small`, `gte-base`) |
-| `huggingFaceId` | string | Full HuggingFace model ID (optional, for custom models) |
-| `dimensions` | number | Embedding vector dimensions (optional) |
-| `maxTokens` | number | Max input tokens (optional) |
+| --- | ---- | ----------- |
+| `name` | string | Project name |
+| `id` | string | Project identifier |
+| `createdAt` | string | ISO timestamp |
+| `settings.defaultAssignee` | string | Default assignee for new tasks |
+| `settings.defaultPriority` | string | Default task priority |
+| `settings.defaultLabels` | string[] | Default labels for new tasks |
+| `settings.timeFormat` | string | `12h` or `24h` |
+| `settings.gitTrackingMode` | string | `git-tracked`, `git-ignored`, or `none` |
+| `settings.statuses` | string[] | Allowed task statuses |
+| `settings.statusColors` | object | Board/status color mapping |
+| `settings.visibleColumns` | string[] | Columns shown in the board |
+| `settings.semanticSearch` | object | Semantic search settings |
+| `settings.serverPort` | number | Browser server port override |
+| `settings.platforms` | string[] | Enabled platform targets |
+| `settings.autoSyncOnUpdate` | boolean | Auto-sync generated files after upgrade |
+| `settings.enableChatUI` | boolean | Show/hide Chat UI in browser |
+| `settings.opencodeServer` | object | OpenCode server connection settings |
+| `settings.opencodeModels` | object | Project-level OpenCode model preferences |
 
-**Managing models via CLI:**
+---
+
+## Semantic Search Settings
+
+`settings.semanticSearch` supports:
+
+| Key | Type | Description |
+| --- | ---- | ----------- |
+| `enabled` | boolean | Enable semantic search |
+| `model` | string | Model ID such as `gte-small` |
+| `huggingFaceId` | string | HuggingFace identifier for the model |
+| `dimensions` | number | Embedding vector size |
+| `maxTokens` | number | Max input tokens |
+
+Useful commands:
 
 ```bash
-# List available models
 knowns model list
-
-# Download and set a model
-knowns model download gte-base
-knowns model set gte-base
-
-# Add custom HuggingFace model
-knowns model add Xenova/bge-large-en-v1.5 --dims 1024
-
-# Rebuild search index after changing model
+knowns model download gte-small
+knowns model set gte-small
 knowns search --reindex
+knowns search --status-check
 ```
 
-**Model storage:**
-
-Models are stored globally at `~/.knowns/models/` and shared across all projects.
-
-Custom models are tracked in `~/.knowns/custom-models.json`.
-
-## Project Structure
-
-After `knowns init`, your project contains:
-
-```
-.knowns/
-├── config.json       # Project configuration
-├── tasks/            # Task markdown files
-│   ├── task-1 - First Task.md
-│   └── task-2 - Second Task.md
-└── docs/             # Documentation
-    ├── ai/           # AI integration
-    ├── architecture/ # Technical patterns
-    ├── core/         # Core concepts
-    ├── development/  # For contributors
-    ├── guides/       # User guides
-    └── templates/    # Template system
-```
-
-### Task Files
-
-Each task is a markdown file with frontmatter:
-
-```markdown
----
-id: "42"
-title: "Add authentication"
-status: "in-progress"
-priority: "high"
-assignee: "@john"
-labels: ["feature", "auth"]
-createdAt: "2025-01-15T10:00:00Z"
-updatedAt: "2025-01-15T14:30:00Z"
 ---
 
-## Description
+## Platform Settings
 
-Implement JWT authentication...
+`settings.platforms` can restrict instruction-file generation to a subset of platforms:
 
-## Acceptance Criteria
-
-- [x] User can login
-- [ ] JWT token returned
-
-## Implementation Plan
-
-1. Research patterns
-2. Implement
-
-## Implementation Notes
-
-Completed login endpoint.
+```json
+{
+  "settings": {
+    "platforms": ["claude-code", "copilot", "agents"]
+  }
+}
 ```
 
-### Document Files
+Supported values in config:
 
-Each document is a markdown file with frontmatter:
+- `claude-code`
+- `opencode`
+- `gemini`
+- `copilot`
+- `agents`
 
-```markdown
----
-title: "Auth Pattern"
-description: "JWT authentication pattern"
-tags: ["patterns", "security"]
-createdAt: "2025-01-10T09:00:00Z"
-updatedAt: "2025-01-12T16:00:00Z"
 ---
 
-# Auth Pattern
+## Browser Server Port
 
-This document describes our authentication pattern...
-```
-
-## Init Wizard
-
-When running `knowns init`, an interactive wizard guides you through setup:
-
-```
-🚀 Knowns Project Setup Wizard
-   Configure your project settings
-
-? Project name: my-project
-? Git tracking mode: Git Tracked (recommended for teams)
-? AI Guidelines type: CLI
-? Select AI agent files to create/update:
-  ◉ CLAUDE.md (Claude Code)
-  ◉ AGENTS.md (Agent SDK)
-```
-
-| Option | Description |
-|--------|-------------|
-| **Project name** | Name stored in config.json |
-| **Git tracking mode** | `git-tracked` (default) or `git-ignored` |
-| **AI Guidelines type** | `CLI` (commands) or `MCP` (tools) |
-| **Agent files** | Which instruction files to create |
-
-**When MCP is selected:**
-- Creates `.mcp.json` for Claude Code auto-discovery
-
-**Skip wizard:**
-```bash
-knowns init my-project --no-wizard  # Use defaults
-```
-
-## Git Integration
-
-Knowns supports two git tracking modes, selected during `knowns init`:
-
-### Git Tracking Modes
-
-| Mode | Description | Use Case |
-|------|-------------|----------|
-| `git-tracked` | All `.knowns/` files tracked in git | Teams, shared context |
-| `git-ignored` | Only docs/templates tracked, tasks/config ignored | Personal use |
-
-### Git-Tracked Mode (Default)
-
-The entire `.knowns/` folder is committed to git:
+If `settings.serverPort` is set, `knowns browser` uses it as the default port. Otherwise the CLI falls back to `3001`.
 
 ```bash
-git add .knowns/
-git commit -m "Add project knowledge base"
+knowns browser
+knowns browser --open
+knowns browser --port 3002
 ```
 
-**Benefits:**
-- Share tasks and docs with team
-- Version history for all changes
-- Code review includes task updates
+---
 
-### Git-Ignored Mode
+## CLI Commands
 
-Only documentation and templates are tracked. During init, Knowns automatically adds to `.gitignore`:
-
-```gitignore
-# knowns (ignore all except docs and templates)
-.knowns/*
-!.knowns/docs/
-!.knowns/docs/**
-!.knowns/templates/
-!.knowns/templates/**
-```
-
-**Benefits:**
-- Personal task tracking without cluttering team repo
-- Docs and templates still shareable with team
-- No merge conflicts on tasks
-
-### .gitignore (Optional)
-
-You may want to ignore certain files regardless of mode:
-
-```gitignore
-# Ignore time tracking state (optional)
-.knowns/.timer
-```
-
-## Configuration Commands
-
-Manage project configuration via CLI:
+Current config commands:
 
 ```bash
-# Get a config value
-knowns config get defaultAssignee --plain
+knowns config get <key>
+knowns config set <key> <value>
+knowns config list
+knowns config reset
+```
 
-# Set a config value
-knowns config set defaultAssignee "@john"
+Examples:
 
-# List all config
+```bash
+knowns config get settings.semanticSearch
+knowns config set settings.semanticSearch.enabled true
+knowns config set settings.serverPort 3002
 knowns config list
 ```
 
-## AI Agent Guidelines
+---
 
-Knowns provides instruction file sync and on-demand guidelines via MCP:
+## Related
 
-```bash
-# Quick sync with full embedded guidelines (~26KB)
-knowns sync
-
-# Sync with minimal instruction only (~1KB)
-knowns sync --minimal
-
-# Sync all files with MCP guidelines
-knowns sync --type mcp --all
-
-# Use unified guidelines (CLI + MCP)
-knowns sync --type unified
-```
-
-**Supported files:**
-- `CLAUDE.md` - For Claude Code (default)
-- `AGENTS.md` - For Agent SDK (default)
-- `GEMINI.md` - For Google Gemini
-- `.github/copilot-instructions.md` - For GitHub Copilot
-
-## Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `KNOWNS_PORT` | Default port for `knowns browser` |
-
-## Defaults
-
-| Setting | Default |
-|---------|---------|
-| Web UI port | 6420 |
-| Task priority | medium |
-| Task status | todo |
+- [Semantic Search](./semantic-search.md) - Search-specific setup
+- [Multi-Platform](./multi-platform.md) - Platform targets and sync
+- [Command Reference](./commands.md) - Current CLI syntax

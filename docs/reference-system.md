@@ -12,8 +12,8 @@ Knowns uses `@` references to create links between tasks, documentation, and tem
 
 | Format | Example | Description |
 |--------|---------|-------------|
-| Task ref | `@task-42` | Links to task 42 |
-| Task ref | `@task-pdyd2e` | Links to task pdyd2e |
+| Task ref | `@task-pdyd2e` | Links to task `pdyd2e` |
+| Task ref | `@task-ba4qyh` | Links to task `ba4qyh` |
 
 ### Document References
 
@@ -35,7 +35,7 @@ Knowns uses `@` references to create links between tasks, documentation, and tem
 
 ```bash
 knowns task create "Add login endpoint" \
-  -d "Implement JWT login following @doc/patterns/auth. Related: @task-38"
+  -d "Implement JWT login following @doc/patterns/auth. Related: @task-pdyd2e"
 ```
 
 ### In Document Content
@@ -46,8 +46,8 @@ knowns task create "Add login endpoint" \
 This guide covers our authentication patterns.
 
 ## Related Tasks
-- @task-42 - Initial auth implementation
-- @task-45 - Add refresh tokens
+- @task-pdyd2e - Initial auth implementation
+- @task-ba4qyh - Add refresh tokens
 
 ## See Also
 - @doc/patterns/jwt-tokens
@@ -71,8 +71,8 @@ doc: architecture/patterns/ui    # Links to @doc/architecture/patterns/ui
 ### In Implementation Plan
 
 ```bash
-knowns task edit 42 --plan $'1. Review @doc/patterns/auth
-2. Check @task-38 for prior implementation
+knowns task edit pdyd2e --plan $'1. Review @doc/patterns/auth
+2. Check @task-ba4qyh for prior implementation
 3. Follow @doc/api-guidelines for endpoint design'
 ```
 
@@ -81,7 +81,7 @@ knowns task edit 42 --plan $'1. Review @doc/patterns/auth
 When an AI assistant reads a task with references:
 
 ```
-1. AI requests task #42
+1. AI requests task `pdyd2e`
 2. Knowns returns task content with refs:
    "Implement auth following @doc/patterns/auth"
 3. AI sees the reference
@@ -93,9 +93,9 @@ When an AI assistant reads a task with references:
 ### Example Flow
 
 ```
-You: "Work on task 42"
+You: "Work on @task-pdyd2e"
 
-AI: [Reads task 42]
+AI: [Reads task pdyd2e]
     Description: "Add JWT auth following @doc/patterns/auth"
 
 AI: [Sees @doc/patterns/auth reference]
@@ -116,8 +116,8 @@ AI: "I see this task requires JWT authentication.
 
 | Input | Resolves To |
 |-------|-------------|
-| `@task-42` | `.knowns/tasks/task-42 - Title.md` |
-| `@task-1` | `.knowns/tasks/task-1 - Title.md` |
+| `@task-pdyd2e` | matching task with ID `pdyd2e` |
+| `@task-ba4qyh` | matching task with ID `ba4qyh` |
 
 ### Document References
 
@@ -160,7 +160,7 @@ knowns task create "Add caching" \
 # Less good - context buried in notes
 knowns task create "Add caching" -d "Implement caching"
 # Then later...
-knowns task edit 1 --notes "See @doc/patterns/caching"
+knowns task edit pdyd2e --notes "See @doc/patterns/caching"
 ```
 
 ### 2. Create Documentation First
@@ -216,10 +216,10 @@ Link related tasks and docs:
 
 ```bash
 # In task description
--d "Implement feature. Blocked by @task-38. See @doc/patterns/x"
+-d "Implement feature. Blocked by @task-pdyd2e. See @doc/patterns/x"
 
 # In documentation
-"Related tasks: @task-42, @task-45"
+"Related tasks: @task-pdyd2e, @task-ba4qyh"
 "See also: @doc/other-pattern"
 ```
 
@@ -228,14 +228,14 @@ Link related tasks and docs:
 ### CLI Output
 
 ```bash
-$ knowns task 42 --plain
+$ knowns task pdyd2e --plain
 
-# Task 42: Add Authentication
+# Task pdyd2e: Add Authentication
 Status: in-progress | Priority: high
 
 ## Description
 Implement JWT auth following @doc/patterns/auth.
-Related: @task-38 @task-39
+Related: @task-ba4qyh @task-km82ns
 
 ## Acceptance Criteria
 - [ ] User can login
@@ -281,5 +281,5 @@ AI: "I'll use the react-component template.
 
     Running template..."
 
-    $ knowns template run react-component --name UserProfile --withTest
+    $ knowns template run react-component -v name=UserProfile -v withTest=true
 ```

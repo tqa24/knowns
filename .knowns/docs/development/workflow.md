@@ -1,7 +1,7 @@
 ---
 title: Development Workflow
 createdAt: '2026-01-06T07:54:31.774Z'
-updatedAt: '2026-01-06T07:54:47.956Z'
+updatedAt: '2026-03-08T18:21:37.757Z'
 description: >-
   Complete guide for the development process including branching, PR, merge and
   release
@@ -17,7 +17,7 @@ Complete guide for contributing to Knowns CLI.
 ## Overview
 
 ```
-Issue/Task → Branch → Code → PR → CI ✅ → Review ✅ → Merge → Release
+Issue/Task → Branch → Code → PR → CI → Review → Merge → Release
 ```
 
 ## 1. Create Task
@@ -44,6 +44,25 @@ knowns time start <id>
 # Create branch
 git checkout main && git pull
 git checkout -b feat/task-<id>-description
+```
+
+### Development Commands
+
+```bash
+# Build the CLI binary
+make build
+
+# Run all tests
+go test ./...
+
+# Run tests with verbose output
+go test -v ./...
+
+# Run linter
+make lint
+
+# Build for all platforms (cross-compile)
+make build-all
 ```
 
 ### Branch Naming
@@ -89,10 +108,10 @@ git push -u origin <branch>
 ## 5. Code Review
 
 Requirements:
-- ✅ CI passes (lint, test, build)
-- ✅ 1+ approval
-- ✅ No "WIP" in title
-- ✅ Branch up to date
+- CI passes (`go test ./...`, `make lint`, `make build`)
+- 1+ approval
+- No "WIP" in title
+- Branch up to date
 
 ## 6. Merge
 

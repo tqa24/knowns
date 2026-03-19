@@ -1,7 +1,7 @@
 ---
 title: Template CLI
 createdAt: '2026-01-23T04:00:56.085Z'
-updatedAt: '2026-01-23T04:01:57.830Z'
+updatedAt: '2026-03-09T06:39:43.159Z'
 description: CLI commands for template management
 tags:
   - feature
@@ -10,7 +10,7 @@ tags:
 ---
 ## Overview
 
-CLI commands for template management in Knowns.
+CLI commands for template management in Knowns. The CLI is implemented in Go using the `cobra` command framework. Templates use Handlebars (`.hbs`) syntax for code generation and are configured via `_template.yaml` files.
 
 **Related docs:**
 - @doc/templates/overview - Overview
@@ -28,196 +28,246 @@ List all templates:
 ```bash
 $ knowns template list
 
-Templates:
-┌──────────────────┬─────────────────────────────────────┐
-│ Name             │ Description                         │
-├──────────────────┼─────────────────────────────────────┤
-│ react-component  │ React functional component          │
-│ api-endpoint     │ REST API endpoint with handler      │
-│ feature-module   │ Complete feature module             │
-└──────────────────┴─────────────────────────────────────┘
+NAME                            DESCRIPTION                               TYPE
+────────────────────────────────────────────────────────────────────────────────
+react-component                 React functional component                local
+api-endpoint                    REST API endpoint with handler            local
+knowns/service                  Go service boilerplate                    imported
 
 $ knowns template list --plain
-react-component - React functional component
-api-endpoint - REST API endpoint with handler
-feature-module - Complete feature module
+TEMPLATE: react-component
+  DESCRIPTION: React functional component
+
+TEMPLATE: api-endpoint
+  DESCRIPTION: REST API endpoint with handler
+
+TEMPLATE: knowns/service
+  DESCRIPTION: Go service boilerplate
+  IMPORTED FROM: knowns
 ```
 
----
-
-### `knowns template run <name>`
-
-Run template generator:
+Filters:
 
 ```bash
-# Interactive mode
-$ knowns template run react-component
-? Component name? UserProfile
-? Include test file? Yes
-? Include styles? No
+# Show only local templates
+$ knowns template list --local
 
-✓ Created src/components/UserProfile.tsx
-✓ Created src/components/UserProfile.test.tsx
+# Show only imported templates
+$ knowns template list --imported
 
-# Non-interactive (pre-filled answers)
-$ knowns template run react-component \
-    --name UserProfile \
-    --withTest \
-    --no-withStyles
-
-# Dry run (preview only)
-$ knowns template run react-component --dry-run
-Would create:
-  - src/components/UserProfile.tsx
-  - src/components/UserProfile.test.tsx
-```
-
----
-
-### `knowns template create <name>`
-
-Create new template:
-
-```bash
-$ knowns template create my-service
-
-✓ Created .knowns/templates/my-service/_template.yaml
-✓ Created .knowns/templates/my-service/example.ts.hbs
-
-Edit _template.yaml to configure prompts and actions.
+# JSON output
+$ knowns template list --json
 ```
 
 ---
 
 ### `knowns template view <name>`
 
-View template details:
+View template details (also available as shorthand `knowns template <name>`):
+
+```bash
+$ knowns template view react-component --plain
+
+NAME: react-component
+DESCRIPTION: React functional component with optional test and styles
+VERSION: 1.0.0
+AUTHOR: team
+DOC: patterns/react-component
+DESTINATION: src/components
+PATH: /path/to/.knowns/templates/react-component
+PROMPTS:
+  - name (text): Component name? [required]
+  - withTest (confirm): Include test file? (default: true)
+  - withStyles (confirm): Include styles? (default: false)
+ACTIONS:
+  1. add → {{pascalCase name}}.tsx (template: component.tsx.hbs)
+  2. add → {{pascalCase name}}.test.tsx (template: component.test.tsx.hbs)
+  3. add → {{pascalCase name}}.module.css (template: styles.css.hbs)
+```
+
+Styled output:
 
 ```bash
 $ knowns template view react-component
 
-Template: react-component
-Description: React functional component with optional test and styles
+react-component
+React functional component with optional test and styles
 
-Prompts:
-  1. name (text) - Component name?
-  2. withTest (confirm) - Include test file? [default: yes]
-  3. withStyles (confirm) - Include styles? [default: no]
+Version: 1.0.0
+Author: team
+Doc: patterns/react-component
+Destination: src/components
 
-Actions:
-  1. add: {{pascalCase name}}.tsx
-  2. add: {{pascalCase name}}.test.tsx (when: withTest)
-  3. add: {{pascalCase name}}.module.css (when: withStyles)
+── Prompts ──
+  - name (text): Component name? [required]
+  - withTest (confirm): Include test file? (default: true)
+  - withStyles (confirm): Include styles? (default: false)
 
-Linked Doc: patterns/react-component
+── Actions (3) ──
+  1. [add] {{pascalCase name}}.tsx (template: component.tsx.hbs)
+  2. [add] {{pascalCase name}}.test.tsx (template: component.test.tsx.hbs) [skip-if-exists]
+  3. [add] {{pascalCase name}}.module.css (template: styles.css.hbs)
 
-Files:
-  - {{pascalCase name}}.tsx.hbs (1.2KB)
-  - {{pascalCase name}}.test.tsx.hbs (0.8KB)
-  - {{pascalCase name}}.module.css.hbs (0.2KB)
-
-# With linked doc content
-$ knowns template view react-component --with-doc
+Success message: Component created successfully!
 ```
 
 ---
 
-### `knowns template validate <name>`
+### `knowns template run <name>`
 
-Validate template config:
+Run template generator. Variables are passed via `-v key=value` flags (repeatable):
 
 ```bash
-$ knowns template validate react-component
+# Pass variables via -v flags
+$ knowns template run react-component \
+    -v name=UserProfile \
+    -v withTest=true \
+    -v withStyles=false
 
-✓ Config file valid
-✓ All template files exist
-✓ Handlebars syntax valid
-✓ All prompt names used in templates
+Created:
+  + src/components/UserProfile.tsx
+  + src/components/UserProfile.test.tsx
 
-Template is valid\!
+# Dry run (preview only, no files written)
+$ knowns template run react-component -v name=UserProfile --dry-run
+
+Dry run — no files were written.
+
+Created:
+  + src/components/UserProfile.tsx
+  + src/components/UserProfile.test.tsx
+  + src/components/UserProfile.module.css
+
+# JSON output
+$ knowns template run react-component -v name=UserProfile --json
+```
+
+Variable validation:
+- Required prompts without a value (and no default) produce an error
+- Optional prompts use their `initial` value as default when not provided
+
+```bash
+# Error: required variable not provided
+$ knowns template run react-component
+Error: required variable "name" not provided (use -v name=<value>)
 ```
 
 ---
 
-### `knowns template doc <name>`
+### `knowns template create <name>`
 
-Open linked doc of template:
+Create a new template scaffold:
 
 ```bash
-$ knowns template doc react-component
-# Equivalent to: knowns doc "patterns/react-component" --plain
+$ knowns template create my-service
+
+Created template: my-service
+Edit the template at: .knowns/templates/my-service/
+
+# With description and linked doc
+$ knowns template create my-service \
+    -d "Go service with handler and tests" \
+    --doc "patterns/service"
+
+Created template: my-service
+Doc: patterns/service
+Edit the template at: .knowns/templates/my-service/
 ```
+
+This creates:
+- `.knowns/templates/my-service/_template.yaml` — template configuration
+- `.knowns/templates/my-service/example.hbs` — example Handlebars template file
 
 ---
 
 ## Skill Management
 
+Skills are backed by templates and provide AI-platform-specific instructions.
+
 ### `knowns skill list`
 
 ```bash
+$ knowns skill list --plain
+SKILLS: 3
+
+SKILL: knowns-task
+  DESCRIPTION: Work on Knowns tasks
+SKILL: knowns-template
+  DESCRIPTION: Generate from templates
+  SOURCE: knowns
+
 $ knowns skill list
 
-Skills:
-┌──────────────────┬─────────────────────────────────────┐
-│ Name             │ Description                         │
-├──────────────────┼─────────────────────────────────────┤
-│ knowns-task      │ Work on Knowns tasks                │
-│ knowns-template  │ Generate from templates             │
-│ create-component │ Create React component              │
-└──────────────────┴─────────────────────────────────────┘
+── Available skills (3) ──
+  [local/knowns-task] Work on Knowns tasks
+  [local/knowns-template] Generate from templates
+  [knowns/create-component] Create component from template
 ```
 
-### `knowns skill create <name>`
+### `knowns skill view <name>`
 
 ```bash
-$ knowns skill create my-skill
-
-✓ Created .knowns/skills/my-skill/SKILL.md
-
-Edit SKILL.md to define skill instructions.
+$ knowns skill view knowns-task --plain
+SKILL: knowns-task
+DESCRIPTION: Work on Knowns tasks
+SOURCE: local
+DOC: guides/task-workflow
+ACTIONS: 2
+  ACTION: add src/handler.go
+  ACTION: add src/handler_test.go
+PROMPTS:
+  PROMPT: name (text)
 ```
 
 ### `knowns skill sync`
 
-Sync skills to all AI platforms:
+Sync skills to AI platforms. Currently integrated into `knowns import sync`:
 
 ```bash
 $ knowns skill sync
+Syncing skills...
+(Skills are synced via 'knowns import sync'. Skill sync not yet implemented separately.)
 
-Syncing skills to configured platforms...
-✓ Claude Code: .claude/skills/ (12 skills)
-✓ Antigravity: .agent/skills/ (12 skills)
-✓ Cursor: .cursor/rules/ (12 rules)
-✓ Gemini CLI: ~/.gemini/commands/ (12 commands)
-
-# Sync to specific platforms
-$ knowns skill sync --platform claude,antigravity
-
-# Check status
-$ knowns skill status
-
-Platform        Location              Skills    Status
-──────────────────────────────────────────────────────
-Claude Code     .claude/skills/       12        ✅ Synced
-Antigravity     .agent/skills/        12        ✅ Synced
-Cursor          .cursor/rules/        12        ✅ Synced
-Gemini CLI      ~/.gemini/commands/   12        ✅ Synced
+# Use import sync for full sync
+$ knowns sync
 ```
 
 ---
 
 ## Init with AI Platforms
 
+The `knowns init` command automatically generates AI platform instruction files:
+
 ```bash
-# Interactive (asks which platforms)
-knowns init
+$ knowns init
 
-# Specify platforms
-knowns init --ai claude,cursor,antigravity
-
-# All supported platforms
-knowns init --ai all
-
-# Skip AI setup
-knowns init --no-ai
+# Auto-generates:
+# - CLAUDE.md          (Claude Code)
+# - GEMINI.md          (Gemini CLI)
+# - AGENTS.md          (Generic AI)
+# - .github/copilot-instructions.md (GitHub Copilot)
 ```
+
+Each generated file includes project-specific guidelines and CLI command references.
+
+---
+
+## Template Engine
+
+The Go template engine (`internal/codegen`) processes Handlebars `.hbs` files with the following features:
+
+- **Variable substitution**: `{{name}}`, `{{description}}`
+- **Case helpers**: `{{pascalCase name}}`, `{{camelCase name}}`, `{{snakeCase name}}`, `{{kebabCase name}}`
+- **Conditional rendering**: Actions support `when` expressions
+- **Action types**: `add`, `addMany`, `modify`, `append`
+- **Skip-if-exists**: Prevents overwriting existing files
+- **Dry-run mode**: Preview generated files without writing
+
+### Action Types
+
+| Type | Description | Key Fields |
+|------|-------------|------------|
+| `add` | Create a single file | `template`, `path` |
+| `addMany` | Create multiple files from a folder | `source`, `destination`, `globPattern` |
+| `modify` | Edit an existing file in-place | `path`, `pattern`, `template` |
+| `append` | Append content to an existing file | `path`, `template`, `unique`, `separator` |

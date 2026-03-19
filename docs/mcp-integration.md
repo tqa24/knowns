@@ -11,15 +11,13 @@ Integrate Knowns with AI assistants via Model Context Protocol (MCP).
 | Platform | Config File | Scope | Auto-discover |
 |----------|-------------|-------|---------------|
 | **Claude Code** | `.mcp.json` | Per-project | ✅ |
-| **Antigravity** | `~/.gemini/antigravity/mcp_config.json` | Global | ✅ |
-| **Gemini CLI** | `~/.gemini/settings.json` | Global | ✅ |
+| **Gemini CLI** | platform-managed | Global | ✅ |
 | **Cursor** | `.cursor/mcp.json` | Per-project | ⚠️ Manual |
-| **Cline** | `.cline/mcp.json` | Per-project | ⚠️ Manual |
-| **Continue** | `.continue/config.json` | Per-project | ⚠️ Manual |
+| **Claude Desktop** | app config file | Global | ⚠️ Manual |
 
 ## Session Initialization (CRITICAL for Global Configs)
 
-For platforms with **global MCP config** (Antigravity, Gemini CLI), the MCP server doesn't know which project to work with. **Run these tools at session start:**
+For platforms with **global MCP config** (for example Gemini CLI or Claude Desktop), the MCP server doesn't know which project to work with. **Run these tools at session start:**
 
 ```json
 // 1. Detect available Knowns projects
@@ -32,7 +30,7 @@ mcp__knowns__set_project({ "projectRoot": "/path/to/project" })
 mcp__knowns__get_current_project({})
 ```
 
-> **Note:** Claude Code uses per-project `.mcp.json`, so session initialization is not required.
+> **Note:** Claude Code usually uses per-project `.mcp.json`, so session initialization is typically not required there.
 
 ## Setup
 
@@ -41,20 +39,11 @@ mcp__knowns__get_current_project({})
 The easiest way to configure MCP:
 
 ```bash
-# Setup both project .mcp.json and Claude Code global config
+# Setup MCP in Claude Code config
 knowns mcp setup
-
-# Only create .mcp.json in project (for Claude Code auto-discovery)
-knowns mcp setup --project
-
-# Only setup in Claude Code globally (skip .mcp.json)
-knowns mcp setup --global
 ```
 
-**What happens:**
-
-- `--project`: Creates `.mcp.json` in project root for auto-discovery
-- `--global`: Runs `claude mcp add-json knowns` to add to Claude Code
+`knowns mcp setup` exists in the current CLI, but the help output does not advertise extra flags. Keep this doc aligned with the shipped help unless new options are added to the binary.
 
 **Alternative: During `knowns init`**
 
@@ -91,34 +80,34 @@ Create `.mcp.json` in your project root:
   "mcpServers": {
     "knowns": {
       "command": "npx",
-      "args": ["-y", "knowns", "mcp"]
+      "args": ["-y", "knowns", "mcp", "--stdio"]
     }
   }
 }
 ```
 
-#### Antigravity (Global)
+#### Gemini CLI / Other Global MCP Clients
 
-Edit `~/.gemini/antigravity/mcp_config.json`:
+Use the same server command pattern in the client-specific config:
 
 ```json
 {
   "mcpServers": {
     "knowns": {
       "command": "npx",
-      "args": ["-y", "knowns", "mcp"]
+      "args": ["-y", "knowns", "mcp", "--stdio"]
     }
   }
 }
 ```
 
-> **Note:** Antigravity uses global config. Use `detect_projects` and `set_project` tools at session start.
+> **Note:** For global MCP configs, use `detect_projects` and `set_project` at session start.
 
 #### Claude Desktop (Global)
 
 Edit Claude's configuration file:
 
-**macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+**macOS/Linux (current CLI setup path):** `~/.claude/claude_desktop_config.json`
 
 **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
 
@@ -127,7 +116,7 @@ Edit Claude's configuration file:
   "mcpServers": {
     "knowns": {
       "command": "knowns",
-      "args": ["mcp"],
+      "args": ["mcp", "--stdio"],
       "cwd": "/path/to/your/project"
     }
   }
@@ -145,7 +134,7 @@ Create `.cursor/mcp.json`:
   "mcpServers": {
     "knowns": {
       "command": "npx",
-      "args": ["-y", "knowns", "mcp"]
+      "args": ["-y", "knowns", "mcp", "--stdio"]
     }
   }
 }
@@ -157,35 +146,37 @@ Close and reopen Claude Desktop to load the new configuration.
 
 ### 4. Sync MCP Guidelines (Optional)
 
-Sync your instruction files with MCP-formatted guidelines:
+Sync your instruction files and skills with the current CLI-generated guidance:
 
 ```bash
-# Sync with full embedded unified guidelines (default)
+# Sync everything
 knowns sync
 
-# Sync with MCP-only guidelines
-knowns sync --type mcp
+# Sync instruction files only
+knowns sync --instructions
 
-# Sync with minimal instruction only
-knowns sync --minimal
+# Sync a single platform's instruction file
+knowns sync --instructions --platform claude
 
-# Sync all files
-knowns sync --all
+# Sync skills only
+knowns sync --skills
 ```
 
-This updates CLAUDE.md and other instruction files with MCP tool references.
+This updates generated instruction files to match the current binary. For Claude Desktop or Claude Code MCP usage, prefer `knowns mcp --stdio` when configuring the server process.
 
 ## Usage
 
 Once configured, Claude can access your Knowns data automatically.
 
+For any global MCP client, remember that most Knowns tools return `No project set. Call set_project first.` until a project has been selected.
+
 ### Example Conversation
 
 ```
-You: "Start working on task 42"
+You: "Start working on @task-pdyd2e"
 
 Claude: [Reads task via MCP]
-"I see task #42 'Add user authentication' with these acceptance criteria:
+"I see task 'pdyd2e' 'Add user authentication' with these acceptance criteria:
 - User can login with email/password
 - JWT token is returned on success
 - Invalid credentials return 401
@@ -208,17 +199,17 @@ Starting timer and beginning implementation..."
 
 | Tool                  | Description             | Parameters                |
 | --------------------- | ----------------------- | ------------------------- |
-| `detect_projects`     | Scan for Knowns projects| `searchPaths?`, `maxDepth?` |
+| `detect_projects`     | Scan for Knowns projects| `additionalPaths?` |
 | `set_project`         | Set active project      | `projectRoot`             |
 | `get_current_project` | Get current project     | -                         |
 
-> **Required for global MCP configs** (Antigravity, Gemini CLI). Call at session start.
+> **Required for global MCP configs**. Call at session start.
 
 ### Task Management
 
 | Tool           | Description             | Parameters                                                                         |
 | -------------- | ----------------------- | ---------------------------------------------------------------------------------- |
-| `create_task`  | Create a new task       | `title`, `description?`, `status?`, `priority?`, `labels?`, `assignee?`, `parent?` |
+| `create_task`  | Create a new task       | `title`, `description?`, `status?`, `priority?`, `labels?`, `assignee?`, `parent?`, `fulfills?`, `spec?` |
 | `get_task`     | Get task by ID          | `taskId`                                                                           |
 | `update_task`  | Update task fields      | `taskId`, `status?`, `priority?`, `assignee?`, `labels?`, `addAc?`, `checkAc?`, `uncheckAc?`, `removeAc?`, `plan?`, `notes?`, `appendNotes?` |
 | `list_tasks`   | List tasks with filters | `status?`, `priority?`, `assignee?`, `label?`                                      |
@@ -249,7 +240,7 @@ Starting timer and beginning implementation..."
 | Tool          | Description     | Parameters                                                                          |
 | ------------- | --------------- | ----------------------------------------------------------------------------------- |
 | `list_docs`   | List all docs   | `tag?`                                                                              |
-| `get_doc`     | Get doc content | `path`, `info?`, `toc?`, `section?`                                                 |
+| `get_doc`     | Get doc content | `path`, `smart?`, `info?`, `toc?`, `section?`                                       |
 | `create_doc`  | Create new doc  | `title`, `description?`, `content?`, `tags?`, `folder?`                             |
 | `update_doc`  | Update doc      | `path`, `title?`, `description?`, `content?`, `appendContent?`, `tags?`, `section?` |
 
@@ -257,7 +248,7 @@ Starting timer and beginning implementation..."
 
 | Tool     | Description                     | Parameters                                           |
 | -------- | ------------------------------- | ---------------------------------------------------- |
-| `search` | Search tasks + docs (semantic)  | `query`, `type?` (all/task/doc), `mode?` (hybrid/semantic/keyword), `status?`, `priority?`, `label?`, `tag?` |
+| `search` | Search tasks + docs             | `query`, `type?` (all/task/doc), `mode?` (hybrid/semantic/keyword), `status?`, `priority?`, `label?`, `tag?`, `assignee?` |
 
 **Large Document Workflow:**
 
@@ -310,13 +301,13 @@ mcp__knowns__run_template({
 
 | Tool       | Description                        | Parameters        |
 | ---------- | ---------------------------------- | ----------------- |
-| `validate` | Validate refs and file integrity   | `scope?`, `fix?`  |
+| `validate` | Validate refs and file integrity   | `scope?`, `fix?`, `entity?`, `strict?`  |
 
 **validate parameters:**
 
 | Parameter | Description |
 | --------- | ----------- |
-| `scope`   | `all`, `tasks`, or `docs` (default: `all`) |
+| `scope`   | `all`, `tasks`, `docs`, `templates`, or `sdd` |
 | `fix`     | Attempt to auto-fix issues (default: `false`) |
 
 **Example:**
@@ -340,7 +331,7 @@ mcp__knowns__validate({ "scope": "tasks" })
 ### Zero Context Loss
 
 - AI reads your docs directly — no copy-paste
-- References (`@doc/...`, `@task-42`) are resolved automatically
+- References (`@doc/...`, `@task-<id>`) are resolved automatically
 - Project patterns are always available
 
 ### Consistent Implementations
@@ -376,7 +367,7 @@ mcp__knowns__validate({ "scope": "tasks" })
 Run manually to check for errors:
 
 ```bash
-knowns mcp --verbose
+knowns mcp --stdio
 ```
 
 ### Tools not appearing
@@ -388,18 +379,12 @@ cd your-project
 knowns init  # if not already done
 ```
 
-### Show MCP configuration info
-
-```bash
-knowns mcp --info
-```
-
 ## Alternative: --plain Output
 
 If you're not using Claude Desktop, use `--plain` flag for AI-readable output:
 
 ```bash
-knowns task 42 --plain | pbcopy  # Copy to clipboard
+knowns task pdyd2e --plain | pbcopy  # Copy to clipboard
 knowns doc "auth-pattern" --plain
 ```
 
@@ -408,5 +393,5 @@ Then paste into any AI assistant.
 ## Resources
 
 - [MCP Protocol Specification](https://modelcontextprotocol.io/specification/2025-11-25)
-- [Knowns MCP Server Documentation](../src/mcp/README.md)
+- [Developer Guide](./developer-guide.md)
 - [Claude Desktop Configuration](https://modelcontextprotocol.io/quickstart/user)

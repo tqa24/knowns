@@ -1,7 +1,7 @@
 ---
 title: MCP Integration Guide
 createdAt: '2026-02-24T08:45:15.876Z'
-updatedAt: '2026-02-24T08:49:57.709Z'
+updatedAt: '2026-03-08T18:18:23.058Z'
 description: 'Setup MCP server for AI assistants (Claude, Cursor, etc.)'
 tags:
   - guide
@@ -26,6 +26,21 @@ graph LR
 
 ## Quick Setup
 
+Knowns is a compiled Go binary. Install it first, then configure MCP.
+
+### Installation
+
+```bash
+# Via npm (downloads platform-specific Go binary)
+npm install -g knowns
+
+# Via Go
+go install github.com/howznguyen/knowns/cmd/knowns@latest
+
+# Via curl (Linux/macOS)
+curl -fsSL https://raw.githubusercontent.com/howznguyen/knowns/main/install/install.sh | sh
+```
+
 ### Claude Desktop
 
 Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
@@ -34,8 +49,8 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 {
   "mcpServers": {
     "knowns": {
-      "command": "npx",
-      "args": ["knowns", "mcp"]
+      "command": "knowns",
+      "args": ["mcp"]
     }
   }
 }
@@ -49,8 +64,8 @@ Add to `.cursor/mcp.json`:
 {
   "mcpServers": {
     "knowns": {
-      "command": "npx",
-      "args": ["knowns", "mcp"]
+      "command": "knowns",
+      "args": ["mcp"]
     }
   }
 }
@@ -64,13 +79,14 @@ Create `.mcp.json` in project root:
 {
   "mcpServers": {
     "knowns": {
-      "command": "npx",
-      "args": ["knowns", "mcp"]
+      "command": "knowns",
+      "args": ["mcp"]
     }
   }
 }
 ```
 
+> **Note**: If you don't have `knowns` installed globally, you can use `npx -y knowns mcp` as the command instead.
 ## Available MCP Tools
 
 ```mermaid

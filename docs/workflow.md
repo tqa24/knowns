@@ -35,7 +35,8 @@ knowns task create "Add user authentication" \
   --ac "Invalid credentials return 401" \
   --ac "Unit tests cover all scenarios" \
   --priority high \
-  -l "feature,auth"
+  -l feature \
+  -l auth
 ```
 
 ### Writing Good Acceptance Criteria
@@ -107,19 +108,19 @@ Work through your plan. Use templates for scaffolding when applicable:
 knowns template list
 
 # Generate component from template
-knowns template run react-component --name LoginForm
+knowns template run react-component -v name=LoginForm
 
 # Generate API endpoint
-knowns template run api-endpoint --name auth
+knowns template run api-endpoint -v name=auth
 
 # Preview before creating (dry run)
-knowns template run react-component --name LoginForm --dry-run
+knowns template run react-component -v name=LoginForm --dry-run
 ```
 
 Templates link to documentation for context:
 ```bash
-# View template details and linked docs
-knowns template view react-component --with-doc
+# View template details
+knowns template view react-component
 ```
 
 ### Tracking Progress
@@ -254,10 +255,9 @@ Templates accelerate implementation by generating boilerplate code.
 
 | Scenario | Template |
 |----------|----------|
-| New React component | `react-component` |
-| New API endpoint | `api-endpoint` |
-| New CLI command | `knowns-command` |
-| Feature module | `feature-module` |
+| New component/module | Depends on templates available in your project |
+| Repeated scaffolding flow | Prefer a local or imported template |
+| Shared team boilerplate | Put it in `.knowns/templates/` or an imported package |
 
 ### Template Workflow
 
@@ -266,13 +266,10 @@ Templates accelerate implementation by generating boilerplate code.
 knowns template list
 knowns template view <name>
 
-# 2. Check linked documentation
-knowns template view <name> --with-doc
-
-# 3. Preview generated files
+# 2. Preview generated files
 knowns template run <name> --dry-run
 
-# 4. Generate files
+# 3. Generate files
 knowns template run <name>
 
 # 5. Customize generated code as needed

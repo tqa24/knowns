@@ -1,7 +1,7 @@
 ---
 title: Auto-Sync Version Tracking
 createdAt: '2026-02-24T07:31:11.375Z'
-updatedAt: '2026-02-24T07:31:35.471Z'
+updatedAt: '2026-03-08T18:23:03.181Z'
 description: Pattern for automatically syncing skills when CLI version changes
 tags:
   - pattern
@@ -17,7 +17,7 @@ Pattern for automatically syncing skills when CLI version changes.
 
 ## Problem
 
-When CLI is upgraded (npm update, brew upgrade), users need to manually run `knowns sync` to get updated skills. This is easy to forget, leading to stale skills.
+When CLI is upgraded (brew upgrade, npm update, or manual install), users need to manually run `knowns sync` to get updated skills. This is easy to forget, leading to stale skills.
 
 ## Solution
 
@@ -48,57 +48,60 @@ Each platform directory contains `.version`:
 
 ```
 User runs any command
-       ↓
+       |
 findProjectRoot()
-       ↓
+       |
 For each platform in [".claude/skills", ".agent/skills"]:
   - Skip if directory doesn't exist
   - Read .version file
   - Compare cliVersion with current
-       ↓
+       |
 Version mismatch?
-       ↓
-  Yes → syncSkillsToDir()
-      → writeVersionFile()
-       ↓
+       |
+  Yes -> syncSkillsToDir()
+      -> writeVersionFile()
+       |
 Continue with original command
 ```
 
 ### Code Location
 
-**File:** `src/utils/auto-sync.ts`
+**File:** `internal/sync/autosync.go`
 
-```typescript
-const PLATFORMS = [
-  { id: "claude", dir: ".claude/skills" },
-  { id: "antigravity", dir: ".agent/skills" },
-] as const;
+```go
+var platforms = []struct {
+    ID  string
+    Dir string
+}{
+    {ID: "claude", Dir: ".claude/skills"},
+    {ID: "antigravity", Dir: ".agent/skills"},
+}
 
-export function checkAndAutoSync(cliVersion: string): {
-  synced: boolean;
-  message?: string;
-} {
-  const projectRoot = findProjectRoot();
-  if (!projectRoot) return { synced: false };
-  
-  for (const platform of PLATFORMS) {
-    const syncedInfo = getSyncedVersion(projectRoot, platform.dir);
-    const needsSync = !syncedInfo || syncedInfo.cliVersion !== cliVersion;
-    
-    if (needsSync) {
-      syncSkillsToDir(join(projectRoot, platform.dir));
-      writeSyncedVersion(projectRoot, platform.dir, cliVersion);
+func CheckAndAutoSync(cliVersion string) (synced bool, message string) {
+    projectRoot := findProjectRoot()
+    if projectRoot == "" {
+        return false, ""
     }
-  }
+
+    for _, platform := range platforms {
+        syncedInfo := getSyncedVersion(projectRoot, platform.Dir)
+        needsSync := syncedInfo == nil || syncedInfo.CLIVersion != cliVersion
+
+        if needsSync {
+            syncSkillsToDir(filepath.Join(projectRoot, platform.Dir))
+            writeSyncedVersion(projectRoot, platform.Dir, cliVersion)
+        }
+    }
+    return true, ""
 }
 ```
 
-**Called from:** `src/index.ts` (before command execution)
+**Called from:** `cmd/root.go` (before command execution via Cobra's `PersistentPreRun`)
 
-```typescript
-const autoSyncResult = checkAndAutoSync(packageJson.version);
-if (autoSyncResult.synced && autoSyncResult.message) {
-  console.log(chalk.cyan(autoSyncResult.message));
+```go
+synced, msg := sync.CheckAndAutoSync(version.Version)
+if synced && msg != "" {
+    fmt.Println(msg)
 }
 ```
 
@@ -117,7 +120,7 @@ if (autoSyncResult.synced && autoSyncResult.message) {
 ### Output
 
 ```
-✓ Auto-synced 10 skills for claude, antigravity (0.11.2 → 0.11.3)
+Auto-synced 10 skills for claude, antigravity (0.11.2 -> 0.11.3)
 ```
 
 ---
@@ -140,19 +143,22 @@ Only sync if directory exists:
 ### 3. Silent Fail
 
 Auto-sync failures don't block command execution:
-```typescript
-try {
-  // sync logic
-} catch {
-  return { synced: false }; // Silent fail
+```go
+func CheckAndAutoSync(cliVersion string) (synced bool, message string) {
+    defer func() {
+        if r := recover(); r != nil {
+            synced = false // Silent fail
+        }
+    }()
+    // sync logic
 }
 ```
 
 ### 4. Deprecated Cleanup
 
 Auto-sync also removes old skill formats:
-- `knowns.*` folders → removed
-- `kn:*` folders → removed
+- `knowns.*` folders -> removed
+- `kn:*` folders -> removed
 
 ---
 
@@ -160,4 +166,4 @@ Auto-sync also removes old skill formats:
 
 - @doc/ai/skills - Skills system overview
 - @doc/ai/platforms - Platform configurations
-- @doc/architecture/features/init-process - Init wizard flow
+- @doc/features/init-process - Init wizard flow

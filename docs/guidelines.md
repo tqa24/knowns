@@ -1,143 +1,70 @@
 # Guidelines System
 
-Knowns provides a guidelines system for AI agents, optimized for efficient context usage.
+Knowns ships AI instruction files for supported platforms and exposes the full guidance through the CLI.
 
 ---
 
 ## Overview
 
-Guidelines are split into 2 parts:
+There are two layers of guidance:
 
-| Type | Location | Size | Content |
-|------|----------|------|---------|
-| **Core Rules** | `CLAUDE.md`, `GEMINI.md` | ~2KB | Only the most important rules |
-| **Full Reference** | `knowns guidelines` | ~15KB | Complete documentation |
+| Layer | Where it lives | Purpose |
+| ----- | -------------- | ------- |
+| Core instructions | `KNOWNS.md`, `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `OPENCODE.md`, `.github/copilot-instructions.md` | Short, always-on agent rules |
+| Full reference | `knowns guidelines --plain` | Full usage guidance rendered by the CLI |
 
-**Why split like this?**
-
-- AI agents have limited context windows
-- Core rules (~80 lines) contain what MUST be known before working
-- Full reference is consulted when details are needed
+The CLI currently exposes `knowns guidelines` as a single command. It does not support section subcommands or extra filtering flags.
 
 ---
 
-## Core Rules (CLAUDE.md)
+## View Guidelines
 
-The `CLAUDE.md` file contains **only the most critical rules**:
-
-### 1. Session Init
-```json
-mcp__knowns__detect_projects({})
-mcp__knowns__set_project({ "projectRoot": "/path/to/project" })
-```
-
-### 2. Critical Rules Table
-| Rule | Description |
-|------|-------------|
-| MCP Tools | Use MCP tools, NEVER edit .md files |
-| Docs First | Read docs BEFORE planning |
-| Time Tracking | Start timer when taking task |
-| Plan Approval | Wait for user approval |
-| Check AC After | Only mark done AFTER completing |
-| Validate | Run validate before completing |
-
-### 3. CLI Pitfalls
-- `-a` flag confusion (assignee vs append)
-- `--plain` flag (only for view/list)
-- `--parent` (raw ID only)
-
-### 4. Reference to Full Documentation
-```
-> **Full reference:** Run `knowns guidelines --plain` for complete documentation
-```
-
----
-
-## Full Reference (knowns guidelines)
-
-The `knowns guidelines` command displays complete documentation:
+Use the CLI to print the complete guidance:
 
 ```bash
-# View full guidelines
 knowns guidelines --plain
-
-# View specific section
-knowns guidelines core --plain
-knowns guidelines workflow --plain
-knowns guidelines mcp --plain
-knowns guidelines cli --plain
-knowns guidelines mistakes --plain
-knowns guidelines context --plain
-
-# Search within guidelines
-knowns guidelines --search "acceptance criteria" --plain
-
-# Core rules only (compact)
-knowns guidelines --compact --plain
 ```
 
-### Sections
-
-| Section | Content |
-|---------|---------|
-| `core` | Core rules and critical mistakes |
-| `workflow` | Task creation, execution, completion |
-| `mcp` | MCP tools reference |
-| `cli` | CLI commands reference |
-| `mistakes` | Common mistakes and recovery |
-| `context` | Context optimization tips |
+This is the canonical reference when you want the latest rendered guidance from the current binary.
 
 ---
 
-## Guidelines Types
+## Sync Instruction Files
 
-Knowns supports 3 types of guidelines:
-
-| Type | Flag | Use Case |
-|------|------|----------|
-| `unified` | `--mode unified` | Both CLI + MCP (default) |
-| `mcp` | `--mode mcp` | MCP tools only |
-| `cli` | `--mode cli` | CLI commands only |
+Use `knowns sync` to sync built-in skills and instruction files:
 
 ```bash
-# Default: unified
-knowns guidelines --plain
+# Sync skills and instruction files
+knowns sync
 
-# MCP only
-knowns guidelines --mode mcp --plain
+# Sync skills only
+knowns sync --skills
 
-# CLI only
-knowns guidelines --mode cli --plain
+# Sync instruction files only
+knowns sync --instructions
+
+# Sync a specific platform
+knowns sync --instructions --platform claude
+
+# Overwrite existing files
+knowns sync --force
 ```
 
----
+Supported instruction targets:
 
-## Sync Guidelines
-
-To update guidelines in instruction files:
-
-```bash
-# Sync all instruction files
-knowns sync agent
-
-# Sync with force overwrite
-knowns sync agent --force
-
-# Sync all files (including non-default)
-knowns sync agent --all
-```
-
-**Files synced:**
 - `CLAUDE.md`
+- `OPENCODE.md`
 - `GEMINI.md`
 - `AGENTS.md`
 - `.github/copilot-instructions.md`
+
+For backwards compatibility, `knowns agents --sync` also exists for instruction-file generation only.
 
 ---
 
 ## Markers
 
-Guidelines in instruction files are wrapped in markers:
+Generated guidance inside instruction files is wrapped in markers:
 
 ```markdown
 <!-- KNOWNS GUIDELINES START -->
@@ -146,106 +73,20 @@ Guidelines in instruction files are wrapped in markers:
 <!-- KNOWNS GUIDELINES END -->
 ```
 
-**Behavior:**
-- If markers exist → Replace content between markers
-- If no markers → Append to end of file
-- Content outside markers is preserved
+When markers already exist, Knowns replaces only the content inside them and preserves the rest of the file.
 
 ---
 
-## Structure
+## Practical Notes
 
-### Core Rules (CLAUDE.md)
-
-```
-# Knowns Guidelines
-> Critical rules reminder
-
-## Session Init (Required)
-## Critical Rules
-## CLI Pitfalls
-## Reference System
-## Subtasks
----
-> Full reference: Run `knowns guidelines --plain`
-```
-
-### Full Reference (knowns guidelines)
-
-```
-# Core Rules
-## Session Init
-## Critical Rules
-## The --plain Flag
-## Reference System
-
-# Context Optimization
-## Output Format
-## Search Before Read
-## Reading Documents
-
-# MCP Tools Reference
-## Task Tools
-## Doc Tools
-## Time Tools
-## Template Tools
-
-# CLI Commands Reference
-## task create/edit/view/list
-## doc create/edit/view/list
-## time start/stop/add
-## search
-
-# Task Workflow
-## Creation
-## Execution
-## Completion
-
-# Common Mistakes
-## Critical Mistakes
-## Recovery
-```
-
----
-
-## Context Optimization
-
-Guidelines include tips to optimize context usage:
-
-### 1. Always use `--plain`
-```bash
-knowns task 42 --plain        # ✓
-knowns task 42 --json         # ✗ (wastes tokens)
-```
-
-### 2. Always use `smart: true` for docs
-```json
-mcp__knowns__get_doc({ "path": "readme", "smart": true })
-```
-
-### 3. Search before read
-```bash
-# ✓ Search first
-knowns search "auth" --type doc --plain
-
-# ✗ Don't read all docs hoping to find
-knowns doc "doc1" --plain
-knowns doc "doc2" --plain
-```
-
-### 4. Compact notes
-```bash
-# ✓ Concise
-knowns task edit 42 --append-notes "Done: Auth middleware"
-
-# ✗ Verbose
-knowns task edit 42 --append-notes "I have successfully completed..."
-```
+- Prefer `knowns guidelines --plain` when you want the exact text agents should follow.
+- Prefer `knowns sync` for normal upkeep; use `knowns agents --sync` only when you specifically want instruction files.
+- If docs and generated instruction files disagree, trust the current CLI output first.
 
 ---
 
 ## Related
 
-- [Multi-Platform Support](./multi-platform.md) - Supported platforms
-- [MCP Integration](./mcp-integration.md) - MCP tools details
-- [Workflow](./workflow.md) - Task workflow
+- [Command Reference](./commands.md) - CLI syntax
+- [MCP Integration](./mcp-integration.md) - MCP setup and usage
+- [Multi-Platform](./multi-platform.md) - Platform-specific instruction files

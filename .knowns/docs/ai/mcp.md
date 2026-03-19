@@ -1,8 +1,8 @@
 ---
 title: MCP Configuration
 createdAt: '2026-01-23T04:07:55.764Z'
-updatedAt: '2026-02-03T16:21:54.315Z'
-description: MCP server setup for all AI platforms
+updatedAt: '2026-03-12T17:59:05.274Z'
+description: 'MCP server setup — Claude Code and OpenCode supported, others for reference'
 tags:
   - feature
   - ai
@@ -37,19 +37,30 @@ mcp__knowns__get_current_project({})
 
 ## Support Matrix
 
-| Platform | Config File | Auto-discover | Project Scope |
-|----------|-------------|---------------|---------------|
-| **Claude Code** | `.mcp.json` (project) | ✅ | Per-project |
-| **Antigravity** | `~/.gemini/antigravity/mcp_config.json` (global) | ✅ | Needs `set_project` |
-| **Gemini CLI** | `~/.gemini/settings.json` (global) | ✅ | Needs `set_project` |
-| **Cursor** | `.cursor/mcp.json` (project) | ⚠️ Manual | Per-project |
-| **Cline** | `.cline/mcp.json` (project) | ⚠️ Manual | Per-project |
-| **Continue** | `.continue/config.json` (project) | ⚠️ Manual | Per-project |
+| Platform | Config File | Auto-setup | Project Scope | Status |
+|----------|-------------|------------|---------------|--------|
+| **Claude Code** | `.mcp.json` (project) | ✅ `knowns init` | Per-project | **Supported** |
+| **OpenCode** | `opencode.json` (project/global) | ✅ `knowns init` | Needs `set_project` | **Supported** |
+| Gemini CLI | `~/.gemini/settings.json` (global) | — | Needs `set_project` | Reference |
+| Antigravity | `~/.gemini/antigravity/mcp_config.json` (global) | — | Needs `set_project` | Reference |
+| Cursor | `.cursor/mcp.json` (project) | — | Per-project | Reference |
+| Cline | `.cline/mcp.json` (project) | — | Per-project | Reference |
+| Continue | `.continue/config.json` (project) | — | Per-project | Reference |
 
----
-
+See @doc/ai/platforms for full config examples.
 ## Knowns MCP Server
 
+Knowns is a compiled Go binary. The MCP server is started with the `mcp` subcommand.
+
+**If installed via npm, go install, or direct download:**
+```json
+{
+  "command": "knowns",
+  "args": ["mcp"]
+}
+```
+
+**If using npx (no global install):**
 ```json
 {
   "command": "npx",
@@ -58,16 +69,17 @@ mcp__knowns__get_current_project({})
 ```
 
 ---
-
 ## Platform Configs
+
+> **Note**: All examples below use `knowns mcp` directly (assumes `knowns` is installed globally via `npm install -g knowns`, `go install`, or direct binary download). Replace with `npx -y knowns mcp` if using npx without global install.
 
 ### Claude Code: `.mcp.json` (Project-level)
 ```json
 {
   "mcpServers": {
     "knowns": {
-      "command": "npx",
-      "args": ["-y", "knowns", "mcp"]
+      "command": "knowns",
+      "args": ["mcp"]
     }
   }
 }
@@ -78,8 +90,8 @@ mcp__knowns__get_current_project({})
 {
   "mcpServers": {
     "knowns": {
-      "command": "npx",
-      "args": ["-y", "knowns", "mcp"]
+      "command": "knowns",
+      "args": ["mcp"]
     }
   }
 }
@@ -92,8 +104,8 @@ mcp__knowns__get_current_project({})
 {
   "mcpServers": {
     "knowns": {
-      "command": "npx",
-      "args": ["-y", "knowns", "mcp"]
+      "command": "knowns",
+      "args": ["mcp"]
     }
   }
 }
@@ -104,8 +116,8 @@ mcp__knowns__get_current_project({})
 {
   "mcpServers": {
     "knowns": {
-      "command": "npx",
-      "args": ["-y", "knowns", "mcp"]
+      "command": "knowns",
+      "args": ["mcp"]
     }
   }
 }
@@ -120,8 +132,8 @@ mcp__knowns__get_current_project({})
         "name": "knowns",
         "transport": {
           "type": "stdio",
-          "command": "npx",
-          "args": ["-y", "knowns", "mcp"]
+          "command": "knowns",
+          "args": ["mcp"]
         }
       }
     ]
@@ -130,7 +142,6 @@ mcp__knowns__get_current_project({})
 ```
 
 ---
-
 ## CLI Commands
 
 ```bash

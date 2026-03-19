@@ -34,7 +34,7 @@ knowns task create "Title" [options]
 | ------------------- | --------------------------------- |
 | `-d, --description` | Task description                  |
 | `--ac`              | Acceptance criterion (repeatable) |
-| `-l, --labels`      | Comma-separated labels            |
+| `-l, --label`       | Task label (repeatable)           |
 | `--priority`        | `low`, `medium`, `high`           |
 | `-a, --assignee`    | Assignee (e.g., `@me`, `@john`)   |
 | `--parent`          | Parent task ID for subtasks       |
@@ -51,7 +51,8 @@ knowns task create "Add authentication" \
   --ac "User can login" \
   --ac "Session persists" \
   --priority high \
-  -l "feature,auth"
+  -l feature \
+  -l auth
 
 # Subtask
 knowns task create "Write unit tests" --parent 42
@@ -109,7 +110,7 @@ knowns task edit <id> [options]
 | `-s, --status`      | `todo`, `in-progress`, `in-review`, `blocked`, `done` |
 | `--priority`        | `low`, `medium`, `high`                               |
 | `-a, --assignee`    | Assignee                                              |
-| `-l, --labels`      | Labels (replaces existing)                            |
+| `--labels`          | Labels (comma-separated, replaces existing)           |
 | `--ac`              | Add acceptance criterion                              |
 | `--check-ac`        | Check criterion (1-indexed)                           |
 | `--uncheck-ac`      | Uncheck criterion                                     |
@@ -133,30 +134,6 @@ knowns task edit 42 --plan $'1. Research\n2. Implement\n3. Test'
 # Add notes progressively
 knowns task edit 42 --append-notes "Completed auth middleware"
 ```
-
-### `knowns task validate`
-
-Validate a task file format.
-
-```bash
-knowns task validate <id> [options]
-```
-
-| Option    | Description       |
-| --------- | ----------------- |
-| `--plain` | Plain text output |
-
-### `knowns task repair`
-
-Repair a corrupted task file.
-
-```bash
-knowns task repair <id> [options]
-```
-
-| Option    | Description       |
-| --------- | ----------------- |
-| `--plain` | Plain text output |
 
 ---
 
@@ -227,12 +204,8 @@ knowns doc create "Auth Pattern" \
 List all documents.
 
 ```bash
-knowns doc list [path] [options]
+knowns doc list [options]
 ```
-
-| Argument | Description                                          |
-| -------- | ---------------------------------------------------- |
-| `[path]` | Filter by folder path (e.g., `guides/`, `patterns/`) |
 
 | Option    | Description                                      |
 | --------- | ------------------------------------------------ |
@@ -244,10 +217,6 @@ knowns doc list [path] [options]
 ```bash
 # List all docs
 knowns doc list
-
-# List docs in specific folder
-knowns doc list "guides/"
-knowns doc list "patterns/" --plain
 
 # Filter by tag
 knowns doc list --tag architecture
@@ -293,8 +262,6 @@ knowns doc edit <name-or-path> [options]
 | `-c, --content`         | Replace content (or section content if `--section` used) |
 | `-a, --append`          | Append to content                                        |
 | `--section <title>`     | Target section to replace (use with `-c`)                |
-| `--content-file <path>` | Replace content with file contents                       |
-| `--append-file <path>`  | Append file contents to document                         |
 
 **Examples:**
 
@@ -308,73 +275,7 @@ knowns doc edit "README" -a "## New Section"
 # Edit specific section only (context-efficient!)
 knowns doc edit "README" --section "2. Installation" -c "New section content"
 knowns doc edit "README" --section "2" -c "New content"  # By number
-
-# Use file for long content (useful on Windows)
-knowns doc edit "README" --content-file ./new-content.md
-knowns doc edit "README" --append-file ./additional-section.md
 ```
-
-### `knowns doc validate`
-
-Validate a documentation file format.
-
-```bash
-knowns doc validate <name> [options]
-```
-
-| Option    | Description       |
-| --------- | ----------------- |
-| `--plain` | Plain text output |
-
-### `knowns doc repair`
-
-Repair a corrupted documentation file.
-
-```bash
-knowns doc repair <name> [options]
-```
-
-| Option    | Description       |
-| --------- | ----------------- |
-| `--plain` | Plain text output |
-
-### `knowns doc search-in`
-
-Search text within a specific document.
-
-```bash
-knowns doc search-in <name> <query> [options]
-```
-
-| Option              | Description             |
-| ------------------- | ----------------------- |
-| `-i, --ignore-case` | Case insensitive search |
-| `--plain`           | Plain text output       |
-
-### `knowns doc replace`
-
-Replace text in a document.
-
-```bash
-knowns doc replace <name> <old-text> <new-text> [options]
-```
-
-| Option      | Description             |
-| ----------- | ----------------------- |
-| `-a, --all` | Replace all occurrences |
-| `--plain`   | Plain text output       |
-
-### `knowns doc replace-section`
-
-Replace an entire section by its header.
-
-```bash
-knowns doc replace-section <name> <header> <content> [options]
-```
-
-| Option    | Description       |
-| --------- | ----------------- |
-| `--plain` | Plain text output |
 
 ---
 
@@ -521,7 +422,7 @@ knowns model
 
 ### `knowns model list`
 
-List all available embedding models (built-in + custom).
+List available embedding models.
 
 ```bash
 knowns model list
@@ -539,7 +440,6 @@ knowns model list
 
 ```bash
 knowns model list
-knowns model ls  # Alias
 ```
 
 ### `knowns model download`
@@ -550,9 +450,9 @@ Download an embedding model.
 knowns model download <model-id>
 ```
 
-| Argument     | Description                        |
-| ------------ | ---------------------------------- |
-| `<model-id>` | Model ID or HuggingFace ID         |
+| Argument     | Description             |
+| ------------ | ----------------------- |
+| `<model-id>` | Built-in model ID       |
 
 **Built-in models:**
 
@@ -574,8 +474,6 @@ knowns model download gte-small
 # Download higher quality model
 knowns model download gte-base
 
-# Download by HuggingFace ID
-knowns model download Xenova/bge-small-en-v1.5
 ```
 
 ### `knowns model set`
@@ -624,66 +522,23 @@ knowns model status
 - List of downloaded models with sizes
 - Current project's model configuration
 
-### `knowns model add`
-
-Add a custom HuggingFace embedding model.
-
-```bash
-knowns model add <huggingface-id> [options]
-```
-
-| Argument          | Description                              |
-| ----------------- | ---------------------------------------- |
-| `<huggingface-id>`| Full HuggingFace model ID (e.g., `Xenova/model-name`) |
-
-| Option          | Description                      |
-| --------------- | -------------------------------- |
-| `--dims`        | Embedding dimensions (default: 384) |
-| `--tokens`      | Max input tokens (default: 512)  |
-| `--name`        | Display name for the model       |
-
-**Examples:**
-
-```bash
-# Add a custom model
-knowns model add Xenova/bge-large-en-v1.5 --dims 1024 --tokens 512
-
-# Add with custom name
-knowns model add Xenova/multilingual-e5-small --name "E5 Multilingual" --dims 384
-
-# After adding, download and set it
-knowns model download bge-large-en-v1.5
-knowns model set bge-large-en-v1.5
-```
-
-**Note:** The model must be a `feature-extraction` pipeline compatible with Transformers.js.
-
 ### `knowns model remove`
 
-Remove a custom model.
+Remove a downloaded embedding model.
 
 ```bash
-knowns model remove <model-id> [options]
+knowns model remove <model-id>
 ```
 
 | Argument     | Description             |
 | ------------ | ----------------------- |
-| `<model-id>` | Custom model ID         |
-
-| Option      | Description                        |
-| ----------- | ---------------------------------- |
-| `-f, --force` | Also delete downloaded model files |
-
-**Note:** Only custom models can be removed. Built-in models cannot be removed.
+| `<model-id>` | Downloaded model ID     |
 
 **Examples:**
 
 ```bash
-# Remove from list only (keep files)
-knowns model remove my-custom-model
-
-# Remove and delete files
-knowns model remove my-custom-model --force
+# Remove a downloaded model
+knowns model remove gte-small
 ```
 
 ---
@@ -717,11 +572,10 @@ Run a template to generate files.
 knowns template run <name> [options]
 ```
 
-| Option            | Description                    |
-| ----------------- | ------------------------------ |
-| `--dry-run`       | Preview without creating files |
-| `--<variable>`    | Pre-fill prompt variables      |
-| `--no-<variable>` | Set boolean variable to false  |
+| Option            | Description                                 |
+| ----------------- | ------------------------------------------- |
+| `--dry-run`       | Preview without creating files              |
+| `-v, --var`       | Template variable as `key=value` (repeatable) |
 
 **Examples:**
 
@@ -729,14 +583,11 @@ knowns template run <name> [options]
 # Interactive mode
 knowns template run react-component
 
-# With pre-filled variables
-knowns template run react-component --name UserProfile --withTest
+# With explicit variables
+knowns template run react-component -v name=UserProfile
 
 # Preview only
 knowns template run react-component --dry-run
-
-# Boolean flags
-knowns template run react-component --name Card --no-withTest
 ```
 
 ### `knowns template view`
@@ -744,19 +595,13 @@ knowns template run react-component --name Card --no-withTest
 View template details.
 
 ```bash
-knowns template view <name> [options]
+knowns template view <name>
 ```
-
-| Option       | Description                     |
-| ------------ | ------------------------------- |
-| `--with-doc` | Include linked doc content      |
-| `--plain`    | Plain text output               |
 
 **Examples:**
 
 ```bash
 knowns template view react-component
-knowns template view react-component --with-doc
 knowns template view react-component --plain
 ```
 
@@ -785,20 +630,6 @@ knowns template create api-service \
   --doc patterns/api-service
 ```
 
-### `knowns template validate`
-
-Validate template configuration.
-
-```bash
-knowns template validate <name>
-```
-
-**Validates:**
-- Config file syntax
-- All template files exist
-- Handlebars syntax valid
-- Prompt names used in templates
-
 ---
 
 ## Skill Commands
@@ -815,59 +646,20 @@ knowns skill list [options]
 | --------- | ----------------- |
 | `--plain` | Plain text output |
 
-### `knowns skill create`
-
-Create a new skill.
-
-```bash
-knowns skill create <name> [options]
-```
-
-| Option              | Description       |
-| ------------------- | ----------------- |
-| `-d, --description` | Skill description |
-
-**Examples:**
-
-```bash
-knowns skill create my-workflow -d "Custom workflow skill"
-```
-
 ### `knowns skill sync`
 
-Sync skills to AI platforms.
+Sync skills from imported packages.
 
 ```bash
 knowns skill sync [options]
 ```
 
-| Option       | Description                              |
-| ------------ | ---------------------------------------- |
-| `--platform` | Target platforms (comma-separated)       |
-| `--all`      | Sync to all detected platforms           |
-
-**Supported platforms:**
-- `claude` - Claude Code (`.claude/skills/`)
-- `antigravity` - Antigravity (`.agent/skills/`)
-- `cursor` - Cursor (`.cursor/rules/`)
-- `gemini` - Gemini CLI (`~/.gemini/commands/`)
+This command currently exists, but platform-specific syncing is handled through `knowns import sync` and top-level `knowns sync`.
 
 **Examples:**
 
 ```bash
-# Sync to all platforms
 knowns skill sync
-
-# Sync to specific platforms
-knowns skill sync --platform claude,cursor
-```
-
-### `knowns skill status`
-
-Show sync status for all platforms.
-
-```bash
-knowns skill status
 ```
 
 ---
@@ -946,38 +738,47 @@ knowns config list
 
 ### `knowns browser`
 
-Open Web UI in browser.
+Start the Knowns web UI server.
 
 ```bash
 knowns browser [options]
 ```
 
-| Option       | Description                 |
-| ------------ | --------------------------- |
-| `-p, --port` | Custom port (default: 6420) |
-| `--no-open`  | Don't open browser          |
+| Option       | Description                              |
+| ------------ | ---------------------------------------- |
+| `--dev`      | Enable development mode                  |
+| `--open`     | Open browser after starting              |
+| `--no-open`  | Don't automatically open browser         |
+| `--port`     | Custom port (default: `3001` or config)  |
+| `--restart`  | Restart server if already running        |
+
+**Examples:**
+
+```bash
+# Start server only
+knowns browser
+
+# Start and open browser
+knowns browser --open
+```
 
 ### `knowns mcp`
 
-Start MCP server for Claude Desktop integration.
+Start the MCP server.
 
 ```bash
 knowns mcp [options]
 ```
 
-| Option      | Description                     |
-| ----------- | ------------------------------- |
-| `--info`    | Show configuration instructions |
-| `--verbose` | Enable verbose logging          |
+| Option    | Description                  |
+| --------- | ---------------------------- |
+| `--stdio` | Use stdio transport          |
 
 **Examples:**
 
 ```bash
-# Show setup instructions
-knowns mcp --info
-
-# Start server with logging
-knowns mcp --verbose
+# Start server over stdio (for MCP clients)
+knowns mcp --stdio
 ```
 
 ### `knowns mcp setup`
@@ -988,69 +789,44 @@ Setup Knowns MCP server in Claude Code.
 knowns mcp setup [options]
 ```
 
-| Option      | Description                                                 |
-| ----------- | ----------------------------------------------------------- |
-| `--project` | Only create `.mcp.json` in project (skip Claude Code setup) |
-| `--global`  | Only setup in Claude Code globally (skip `.mcp.json`)       |
-
-**What happens:**
-
-- Creates `.mcp.json` in project root for auto-discovery
-- Runs `claude mcp add-json knowns` to add to Claude Code
-
-**Examples:**
-
-```bash
-# Setup both project .mcp.json and Claude Code global config
-knowns mcp setup
-
-# Only create .mcp.json in project
-knowns mcp setup --project
-
-# Only setup in Claude Code globally
-knowns mcp setup --global
-```
+This command currently has no documented flags in the CLI help.
 
 ### `knowns sync`
 
-Sync AI agent instruction files with latest guidelines.
+Sync skills and agent instruction files.
 
 ```bash
 knowns sync [options]
 ```
 
-| Option          | Description                                                 |
-| --------------- | ----------------------------------------------------------- |
-| `--type <type>` | Guidelines type: `cli`, `mcp`, or `unified` (default: unified) |
-| `--minimal`     | Use minimal instruction (default: full embedded guidelines) |
-| `--all`         | Update all instruction files (including Gemini, Copilot)    |
+| Option           | Description                                                 |
+| ---------------- | ----------------------------------------------------------- |
+| `--force`        | Force resync (overwrite existing files)                     |
+| `--instructions` | Sync instruction files only                                 |
+| `--platform`     | Sync a specific platform (`claude`, `gemini`, `copilot`, `agents`) |
+| `--skills`       | Sync skills only                                            |
 
-**Supported files:**
+**Supported instruction files:**
 
-| File                              | Description              | Default |
-| --------------------------------- | ------------------------ | ------- |
-| `CLAUDE.md`                       | Claude Code instructions | ✓       |
-| `AGENTS.md`                       | Agent SDK                | ✓       |
-| `GEMINI.md`                       | Google Gemini            |         |
-| `.github/copilot-instructions.md` | GitHub Copilot           |         |
+| File                              | Description              |
+| --------------------------------- | ------------------------ |
+| `CLAUDE.md`                       | Claude Code instructions |
+| `OPENCODE.md`                     | OpenCode instructions    |
+| `GEMINI.md`                       | Gemini CLI instructions  |
+| `AGENTS.md`                       | Generic AI instructions  |
+| `.github/copilot-instructions.md` | GitHub Copilot           |
 
 **Examples:**
 
 ```bash
-# Sync default files (CLAUDE.md, AGENTS.md) with full guidelines
+# Sync skills and instruction files
 knowns sync
 
-# Sync all files
-knowns sync --all
+# Sync only skills
+knowns sync --skills
 
-# Sync with minimal instruction only
-knowns sync --minimal
-
-# Sync with MCP guidelines
-knowns sync --type mcp
-
-# Sync with unified guidelines (CLI + MCP)
-knowns sync --type unified
+# Sync only instruction files for Claude
+knowns sync --instructions --platform claude
 ```
 
 ---
