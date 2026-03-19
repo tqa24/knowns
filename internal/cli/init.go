@@ -245,7 +245,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		cfg = initConfig{
 			Name:             name,
 			GitTrackingMode:  gitMode,
-			EnableSemantic:   true,
+			EnableSemantic:   isTTY(),
 			SemanticModel:    "gte-small",
 			Platforms:        []string{"claude-code", "agents"},
 			AutoSyncOnUpdate: true,
