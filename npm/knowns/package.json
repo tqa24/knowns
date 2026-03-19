@@ -3,7 +3,8 @@
   "version": "0.0.0",
   "description": "AI-native project management CLI",
   "bin": {
-    "knowns": "bin/knowns.js"
+    "knowns": "bin/knowns.js",
+    "kn": "bin/knowns.js"
   },
   "scripts": {},
   "optionalDependencies": {

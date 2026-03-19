@@ -1,44 +1,72 @@
-name: Publish to npm (Manual)
-
-# Manual-only publish for re-publishing without a new tag.
-# For normal releases, use the Build & Release workflow (triggered by git tags).
+name: Publish to npm
 
 on:
+  push:
+    tags:
+      - "v*.*.*"
   workflow_dispatch:
     inputs:
       version:
         description: "Version to publish (e.g., 1.0.0)"
-        required: true
+        required: false
         type: string
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
+      id-token: write
 
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            echo "Unable to determine release version"
+            exit 1
+          fi
+
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "TAG=v${VERSION}" >> "$GITHUB_ENV"
+          echo "Publishing version ${VERSION}"
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
           go-version: '1.26'
-      - uses: oven-sh/setup-bun@v2
-      - uses: actions/setup-node@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
 
-      # Build UI
       - name: Build UI
         run: cd ui && bun install --frozen-lockfile && bun run build
 
-      # Cross-compile Go binaries with embedded UI
-      - name: Build all platform binaries
+      - name: Run Go tests
+        run: go test -v -race ./...
+
+      - name: Run Go vet
+        run: go vet ./...
+
+      - name: Build platform binaries
         run: |
-          VERSION=${{ inputs.version }}
           LDFLAGS="-s -w -X github.com/howznguyen/knowns/internal/util.Version=${VERSION}"
 
-          echo "Building for all platforms..."
+          echo "Building standalone binaries for v${VERSION}..."
           CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build -ldflags "$LDFLAGS" -o npm/knowns-darwin-arm64/knowns   ./cmd/knowns
           CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build -ldflags "$LDFLAGS" -o npm/knowns-darwin-x64/knowns    ./cmd/knowns
           CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build -ldflags "$LDFLAGS" -o npm/knowns-linux-arm64/knowns   ./cmd/knowns
@@ -46,39 +74,223 @@ jobs:
           CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -ldflags "$LDFLAGS" -o npm/knowns-win-arm64/knowns.exe ./cmd/knowns
           CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "$LDFLAGS" -o npm/knowns-win-x64/knowns.exe  ./cmd/knowns
 
-      # Test Linux binary
       - name: Test Linux binary
         run: |
           chmod +x npm/knowns-linux-x64/knowns
           npm/knowns-linux-x64/knowns --version
+          npm/knowns-linux-x64/knowns --version | grep -q "$VERSION" || echo "Warning: Version mismatch"
 
-      # Update versions
-      - name: Update package versions
+      - name: Prepare npm packages
         run: |
-          VERSION=${{ inputs.version }}
-          for pkg in npm/knowns-*/; do
-            cd "$pkg"
-            npm version "$VERSION" --no-git-tag-version --allow-same-version
-            cd ../..
-          done
-          cd npm/knowns
-          npm version "$VERSION" --no-git-tag-version --allow-same-version
-          cd ../..
+          cp README.md npm/knowns/README.md
 
-      # Publish
+          for pkg in npm/knowns-*/; do
+            (
+              cd "$pkg"
+              npm version "$VERSION" --no-git-tag-version --allow-same-version
+            )
+          done
+
+          (
+            cd npm/knowns
+            npm version "$VERSION" --no-git-tag-version --allow-same-version
+          )
+
+          node <<'EOF'
+          const fs = require('fs');
+          const path = 'npm/knowns/package.json';
+          const version = process.env.VERSION;
+          const pkg = JSON.parse(fs.readFileSync(path, 'utf8'));
+          pkg.bin = {
+            knowns: 'bin/knowns.js',
+            kn: 'bin/knowns.js',
+          };
+          pkg.optionalDependencies = {
+            '@knowns/darwin-arm64': version,
+            '@knowns/darwin-x64': version,
+            '@knowns/linux-arm64': version,
+            '@knowns/linux-x64': version,
+            '@knowns/win-arm64': version,
+            '@knowns/win-x64': version,
+          };
+          fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n');
+          EOF
+
       - name: Publish platform packages
+        run: |
+          for pkg in npm/knowns-*/; do
+            (
+              cd "$pkg"
+              npm publish --access public
+            )
+          done
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          for pkg in npm/knowns-*/; do
-            cd "$pkg"
-            npm publish --access public || true
-            cd ../..
-          done
 
       - name: Publish main package
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           cd npm/knowns
-          npm publish --access public
+          npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create tarballs
+        run: |
+          for bin in \
+            npm/knowns-darwin-arm64/knowns \
+            npm/knowns-darwin-x64/knowns \
+            npm/knowns-linux-arm64/knowns \
+            npm/knowns-linux-x64/knowns \
+            npm/knowns-win-arm64/knowns.exe \
+            npm/knowns-win-x64/knowns.exe; do
+            base=$(basename "$bin")
+            pkg=$(basename "$(dirname "$bin")")
+            cp "$bin" "$base"
+            tar -czvf "${pkg}.tar.gz" "$base"
+            shasum -a 256 "${pkg}.tar.gz" > "${pkg}.tar.gz.sha256"
+            rm "$base"
+          done
+          ls -la *.tar.gz
+
+      - name: Ensure GitHub release exists
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --generate-notes
+
+      - name: Upload binaries to Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for file in *.tar.gz *.sha256; do
+            echo "Uploading $file..."
+            gh release upload "$TAG" "$file" --repo "$GITHUB_REPOSITORY" --clobber
+          done
+
+      - name: Update Homebrew tap
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "HOMEBREW_TAP_TOKEN not set, skipping Homebrew update"
+            exit 0
+          fi
+
+          SHA_DARWIN_ARM64=$(awk '{print $1}' knowns-darwin-arm64.tar.gz.sha256)
+          SHA_DARWIN_X64=$(awk '{print $1}' knowns-darwin-x64.tar.gz.sha256)
+          SHA_LINUX_X64=$(awk '{print $1}' knowns-linux-x64.tar.gz.sha256)
+
+          echo "SHA256 checksums:"
+          echo "  darwin-arm64: $SHA_DARWIN_ARM64"
+          echo "  darwin-x64: $SHA_DARWIN_X64"
+          echo "  linux-x64: $SHA_LINUX_X64"
+
+          git clone https://x-access-token:${GH_TOKEN}@github.com/knowns-dev/homebrew-tap.git
+          cd homebrew-tap
+
+          cat > Formula/knowns.rb <<EOF
+          class Knowns < Formula
+            desc "The memory layer for AI-native software development"
+            homepage "https://knowns.sh"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              on_arm do
+                url "https://github.com/knowns-dev/knowns/releases/download/v${VERSION}/knowns-darwin-arm64.tar.gz"
+                sha256 "${SHA_DARWIN_ARM64}"
+              end
+              on_intel do
+                url "https://github.com/knowns-dev/knowns/releases/download/v${VERSION}/knowns-darwin-x64.tar.gz"
+                sha256 "${SHA_DARWIN_X64}"
+              end
+            end
+
+            on_linux do
+              on_intel do
+                url "https://github.com/knowns-dev/knowns/releases/download/v${VERSION}/knowns-linux-x64.tar.gz"
+                sha256 "${SHA_LINUX_X64}"
+              end
+            end
+
+            def install
+              if OS.mac? && Hardware::CPU.arm?
+                bin.install "knowns-darwin-arm64" => "knowns"
+              elsif OS.mac? && Hardware::CPU.intel?
+                bin.install "knowns-darwin-x64" => "knowns"
+              elsif OS.linux? && Hardware::CPU.intel?
+                bin.install "knowns-linux-x64" => "knowns"
+              end
+              bin.install_symlink "knowns" => "kn"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("\#{bin}/knowns --version")
+            end
+          end
+          EOF
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/knowns.rb
+          git commit -m "Update knowns to v${VERSION}" || echo "No changes to commit"
+          git push
+
+      - name: Get changelog from Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        id: changelog
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          CHANGELOG=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body -q '.body' 2>/dev/null || echo "")
+          CHANGELOG=$(echo "$CHANGELOG" | sed '/^\*\*Full Changelog\*\*:/d')
+          if [ -z "$CHANGELOG" ]; then
+            CHANGELOG="See full release notes on GitHub."
+          fi
+          if [ ${#CHANGELOG} -gt 1500 ]; then
+            CHANGELOG="${CHANGELOG:0:1500}..."
+          fi
+          CHANGELOG=$(echo "$CHANGELOG" | jq -Rs .)
+          echo "content=$CHANGELOG" >> "$GITHUB_OUTPUT"
+
+      - name: Send Discord notification
+        if: startsWith(github.ref, 'refs/tags/v') && success()
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          CHANGELOG: ${{ steps.changelog.outputs.content }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK" ]; then
+            echo "Discord webhook not configured, skipping notification"
+            exit 0
+          fi
+
+          curl -H "Content-Type: application/json" \
+            -X POST \
+            -d "{
+              \"embeds\": [{
+                \"title\": \"Knowns CLI v${VERSION} Released!\",
+                \"description\": ${CHANGELOG},
+                \"color\": 5814783,
+                \"fields\": [
+                  {
+                    \"name\": \"Install/Update\",
+                    \"value\": \"\`\`\`bash\\n# npm\\nnpm install -g knowns@${VERSION}\\n\\n# bun\\nbun add -g knowns@${VERSION}\\n\\n# brew\\nbrew upgrade knowns\\n\`\`\`\",
+                    \"inline\": false
+                  },
+                  {
+                    \"name\": \"Links\",
+                    \"value\": \"[npm](https://www.npmjs.com/package/knowns/v/${VERSION}) | [GitHub Release](https://github.com/knowns-dev/knowns/releases/tag/${TAG}) | [Docs](https://knowns.sh/docs)\",
+                    \"inline\": false
+                  }
+                ],
+                \"footer\": {
+                  \"text\": \"Knowns CLI\"
+                },
+                \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
+              }]
+            }" \
+            "$DISCORD_WEBHOOK"
