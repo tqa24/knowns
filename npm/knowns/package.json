@@ -18,7 +18,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/knowns-dev/knowns"
+    "url": "git+https://github.com/knowns-dev/knowns.git"
   },
   "keywords": [
     "cli",
