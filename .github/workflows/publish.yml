@@ -141,24 +141,26 @@ jobs:
 
       - name: Configure Windows cgo compiler
         if: runner.os == 'Windows'
+        shell: pwsh
         env:
           ZIG_TARGET: ${{ matrix.zig_target }}
         run: |
-          echo "ZIG_TARGET=${ZIG_TARGET}" >> "$GITHUB_ENV"
+          $ccPath = Join-Path $env:RUNNER_TEMP 'zig-cc.cmd'
+          $cxxPath = Join-Path $env:RUNNER_TEMP 'zig-cxx.cmd'
 
-          cat > "$RUNNER_TEMP/zig-cc" <<'EOF'
-          #!/usr/bin/env bash
-          exec zig cc -target "$ZIG_TARGET" "$@"
-          EOF
+          @"
+          @echo off
+          zig cc -target %ZIG_TARGET% %*
+          "@ | Set-Content -Path $ccPath -Encoding ascii
 
-          cat > "$RUNNER_TEMP/zig-cxx" <<'EOF'
-          #!/usr/bin/env bash
-          exec zig c++ -target "$ZIG_TARGET" "$@"
-          EOF
+          @"
+          @echo off
+          zig c++ -target %ZIG_TARGET% %*
+          "@ | Set-Content -Path $cxxPath -Encoding ascii
 
-          chmod +x "$RUNNER_TEMP/zig-cc" "$RUNNER_TEMP/zig-cxx"
-          echo "CC=$RUNNER_TEMP/zig-cc" >> "$GITHUB_ENV"
-          echo "CXX=$RUNNER_TEMP/zig-cxx" >> "$GITHUB_ENV"
+          Add-Content -Path $env:GITHUB_ENV -Value "ZIG_TARGET=$env:ZIG_TARGET"
+          Add-Content -Path $env:GITHUB_ENV -Value "CC=$ccPath"
+          Add-Content -Path $env:GITHUB_ENV -Value "CXX=$cxxPath"
 
       - name: Download UI artifact
         uses: actions/download-artifact@v4
