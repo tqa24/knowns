@@ -133,7 +133,7 @@ func tryAutoStartOpenCodeServer(host string, ports []int) (*os.Process, int, err
 	for _, port := range ports {
 		// Skip ports that are already occupied. In auto-port mode this avoids
 		// binding OpenCode to the Knowns UI port or another local service.
-		addr := fmt.Sprintf("%s:%d", host, port)
+		addr := net.JoinHostPort(host, strconv.Itoa(port))
 		conn, err := net.DialTimeout("tcp", addr, 250*time.Millisecond)
 		if err == nil {
 			conn.Close()

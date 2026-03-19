@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"syscall"
 	"time"
 
 	"charm.land/bubbles/v2/progress"
@@ -17,27 +16,6 @@ import (
 
 	"github.com/howznguyen/knowns/internal/search"
 )
-
-// drainStdin reads and discards any pending bytes on stdin (non-blocking).
-// This prevents stale terminal escape responses (e.g. DECRQM ^[[?2026;2$y)
-// from leaking into the shell after bubbletea/huh programs exit.
-func drainStdin() {
-	fd := int(os.Stdin.Fd())
-	// Brief wait for terminal responses to arrive
-	time.Sleep(50 * time.Millisecond)
-	// Set non-blocking so Read returns immediately when no data
-	if err := syscall.SetNonblock(fd, true); err != nil {
-		return
-	}
-	defer syscall.SetNonblock(fd, false)
-	buf := make([]byte, 4096)
-	for {
-		n, err := syscall.Read(fd, buf)
-		if n <= 0 || err != nil {
-			break
-		}
-	}
-}
 
 // ─── download step ───────────────────────────────────────────────────
 
@@ -65,9 +43,9 @@ type setupModel struct {
 	err      error
 
 	// background download state
-	resp     *http.Response
-	outFile  *os.File
-	doneCh   chan error
+	resp    *http.Response
+	outFile *os.File
+	doneCh  chan error
 }
 
 // setupTickMsg triggers periodic UI refresh during download.

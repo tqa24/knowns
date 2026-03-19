@@ -20,6 +20,13 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26'
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build UI
+        run: cd ui && bun install --frozen-lockfile && bun run build
 
       - name: Go vet
         run: go vet ./...
@@ -36,17 +43,13 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26'
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
+      - uses: oven-sh/setup-bun@v2
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'pnpm'
-          cache-dependency-path: ui/pnpm-lock.yaml
 
       - name: Build UI
-        run: cd ui && pnpm install --frozen-lockfile && pnpm run build
+        run: cd ui && bun install --frozen-lockfile && bun run build
 
       - name: Build Go binary (with embedded UI)
         run: make build
