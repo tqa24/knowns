@@ -8,6 +8,7 @@ const pkg = JSON.parse(
   readFileSync(path.resolve(__dirname, "package.json"), "utf-8"),
 );
 const isProd = process.env.NODE_ENV === "production";
+const appVersion = process.env.APP_VERSION || pkg.version;
 
 const API_URL = isProd ? "" : process.env.API_URL || "http://localhost:6420";
 const WS_URL = isProd ? "" : process.env.WS_URL || "ws://localhost:6420";
@@ -112,6 +113,6 @@ export default defineConfig({
   define: {
     "import.meta.env.API_URL": JSON.stringify(API_URL),
     "import.meta.env.WS_URL": JSON.stringify(WS_URL),
-    "import.meta.env.APP_VERSION": JSON.stringify(pkg.version),
+    "import.meta.env.APP_VERSION": JSON.stringify(appVersion),
   },
 });

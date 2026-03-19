@@ -24,15 +24,20 @@ export function ProviderOAuthDialog({ open, providerName, authorization, onFinis
 	useEffect(() => {
 		if (!open || !authorization || authorization.method !== "auto" || calledRef.current) return;
 		calledRef.current = true;
+		let active = true;
+		setError(null);
 
 		onFinish()
-			.then(() => onClose())
-			.catch(() => {
-				// OAuth failed or was cancelled
-				setError("Authorization failed. Please try again.");
+			.then(() => {
+				if (active) onClose();
+			})
+			.catch((err) => {
+				if (!active) return;
+				setError(err instanceof Error ? err.message : "Authorization failed. Please try again.");
 			});
 
 		return () => {
+			active = false;
 			calledRef.current = false;
 		};
 	}, [open, authorization, onFinish, onClose]);
@@ -105,9 +110,10 @@ export function ProviderOAuthDialog({ open, providerName, authorization, onFinis
 										{loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Submit"}
 									</Button>
 								</div>
-								{error && <p className="text-xs text-destructive">{error}</p>}
 							</div>
 						)}
+
+						{error && <p className="text-xs text-destructive">{error}</p>}
 					</div>
 				)}
 			</DialogContent>

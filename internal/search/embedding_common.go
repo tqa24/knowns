@@ -82,7 +82,7 @@ func ONNXRuntimeDownloadURL() (string, string, error) {
 		platform = "osx-arm64"
 		ext = "tgz"
 	case goos == "darwin" && goarch == "amd64":
-		platform = "osx-arm64"
+		platform = "osx-x86_64"
 		ext = "tgz"
 	case goos == "linux" && goarch == "amd64":
 		platform = "linux-x64"

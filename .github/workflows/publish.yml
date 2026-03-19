@@ -11,36 +11,39 @@ on:
         type: string
 
 jobs:
-  publish:
+  meta:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      id-token: write
-
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
       - name: Determine version
+        id: meta
+        shell: bash
         run: |
           if [ -n "${{ inputs.version }}" ]; then
             VERSION="${{ inputs.version }}"
           elif [ -n "${{ github.event.release.tag_name }}" ]; then
             VERSION="${{ github.event.release.tag_name }}"
           elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            VERSION="${GITHUB_REF#refs/tags/v}"
+            VERSION="${GITHUB_REF#refs/tags/}"
           else
             echo "Unable to determine release version"
             exit 1
           fi
 
           VERSION="${VERSION#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
 
-          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
-          echo "TAG=v${VERSION}" >> "$GITHUB_ENV"
-          echo "Publishing version ${VERSION}"
+  verify:
+    needs: meta
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -54,9 +57,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          registry-url: 'https://registry.npmjs.org'
 
       - name: Build UI
+        env:
+          APP_VERSION: ${{ needs.meta.outputs.version }}
         run: cd ui && bun install --frozen-lockfile && bun run build
 
       - name: Run Go tests
@@ -65,25 +69,131 @@ jobs:
       - name: Run Go vet
         run: go vet ./...
 
-      - name: Build platform binaries
+      - name: Upload UI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-dist
+          path: ui/dist/
+          retention-days: 1
+
+  build-binaries:
+    needs: [meta, verify]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-13
+            goos: darwin
+            goarch: amd64
+            npm_pkg: knowns-darwin-x64
+            ext: ''
+          - runner: macos-14
+            goos: darwin
+            goarch: arm64
+            npm_pkg: knowns-darwin-arm64
+            ext: ''
+          - runner: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            npm_pkg: knowns-linux-x64
+            ext: ''
+          - runner: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm64
+            npm_pkg: knowns-linux-arm64
+            ext: ''
+          - runner: windows-latest
+            goos: windows
+            goarch: amd64
+            npm_pkg: knowns-win-x64
+            ext: '.exe'
+          - runner: windows-11-arm
+            goos: windows
+            goarch: arm64
+            npm_pkg: knowns-win-arm64
+            ext: '.exe'
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Setup Windows LLVM
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: choco install llvm -y
+
+      - name: Download UI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ui-dist
+          path: ui/dist/
+
+      - name: Build semantic-enabled binary
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '1'
         run: |
           LDFLAGS="-s -w -X github.com/howznguyen/knowns/internal/util.Version=${VERSION}"
+          mkdir -p "artifacts/${{ matrix.npm_pkg }}"
 
-          echo "Building standalone binaries for v${VERSION}..."
-          CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build -ldflags "$LDFLAGS" -o npm/knowns-darwin-arm64/knowns   ./cmd/knowns
-          CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build -ldflags "$LDFLAGS" -o npm/knowns-darwin-x64/knowns    ./cmd/knowns
-          CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build -ldflags "$LDFLAGS" -o npm/knowns-linux-arm64/knowns   ./cmd/knowns
-          CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -ldflags "$LDFLAGS" -o npm/knowns-linux-x64/knowns    ./cmd/knowns
-          CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -ldflags "$LDFLAGS" -o npm/knowns-win-arm64/knowns.exe ./cmd/knowns
-          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "$LDFLAGS" -o npm/knowns-win-x64/knowns.exe  ./cmd/knowns
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            export CC=clang
+            export CXX=clang++
+          fi
+
+          go build -ldflags "$LDFLAGS" -o "artifacts/${{ matrix.npm_pkg }}/knowns${{ matrix.ext }}" ./cmd/knowns
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.npm_pkg }}
+          path: artifacts/${{ matrix.npm_pkg }}/knowns*
+          retention-days: 1
+
+  publish:
+    needs: [meta, build-binaries]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Download binary artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
 
       - name: Test Linux binary
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
         run: |
-          chmod +x npm/knowns-linux-x64/knowns
-          npm/knowns-linux-x64/knowns --version
-          npm/knowns-linux-x64/knowns --version | grep -q "$VERSION" || echo "Warning: Version mismatch"
+          chmod +x artifacts/knowns-linux-x64/knowns
+          artifacts/knowns-linux-x64/knowns --version
+          artifacts/knowns-linux-x64/knowns --version | grep -q "$VERSION" || echo "Warning: Version mismatch"
 
       - name: Prepare npm packages
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
         run: |
           cp README.md npm/knowns/README.md
 
@@ -99,31 +209,44 @@ jobs:
             npm version "$VERSION" --no-git-tag-version --allow-same-version
           )
 
+          for dir in artifacts/knowns-*/; do
+            pkg=$(basename "$dir")
+            binary=$(ls "$dir"/knowns* 2>/dev/null | head -1)
+            if [ -z "$binary" ]; then
+              echo "Missing binary for $pkg"
+              exit 1
+            fi
+            cp "$binary" "npm/$pkg/$(basename "$binary")"
+          done
+
           node <<'EOF'
           const fs = require('fs');
-          const path = 'npm/knowns/package.json';
+          const path = require('path');
           const version = process.env.VERSION;
-          const pkg = JSON.parse(fs.readFileSync(path, 'utf8'));
-          pkg.bin = {
-            knowns: 'bin/knowns.js',
-            kn: 'bin/knowns.js',
-          };
-          pkg.repository = {
-            type: 'git',
-            url: 'git+https://github.com/knowns-dev/knowns.git',
-          };
-          pkg.optionalDependencies = {
-            '@knowns/darwin-arm64': version,
-            '@knowns/darwin-x64': version,
-            '@knowns/linux-arm64': version,
-            '@knowns/linux-x64': version,
-            '@knowns/win-arm64': version,
-            '@knowns/win-x64': version,
-          };
-          fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n');
+          const repo = { type: 'git', url: 'git+https://github.com/knowns-dev/knowns.git' };
+          for (const dir of fs.readdirSync('npm')) {
+            const pkgPath = path.join('npm', dir, 'package.json');
+            if (!fs.existsSync(pkgPath)) continue;
+            const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+            pkg.repository = repo;
+            if (pkg.name === 'knowns') {
+              pkg.bin = { knowns: 'bin/knowns.js', kn: 'bin/knowns.js' };
+              pkg.optionalDependencies = {
+                '@knowns/darwin-arm64': version,
+                '@knowns/darwin-x64': version,
+                '@knowns/linux-arm64': version,
+                '@knowns/linux-x64': version,
+                '@knowns/win-arm64': version,
+                '@knowns/win-x64': version,
+              };
+            }
+            fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+          }
           EOF
 
       - name: Publish platform packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           for pkg in npm/knowns-*/; do
             (
@@ -155,10 +278,10 @@ jobs:
             )
             sleep 10
           done
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish main package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           cd npm/knowns
           PKG_NAME=$(node -p "require('./package.json').name")
@@ -185,8 +308,6 @@ jobs:
 
           echo "Failed to publish ${PKG_NAME}@${PKG_VERSION} after retries"
           exit 1
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create tarballs
         run: |
@@ -204,30 +325,31 @@ jobs:
             shasum -a 256 "${pkg}.tar.gz" > "${pkg}.tar.gz.sha256"
             rm "$base"
           done
-          ls -la *.tar.gz
 
       - name: Ensure GitHub release exists
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name == 'release'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.meta.outputs.tag }}
         run: |
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --generate-notes
 
-      - name: Upload binaries to Release
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Upload binaries to release
+        if: github.event_name == 'release'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.meta.outputs.tag }}
         run: |
           for file in *.tar.gz *.sha256; do
-            echo "Uploading $file..."
             gh release upload "$TAG" "$file" --repo "$GITHUB_REPOSITORY" --clobber
           done
 
       - name: Update Homebrew tap
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name == 'release'
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ needs.meta.outputs.version }}
         run: |
           if [ -z "$GH_TOKEN" ]; then
             echo "HOMEBREW_TAP_TOKEN not set, skipping Homebrew update"
@@ -237,11 +359,6 @@ jobs:
           SHA_DARWIN_ARM64=$(awk '{print $1}' knowns-darwin-arm64.tar.gz.sha256)
           SHA_DARWIN_X64=$(awk '{print $1}' knowns-darwin-x64.tar.gz.sha256)
           SHA_LINUX_X64=$(awk '{print $1}' knowns-linux-x64.tar.gz.sha256)
-
-          echo "SHA256 checksums:"
-          echo "  darwin-arm64: $SHA_DARWIN_ARM64"
-          echo "  darwin-x64: $SHA_DARWIN_X64"
-          echo "  linux-x64: $SHA_LINUX_X64"
 
           git clone https://x-access-token:${GH_TOKEN}@github.com/knowns-dev/homebrew-tap.git
           cd homebrew-tap
@@ -294,11 +411,12 @@ jobs:
           git commit -m "Update knowns to v${VERSION}" || echo "No changes to commit"
           git push
 
-      - name: Get changelog from Release
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Get changelog from release
+        if: github.event_name == 'release'
         id: changelog
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.meta.outputs.tag }}
         run: |
           CHANGELOG=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body -q '.body' 2>/dev/null || echo "")
           CHANGELOG=$(echo "$CHANGELOG" | sed '/^\*\*Full Changelog\*\*:/d')
@@ -312,9 +430,11 @@ jobs:
           echo "content=$CHANGELOG" >> "$GITHUB_OUTPUT"
 
       - name: Send Discord notification
-        if: startsWith(github.ref, 'refs/tags/v') && success()
+        if: github.event_name == 'release' && success()
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          VERSION: ${{ needs.meta.outputs.version }}
+          TAG: ${{ needs.meta.outputs.tag }}
           CHANGELOG: ${{ steps.changelog.outputs.content }}
         run: |
           if [ -z "$DISCORD_WEBHOOK" ]; then

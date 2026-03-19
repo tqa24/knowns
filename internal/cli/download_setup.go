@@ -330,7 +330,7 @@ func buildSemanticDownloadSteps(modelID string) ([]initStep, bool, error) {
 		home, _ := os.UserHomeDir()
 		destDir := filepath.Join(home, ".knowns", "lib")
 		_ = os.MkdirAll(destDir, 0755)
-		tmpPath := filepath.Join(os.TempDir(), fmt.Sprintf("onnxruntime-%d.tgz", time.Now().UnixNano()))
+		tmpPath := filepath.Join(os.TempDir(), fmt.Sprintf("onnxruntime-%d%s", time.Now().UnixNano(), onnxArchiveSuffix(url)))
 		destPath := filepath.Join(destDir, libName)
 
 		steps = append(steps, initStep{
@@ -400,7 +400,7 @@ func runSemanticSetup(modelID string, force ...bool) error {
 		home, _ := os.UserHomeDir()
 		destDir := filepath.Join(home, ".knowns", "lib")
 		_ = os.MkdirAll(destDir, 0755)
-		tmpPath := filepath.Join(os.TempDir(), fmt.Sprintf("onnxruntime-%d.tgz", time.Now().UnixNano()))
+		tmpPath := filepath.Join(os.TempDir(), fmt.Sprintf("onnxruntime-%d%s", time.Now().UnixNano(), onnxArchiveSuffix(url)))
 		destPath := filepath.Join(destDir, libName)
 
 		steps = append(steps, downloadStep{
@@ -470,7 +470,7 @@ func ensureONNXRuntime() error {
 	home, _ := os.UserHomeDir()
 	destDir := filepath.Join(home, ".knowns", "lib")
 	_ = os.MkdirAll(destDir, 0755)
-	tmpPath := filepath.Join(os.TempDir(), fmt.Sprintf("onnxruntime-%d.tgz", time.Now().UnixNano()))
+	tmpPath := filepath.Join(os.TempDir(), fmt.Sprintf("onnxruntime-%d%s", time.Now().UnixNano(), onnxArchiveSuffix(url)))
 	destPath := filepath.Join(destDir, libName)
 
 	steps := []downloadStep{

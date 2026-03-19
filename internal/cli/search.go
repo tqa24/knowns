@@ -2,6 +2,7 @@ package cli
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"compress/gzip"
 	"fmt"
 	"io"
@@ -375,7 +376,7 @@ func runInstallRuntime() error {
 	fmt.Printf("Downloading ONNX Runtime for %s/%s...\n\n", runtime.GOOS, runtime.GOARCH)
 
 	// Download to temp file.
-	tmpFile, err := os.CreateTemp("", "onnxruntime-*.tgz")
+	tmpFile, err := os.CreateTemp("", "onnxruntime-*"+onnxArchiveSuffix(url))
 	if err != nil {
 		return err
 	}
@@ -408,8 +409,50 @@ func runInstallRuntime() error {
 	return nil
 }
 
-// extractONNXLib extracts the shared library from an ONNX Runtime tgz archive.
+func onnxArchiveSuffix(url string) string {
+	if strings.HasSuffix(strings.ToLower(url), ".zip") {
+		return ".zip"
+	}
+	return ".tgz"
+}
+
+// extractONNXLib extracts the shared library from an ONNX Runtime archive.
 func extractONNXLib(archivePath, libName, destPath string) error {
+	if strings.HasSuffix(strings.ToLower(archivePath), ".zip") {
+		zr, err := zip.OpenReader(archivePath)
+		if err != nil {
+			return err
+		}
+		defer zr.Close()
+
+		for _, f := range zr.File {
+			if filepath.Base(f.Name) != libName || f.FileInfo().IsDir() {
+				continue
+			}
+
+			rc, err := f.Open()
+			if err != nil {
+				return err
+			}
+			out, err := os.Create(destPath)
+			if err != nil {
+				rc.Close()
+				return err
+			}
+			if _, err := io.Copy(out, rc); err != nil {
+				out.Close()
+				rc.Close()
+				return err
+			}
+			out.Close()
+			rc.Close()
+			_ = os.Chmod(destPath, 0755)
+			return nil
+		}
+
+		return fmt.Errorf("%s not found in archive", libName)
+	}
+
 	f, err := os.Open(archivePath)
 	if err != nil {
 		return err

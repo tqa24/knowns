@@ -119,14 +119,16 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 	const disconnectProvider = useCallback(
 		async (id: string) => {
 			await opencodeApi.deleteAuth(id);
-			await refreshAll({ silent: true });
+			await opencodeApi.globalDispose();
+			await refreshProviders({ silent: true });
 		},
-		[refreshAll],
+		[refreshProviders],
 	);
 
 	const finishOAuth = useCallback(
 		async (id: string, method: number, code?: string) => {
 			await opencodeApi.oauthCallback(id, method, code);
+			await opencodeApi.globalDispose();
 			await refreshAll({ silent: true });
 		},
 		[refreshAll],

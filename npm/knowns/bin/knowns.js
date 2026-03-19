@@ -4,6 +4,21 @@ const { execFileSync } = require("child_process");
 const path = require("path");
 const os = require("os");
 const fs = require("fs");
+const Module = require("module");
+
+function uniq(values) {
+  return [...new Set(values)];
+}
+
+function resolveFromPackageDir(pkgDir, ext) {
+  for (const name of [`knowns${ext}`, "knowns"]) {
+    const candidate = path.join(pkgDir, name);
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
 
 function getBinaryPath() {
   const platform = os.platform();
@@ -31,39 +46,39 @@ function getBinaryPath() {
 
   const pkgName = `@knowns/${p}-${a}`;
   const ext = platform === "win32" ? ".exe" : "";
+  const pkgParts = pkgName.split("/");
 
-  // Try to find in node_modules (installed as optionalDependency)
-  const candidates = [
-    // npm/pnpm standard layout
-    path.join(__dirname, "..", "node_modules", pkgName, `knowns${ext}`),
-    // pnpm hoisted
-    path.join(__dirname, "..", "..", pkgName, `knowns${ext}`),
-    // npm hoisted
-    path.join(
-      __dirname,
-      "..",
-      "..",
-      "..",
-      "node_modules",
-      pkgName,
-      `knowns${ext}`
-    ),
-    // Global install
-    path.join(__dirname, "..", "..", pkgName, `knowns${ext}`),
-  ];
+  const packageDirs = uniq([
+    path.resolve(__dirname, "..", "node_modules", ...pkgParts),
+    path.resolve(__dirname, "..", "..", ...pkgParts),
+    path.resolve(__dirname, "..", "..", "node_modules", ...pkgParts),
+    path.resolve(__dirname, "..", "..", "..", "node_modules", ...pkgParts),
+    ...module.paths.map((base) => path.join(base, ...pkgParts)),
+    ...Module.globalPaths.map((base) => path.join(base, ...pkgParts)),
+  ]);
 
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) {
-      return candidate;
+  for (const pkgDir of packageDirs) {
+    const resolved = resolveFromPackageDir(pkgDir, ext);
+    if (resolved) {
+      return resolved;
     }
   }
 
-  // Try require.resolve as last resort
+  for (const base of uniq([__dirname, process.cwd(), ...module.paths, ...Module.globalPaths])) {
+    try {
+      const pkgJson = require.resolve(`${pkgName}/package.json`, { paths: [base] });
+      const resolved = resolveFromPackageDir(path.dirname(pkgJson), ext);
+      if (resolved) {
+        return resolved;
+      }
+    } catch {}
+  }
+
   try {
-    const pkgDir = path.dirname(require.resolve(`${pkgName}/package.json`));
-    const binary = path.join(pkgDir, `knowns${ext}`);
-    if (fs.existsSync(binary)) {
-      return binary;
+    const pkgJson = require.resolve(`${pkgName}/package.json`);
+    const resolved = resolveFromPackageDir(path.dirname(pkgJson), ext);
+    if (resolved) {
+      return resolved;
     }
   } catch {}
 

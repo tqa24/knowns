@@ -22,7 +22,9 @@ interface ProviderCardProps {
 
 export function ProviderCard({ provider, connected, authMethods, onConnectApiKey, onStartOAuth }: ProviderCardProps) {
 	const apiMethod = authMethods.find((m) => m.type === "api");
-	const oauthMethods = authMethods.filter((m) => m.type === "oauth");
+	const oauthMethods = authMethods.flatMap((method, index) =>
+		method.type === "oauth" ? [{ label: method.label, methodIndex: index }] : [],
+	);
 
 	return (
 		<div
@@ -54,12 +56,12 @@ export function ProviderCard({ provider, connected, authMethods, onConnectApiKey
 			<div className="pl-10">
 				{apiMethod && <ApiKeyRow providerId={provider.id} connected={connected} onConnect={onConnectApiKey} />}
 				{!apiMethod &&
-					oauthMethods.map((method, index) => (
+					oauthMethods.map((method) => (
 						<OAuthRow
-							key={index}
+							key={method.methodIndex}
 							label={method.label}
 							connected={connected}
-							onConnect={() => onStartOAuth(index)}
+							onConnect={() => onStartOAuth(method.methodIndex)}
 						/>
 					))}
 			</div>
