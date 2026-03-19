@@ -5,12 +5,14 @@
 import { execSync, spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const BINARY = process.env.TEST_BINARY || join(__dirname, "../../bin/knowns");
+const BINARY = process.env.TEST_BINARY
+	? resolve(process.cwd(), process.env.TEST_BINARY)
+	: resolve(__dirname, "../../bin/knowns");
 
 /** Find an available port */
 function findPort(): number {
