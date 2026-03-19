@@ -57,6 +57,8 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - name: Build UI
+        env:
+          APP_VERSION: ${{ needs.meta.outputs.version }}
         run: cd ui && bun install --frozen-lockfile && bun run build
 
       - name: Run Go tests
