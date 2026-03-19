@@ -18,7 +18,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/howznguyen/knowns"
+    "url": "https://github.com/knowns-dev/knowns"
   },
-  "keywords": ["cli", "project-management", "ai", "mcp"]
+  "keywords": [
+    "cli",
+    "project-management",
+    "ai",
+    "mcp"
+  ]
 }
