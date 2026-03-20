@@ -20,6 +20,26 @@ function resolveFromPackageDir(pkgDir, ext) {
   return null;
 }
 
+function ensureExecutable(binary) {
+  if (process.platform === "win32") {
+    return;
+  }
+
+  const mode = fs.statSync(binary).mode;
+  if ((mode & 0o111) !== 0) {
+    return;
+  }
+
+  fs.chmodSync(binary, mode | 0o755);
+}
+
+function getInstallHint(pkgName) {
+  return (
+    `npm install knowns ${pkgName}\n` +
+    `Or for global installs: npm install -g knowns ${pkgName}`
+  );
+}
+
 function getBinaryPath() {
   const platform = os.platform();
   const arch = os.arch();
@@ -85,7 +105,7 @@ function getBinaryPath() {
   console.error(
     `Could not find knowns binary for ${platform}-${arch}.\n` +
       `Expected package: ${pkgName}\n` +
-      `Try reinstalling: npm install knowns`
+      `Try reinstalling:\n${getInstallHint(pkgName)}`
   );
   process.exit(1);
 }

@@ -901,6 +901,11 @@ export interface OpenCodeRunCommandResult {
 	data?: unknown;
 }
 
+export interface OpenCodeSummarizeSessionRequest {
+	providerID: string;
+	modelID: string;
+}
+
 export type OpenCodePromptPart =
 	| { type: "text"; text: string; id?: string }
 	| { type: "file"; mime: string; url: string; filename: string; id?: string };
@@ -1174,6 +1179,33 @@ export const opencodeApi = {
 		return { handled: false, data };
 	},
 
+	async summarizeSession(
+		sessionId: string,
+		payload: OpenCodeSummarizeSessionRequest,
+		directory?: string | null,
+	): Promise<unknown> {
+		const res = await fetch(`${OPENCODE_BASE}/session/${encodeURIComponent(sessionId)}/summarize`, {
+			method: "POST",
+			headers: getOpenCodeHeaders(directory, "application/json"),
+			body: JSON.stringify(payload),
+		});
+
+		if (!res.ok) {
+			const { message } = await readOpenCodeResponsePayload(res);
+			throw new Error(message || `Failed to summarize session ${sessionId}`);
+		}
+
+		const contentType = res.headers.get("content-type") || "";
+		const contentLength = res.headers.get("content-length");
+		if (res.status === 204 || contentLength === "0") {
+			return null;
+		}
+		if (contentType.includes("application/json")) {
+			return res.json();
+		}
+		return res.text();
+	},
+
 	// List available providers from OpenCode (for model selector)
 	async listProviders(): Promise<OpenCodeProviderResponse> {
 		const res = await fetch(`${OPENCODE_BASE}/provider`);
@@ -1236,9 +1268,9 @@ export const opencodeApi = {
 		if (!res.ok) throw new Error("Failed to dispose OpenCode instance");
 	},
 
-	// Stop a running session
+	// Stop a running session via OpenCode abort endpoint
 	async stopSession(id: string): Promise<void> {
-		const res = await fetch(`${OPENCODE_BASE}/session/${encodeURIComponent(id)}/stop`, {
+		const res = await fetch(`${OPENCODE_BASE}/session/${encodeURIComponent(id)}/abort`, {
 			method: "POST",
 		});
 		if (!res.ok) throw new Error(`Failed to stop session ${id}`);

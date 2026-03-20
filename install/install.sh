@@ -1,8 +1,8 @@
 #!/bin/sh
 # Knowns CLI installer
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/knowns-dev/knowns/main/install.sh | sh
-#   wget -qO- https://raw.githubusercontent.com/knowns-dev/knowns/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/knowns-dev/knowns/main/install/install.sh | sh
+#   wget -qO- https://raw.githubusercontent.com/knowns-dev/knowns/main/install/install.sh | sh
 #
 # Options (via env vars):
 #   KNOWNS_INSTALL_DIR  — install directory (default: /usr/local/bin)
@@ -221,6 +221,9 @@ main() {
     printf "\n  ${DIM}Get started:${RESET}\n"
     printf "  ${DIM}  knowns init${RESET}\n"
     printf "  ${DIM}  knowns task create \"My first task\"${RESET}\n\n"
+
+    printf "  ${DIM}Uninstall:${RESET}\n"
+    printf "  ${DIM}  curl -fsSL https://github.com/${REPO}/releases/download/${VERSION}/uninstall.sh | sh${RESET}\n\n"
 }
 
 main

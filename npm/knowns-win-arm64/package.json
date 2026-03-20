@@ -10,6 +10,7 @@
   ],
   "main": "knowns",
   "license": "MIT",
+  "homepage": "https://knowns.sh",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/knowns-dev/knowns.git"

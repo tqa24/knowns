@@ -983,9 +983,15 @@ export function useChatPage() {
 				(item) => item.source === "command" && item.name.toLowerCase() === `/${slashName}`,
 			)
 			: undefined;
+		const isCompactCommand = slashCommand?.name.toLowerCase() === "/compact";
 		const isStreaming = session?.status === "streaming";
-		const commandModel = session?.model
-			? `${session.model.providerID}/${session.model.modelID}`
+		const commandModelSelection = session?.model
+			? { providerID: session.model.providerID, modelID: session.model.modelID }
+			: catalog.effectiveDefault
+				? { providerID: catalog.effectiveDefault.providerID, modelID: catalog.effectiveDefault.modelID }
+				: undefined;
+		const commandModel = commandModelSelection
+			? `${commandModelSelection.providerID}/${commandModelSelection.modelID}`
 			: undefined;
 
 		if (slashCommand) {
@@ -999,6 +1005,11 @@ export function useChatPage() {
 			}
 
 			try {
+				if (isCompactCommand && !commandModelSelection) {
+					toast.error("Select a model before using /compact.");
+					return;
+				}
+
 				const userMessage = {
 					id: `temp_cmd_${Date.now()}`,
 					role: "user" as const,
@@ -1009,16 +1020,27 @@ export function useChatPage() {
 
 				setLocalSessions((prev) =>
 					prev.map((s) =>
-						s.id === activeId
-							? {
+							s.id === activeId
+								? {
 								...s,
 								messages: [...s.messages, userMessage],
-								status: "idle",
+								status: isCompactCommand ? "streaming" : "idle",
 								error: undefined,
 							}
 							: s,
 					),
 				);
+
+				if (isCompactCommand) {
+					const summarizeModel = commandModelSelection!;
+					clearIdleTransition(activeId);
+					scheduleStreamingWatchdog(activeId);
+					await opencodeApi.summarizeSession(activeId, summarizeModel, session?.directory || activeDirectory);
+					window.setTimeout(() => {
+						void reconcileStreamingSession(activeId);
+					}, 300);
+					return;
+				}
 
 				await opencodeApi.runCommand(activeId, {
 					command: slashMatch?.groups?.name || slashCommand.name.replace(/^\//, ""),
@@ -1035,6 +1057,7 @@ export function useChatPage() {
 				return;
 			} catch (error) {
 				console.error("Failed to run slash command:", error);
+				clearStreamingWatchdog(activeId);
 				setLocalSessions((prev) =>
 					prev.map((s) =>
 						s.id === activeId
@@ -1293,9 +1316,27 @@ export function useChatPage() {
 			return;
 		}
 		try {
+			clearIdleTransition(activeId);
+			clearStreamingWatchdog(activeId);
+			setLocalSessions((prev) =>
+				upsertLocalSession(prev, activeId, (session) => ({
+					...session,
+					status: "idle",
+					error: undefined,
+					updatedAt: new Date().toISOString(),
+				})),
+			);
 			await opencodeApi.stopSession(activeId);
 		} catch (error) {
 			console.error("Failed to stop chat:", error);
+			setLocalSessions((prev) =>
+				upsertLocalSession(prev, activeId, (session) => ({
+					...session,
+					status: "streaming",
+					updatedAt: new Date().toISOString(),
+				})),
+			);
+			toast.error(getErrorMessage(error, "Failed to stop OpenCode session"));
 			await refreshOpenCodeStatus({ fallback: getErrorMessage(error, "Failed to stop OpenCode session") });
 		}
 	};

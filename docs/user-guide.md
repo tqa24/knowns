@@ -13,10 +13,10 @@ Complete guide for using Knowns - a CLI-first knowledge layer and task managemen
 brew install knowns-dev/tap/knowns
 
 # Shell installer (macOS/Linux)
-curl -fsSL https://raw.githubusercontent.com/knowns-dev/knowns/main/install/install.sh | sh
+curl -fsSL https://knowns.sh/script/install | sh
 
 # Or with wget
-wget -qO- https://raw.githubusercontent.com/knowns-dev/knowns/main/install/install.sh | sh
+wget -qO- https://knowns.sh/script/install | sh
 
 # npm (requires Node.js 18+)
 npm install -g knowns
@@ -30,7 +30,17 @@ npx knowns <command>
 
 ```powershell
 # PowerShell installer (Windows)
-irm https://raw.githubusercontent.com/knowns-dev/knowns/main/install/install.ps1 | iex
+irm https://knowns.sh/script/install.ps1 | iex
+```
+
+```bash
+# Shell uninstaller (macOS/Linux)
+curl -fsSL https://knowns.sh/script/uninstall | sh
+```
+
+```powershell
+# PowerShell uninstaller (Windows)
+irm https://knowns.sh/script/uninstall.ps1 | iex
 ```
 
 ### Initialize a Project

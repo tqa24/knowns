@@ -30,6 +30,15 @@ export interface SlashAction {
 
 export type SlashItem = WorkflowShortcut | SlashAction;
 
+const LOCAL_SLASH_ITEMS: SlashAction[] = [
+	{
+		name: "/compact",
+		description: "Summarize the current chat session into a compact context.",
+		usage: "/compact",
+		source: "command",
+	},
+];
+
 function normalizeSlashName(name: string | undefined): string {
 	if (!name) return "/";
 	return name.startsWith("/") ? name : `/${name}`;
@@ -60,11 +69,16 @@ export function useSlashItems(directory?: string | null) {
 		opencodeApi
 			.listCommands(directory)
 			.then((data) => {
-				setSlashItems((Array.isArray(data) ? data : []).map(normalizeSlashItem));
+				const remoteItems = (Array.isArray(data) ? data : []).map(normalizeSlashItem);
+				const knownNames = new Set(remoteItems.map((item) => item.name.toLowerCase()));
+				setSlashItems([
+					...remoteItems,
+					...LOCAL_SLASH_ITEMS.filter((item) => !knownNames.has(item.name.toLowerCase())),
+				]);
 			})
 			.catch((err) => {
 				console.error("Failed to load slash items:", err);
-				setSlashItems([]);
+				setSlashItems(LOCAL_SLASH_ITEMS);
 			})
 			.finally(() => setLoading(false));
 	}, [directory]);
