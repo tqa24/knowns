@@ -114,6 +114,7 @@ const binary = getBinaryPath();
 const args = process.argv.slice(2);
 
 try {
+  ensureExecutable(binary);
   execFileSync(binary, args, {
     stdio: "inherit",
     env: process.env,

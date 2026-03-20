@@ -53,7 +53,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: "1.26"
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -61,7 +61,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
 
       - name: Build UI
         env:
@@ -111,36 +111,46 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-13
+          - runner: macos-15-intel
             goos: darwin
             goarch: amd64
             npm_pkg: knowns-darwin-x64
-            ext: ''
-          - runner: macos-14
+            ext: ""
+            cgo_enabled: "1"
+          - runner: macos-15
             goos: darwin
             goarch: arm64
             npm_pkg: knowns-darwin-arm64
-            ext: ''
+            ext: ""
+            cgo_enabled: "1"
           - runner: ubuntu-latest
             goos: linux
             goarch: amd64
             npm_pkg: knowns-linux-x64
-            ext: ''
+            ext: ""
+            cgo_enabled: "1"
           - runner: ubuntu-24.04-arm
             goos: linux
             goarch: arm64
             npm_pkg: knowns-linux-arm64
-            ext: ''
+            ext: ""
+            cgo_enabled: "1"
           - runner: windows-latest
             goos: windows
             goarch: amd64
             npm_pkg: knowns-win-x64
-            ext: '.exe'
+            ext: ".exe"
+            cgo_enabled: "1"
+            zig_target: x86_64-windows-gnu
+            zig_arch: x86_64
           - runner: windows-11-arm
             goos: windows
             goarch: arm64
             npm_pkg: knowns-win-arm64
-            ext: '.exe'
+            ext: ".exe"
+            cgo_enabled: "1"
+            zig_target: aarch64-windows-gnu
+            zig_arch: aarch64
     runs-on: ${{ matrix.runner }}
     defaults:
       run:
@@ -152,12 +162,47 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: "1.26"
 
-      - name: Setup Windows LLVM
+      - name: Install Zig for Windows cgo
         if: runner.os == 'Windows'
         shell: pwsh
-        run: choco install llvm -y
+        env:
+          ZIG_ARCH: ${{ matrix.zig_arch }}
+          ZIG_VERSION: 0.14.0
+        run: |
+          $zigRoot = Join-Path $env:RUNNER_TEMP 'zig'
+          $zipPath = Join-Path $env:RUNNER_TEMP 'zig.zip'
+          $folder = "zig-windows-$env:ZIG_ARCH-$env:ZIG_VERSION"
+          $url = "https://ziglang.org/download/$env:ZIG_VERSION/$folder.zip"
+
+          Invoke-WebRequest -Uri $url -OutFile $zipPath
+          Expand-Archive -Path $zipPath -DestinationPath $zigRoot -Force
+          Add-Content -Path $env:GITHUB_PATH -Value (Join-Path $zigRoot $folder)
+
+      - name: Configure Windows cgo compiler
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          ZIG_TARGET: ${{ matrix.zig_target }}
+        run: |
+          $ccPath = Join-Path $env:RUNNER_TEMP 'zig-cc.cmd'
+          $cxxPath = Join-Path $env:RUNNER_TEMP 'zig-cxx.cmd'
+
+          @"
+          @echo off
+          zig cc -target %ZIG_TARGET% %*
+          "@ | Set-Content -Path $ccPath -Encoding ascii
+
+          @"
+          @echo off
+          zig c++ -target %ZIG_TARGET% %*
+          "@ | Set-Content -Path $cxxPath -Encoding ascii
+
+          Add-Content -Path $env:GITHUB_PATH -Value $env:RUNNER_TEMP
+          Add-Content -Path $env:GITHUB_ENV -Value "ZIG_TARGET=$env:ZIG_TARGET"
+          Add-Content -Path $env:GITHUB_ENV -Value "CC=zig-cc"
+          Add-Content -Path $env:GITHUB_ENV -Value "CXX=zig-cxx"
 
       - name: Download UI artifact
         uses: actions/download-artifact@v4
@@ -185,15 +230,10 @@ jobs:
           VERSION: ${{ needs.meta.outputs.version }}
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: '1'
+          CGO_ENABLED: ${{ matrix.cgo_enabled }}
         run: |
           LDFLAGS="-s -w -X github.com/howznguyen/knowns/internal/util.Version=${VERSION}"
           mkdir -p "artifacts/${{ matrix.npm_pkg }}"
-
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            export CC=clang
-            export CXX=clang++
-          fi
 
           go build -ldflags "$LDFLAGS" -o "artifacts/${{ matrix.npm_pkg }}/knowns${{ matrix.ext }}" ./cmd/knowns
 
@@ -219,8 +259,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          registry-url: 'https://registry.npmjs.org'
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
 
       - name: Download binary artifacts
         uses: actions/download-artifact@v4
@@ -260,7 +300,9 @@ jobs:
               echo "Missing binary for $pkg"
               exit 1
             fi
-            cp "$binary" "npm/$pkg/$(basename "$binary")"
+            dest="npm/$pkg/$(basename "$binary")"
+            cp "$binary" "$dest"
+            chmod +x "$dest" 2>/dev/null || true
           done
 
           node <<'EOF'
