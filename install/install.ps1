@@ -1,6 +1,6 @@
 # Knowns CLI installer for Windows
 # Usage:
-#   irm https://raw.githubusercontent.com/knowns-dev/knowns/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/knowns-dev/knowns/main/install/install.ps1 | iex
 #
 # Options (via env vars):
 #   $env:KNOWNS_INSTALL_DIR  — install directory (default: ~\.knowns\bin)
@@ -10,6 +10,7 @@ $ErrorActionPreference = "Stop"
 
 $Repo = "knowns-dev/knowns"
 $Binary = "knowns.exe"
+$AliasBinary = "kn.exe"
 $DefaultInstallDir = Join-Path $env:USERPROFILE ".knowns\bin"
 $InstallDir = if ($env:KNOWNS_INSTALL_DIR) { $env:KNOWNS_INSTALL_DIR } else { $DefaultInstallDir }
 
@@ -112,7 +113,9 @@ try {
     Write-Host "  . Installing to $InstallDir..." -NoNewline -ForegroundColor DarkGray
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
     Copy-Item -Path $ExtractedBin.FullName -Destination (Join-Path $InstallDir $Binary) -Force
+    Copy-Item -Path $ExtractedBin.FullName -Destination (Join-Path $InstallDir $AliasBinary) -Force
     Write-Host "`r  + Installed to $InstallDir\$Binary        " -ForegroundColor Green
+    Write-Host "  + Installed alias $InstallDir\$AliasBinary" -ForegroundColor Green
 
     # Add to PATH if not already there
     $UserPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
@@ -135,6 +138,9 @@ try {
     Write-Host "  Get started:" -ForegroundColor DarkGray
     Write-Host "    knowns init" -ForegroundColor DarkGray
     Write-Host "    knowns task create `"My first task`"" -ForegroundColor DarkGray
+    Write-Host "" 
+    Write-Host "  Uninstall:" -ForegroundColor DarkGray
+    Write-Host "    irm https://github.com/$Repo/releases/download/$Version/uninstall.ps1 | iex" -ForegroundColor DarkGray
     Write-Host ""
 
 } finally {

@@ -6,7 +6,9 @@
     "knowns": "bin/knowns.js",
     "kn": "bin/knowns.js"
   },
-  "scripts": {},
+  "scripts": {
+    "postinstall": "node install.js"
+  },
   "optionalDependencies": {
     "@knowns/darwin-arm64": "0.0.0",
     "@knowns/darwin-x64": "0.0.0",
@@ -16,6 +18,7 @@
     "@knowns/win-x64": "0.0.0"
   },
   "license": "MIT",
+  "homepage": "https://knowns.sh",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/knowns-dev/knowns.git"

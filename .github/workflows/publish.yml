@@ -36,6 +36,11 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
 
+      - name: Trace release metadata
+        run: |
+          echo "meta.version=${{ steps.meta.outputs.version }}"
+          echo "meta.tag=${{ steps.meta.outputs.tag }}"
+
   verify:
     needs: meta
     runs-on: ubuntu-latest
@@ -62,6 +67,30 @@ jobs:
         env:
           APP_VERSION: ${{ needs.meta.outputs.version }}
         run: cd ui && bun install --frozen-lockfile && bun run build
+
+      - name: Trace built UI version
+        env:
+          EXPECTED_VERSION: ${{ needs.meta.outputs.version }}
+          APP_VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          echo "expected_version=$EXPECTED_VERSION"
+          echo "app_version_env=$APP_VERSION"
+          echo "ui_package_version=$(node -p \"require('./ui/package.json').version\")"
+
+          echo "dist files:"
+          ls -la ui/dist
+          ls -la ui/dist/assets || true
+
+          echo "version-like strings in dist:"
+          grep -RhoE '[0-9]+\.[0-9]+\.[0-9]+' ui/dist | sort -u || true
+
+          echo "search expected version in dist:"
+          if grep -R "$EXPECTED_VERSION" ui/dist >/dev/null 2>&1; then
+            echo "OK: found expected version $EXPECTED_VERSION in built UI"
+          else
+            echo "ERROR: expected version $EXPECTED_VERSION not found in built UI"
+            exit 1
+          fi
 
       - name: Run Go tests
         run: go test -v -race ./...
@@ -181,6 +210,21 @@ jobs:
           name: ui-dist
           path: ui/dist/
 
+      - name: Trace downloaded UI artifact
+        env:
+          EXPECTED_VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          echo "checking downloaded ui artifact"
+          ls -la ui/dist
+          ls -la ui/dist/assets || true
+          grep -RhoE '[0-9]+\.[0-9]+\.[0-9]+' ui/dist | sort -u || true
+          if grep -R "$EXPECTED_VERSION" ui/dist >/dev/null 2>&1; then
+            echo "OK: found expected version $EXPECTED_VERSION in downloaded UI artifact"
+          else
+            echo "ERROR: expected version $EXPECTED_VERSION not found in downloaded UI artifact"
+            exit 1
+          fi
+
       - name: Build release binary
         env:
           VERSION: ${{ needs.meta.outputs.version }}
@@ -271,6 +315,7 @@ jobs:
             if (!fs.existsSync(pkgPath)) continue;
             const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
             pkg.repository = repo;
+            pkg.homepage = 'https://knowns.sh';
             if (pkg.name === 'knowns') {
               pkg.bin = { knowns: 'bin/knowns.js', kn: 'bin/knowns.js' };
               pkg.optionalDependencies = {
@@ -383,7 +428,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.meta.outputs.tag }}
         run: |
-          for file in *.tar.gz *.sha256; do
+          for file in *.tar.gz *.sha256 install/install.sh install/install.ps1 install/uninstall.sh install/uninstall.ps1; do
             gh release upload "$TAG" "$file" --repo "$GITHUB_REPOSITORY" --clobber
           done
 

@@ -33,6 +33,13 @@ function ensureExecutable(binary) {
   fs.chmodSync(binary, mode | 0o755);
 }
 
+function getInstallHint(pkgName) {
+  return (
+    `npm install knowns ${pkgName}\n` +
+    `Or for global installs: npm install -g knowns ${pkgName}`
+  );
+}
+
 function getBinaryPath() {
   const platform = os.platform();
   const arch = os.arch();
@@ -98,7 +105,7 @@ function getBinaryPath() {
   console.error(
     `Could not find knowns binary for ${platform}-${arch}.\n` +
       `Expected package: ${pkgName}\n` +
-      `Try reinstalling: npm install knowns`
+      `Try reinstalling:\n${getInstallHint(pkgName)}`
   );
   process.exit(1);
 }

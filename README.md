@@ -143,16 +143,30 @@ brew install knowns-dev/tap/knowns
 
 ```bash
 # Shell installer (macOS/Linux)
-curl -fsSL https://raw.githubusercontent.com/knowns-dev/knowns/main/install/install.sh | sh
+curl -fsSL https://knowns.sh/script/install | sh
 
 # Or with wget
-wget -qO- https://raw.githubusercontent.com/knowns-dev/knowns/main/install/install.sh | sh
+wget -qO- https://knowns.sh/script/install | sh
 ```
 
 ```powershell
 # PowerShell installer (Windows)
-irm https://raw.githubusercontent.com/knowns-dev/knowns/main/install/install.ps1 | iex
+irm https://knowns.sh/script/install.ps1 | iex
 ```
+
+### Uninstall
+
+```bash
+# Shell uninstaller (macOS/Linux)
+curl -fsSL https://knowns.sh/script/uninstall | sh
+```
+
+```powershell
+# PowerShell uninstaller (Windows)
+irm https://knowns.sh/script/uninstall.ps1 | iex
+```
+
+The uninstall scripts only remove installed CLI binaries and PATH entries added by the installer. They leave project `.knowns/` folders untouched.
 
 ```bash
 # npm — installs platform-specific binary automatically

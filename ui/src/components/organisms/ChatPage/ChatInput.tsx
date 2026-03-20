@@ -342,6 +342,11 @@ export function ChatInput({
         insertSkill(visibleSlashItems[selectedSkillIndex]?.name);
         return;
       }
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        insertSkill(visibleSlashItems[selectedSkillIndex]?.name);
+        return;
+      }
     }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
