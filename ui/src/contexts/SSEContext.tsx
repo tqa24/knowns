@@ -27,6 +27,7 @@ export type SSEEventType =
 	| "time:refresh"
 	| "docs:updated"
 	| "docs:refresh"
+	| "refresh"
 	| "chats:created"
 	| "chats:updated"
 	| "chats:deleted"
@@ -44,6 +45,7 @@ export interface SSEEventPayloads {
 	"time:refresh": Record<string, never>;
 	"docs:updated": { docPath: string };
 	"docs:refresh": Record<string, never>;
+	"refresh": { full?: boolean; reason?: string };
 	"chats:created": { session: ChatSession };
 	"chats:updated": { session: ChatSession };
 	"chats:deleted": { chatId: string };
@@ -218,25 +220,6 @@ export function SSEProvider({ children }: { children: ReactNode }) {
 
 				// Show disconnect toast only once (when we have been connected before)
 				// wasConnectedRef tracks if we've ever connected, preventing toast on initial failure
-				if (wasConnectedRef.current && !disconnectToastIdRef.current) {
-					disconnectToastIdRef.current = toast("Offline", {
-						description: "Reconnecting...",
-						duration: Number.POSITIVE_INFINITY,
-						position: "top-center",
-						className: "bg-amber-50 dark:bg-amber-950 border-amber-200 dark:border-amber-800",
-						icon: (
-							<svg className="w-4 h-4 text-amber-600 dark:text-amber-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-								<path d="M12 20h.01" />
-								<path d="M8.5 16.429a5 5 0 0 1 7 0" />
-								<path d="M5 12.859a10 10 0 0 1 5.17-2.69" />
-								<path d="M13.83 10.17A10 10 0 0 1 19 12.859" />
-								<path d="M2 8.82a15 15 0 0 1 4.17-2.65" />
-								<path d="M10.66 5a15 15 0 0 1 11.34 3.82" />
-								<path d="m2 2 20 20" />
-							</svg>
-						),
-					});
-				}
 				// EventSource will auto-reconnect automatically
 			};
 
@@ -299,6 +282,12 @@ export function SSEProvider({ children }: { children: ReactNode }) {
 			addHandler(eventSource, "docs:refresh", (e) => {
 				const data = JSON.parse(e.data);
 				emit("docs:refresh", data);
+			});
+
+			addHandler(eventSource, "refresh", () => {
+				emit("tasks:refresh", {});
+				emit("time:refresh", {});
+				emit("docs:refresh", {});
 			});
 
 			addHandler(eventSource, "chats:created", (e) => {

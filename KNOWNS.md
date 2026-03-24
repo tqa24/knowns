@@ -110,6 +110,10 @@ Canonical repository guidance for agents working in this project.
 - Task references use `@task-<id>`.
 - Doc references use `@doc/<path>`.
 - Template references use `@template/<name>`.
+- Doc references support line and range suffixes:
+  - `@doc/<path>:42` — link to a specific line.
+  - `@doc/<path>:10-25` — link to a line range.
+  - `@doc/<path>#heading-slug` — link to a heading anchor.
 - Follow references recursively before planning, implementation, or validation work.
 
 ## Common Mistakes

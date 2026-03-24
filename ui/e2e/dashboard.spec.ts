@@ -23,8 +23,8 @@ test.describe("Dashboard", () => {
 
 		await test.step("Key metrics are displayed", async () => {
 			await expect(page.getByText("Total Tasks")).toBeVisible();
-			await expect(page.getByText("Documents")).toBeVisible();
-			await expect(page.getByText("SDD Coverage").first()).toBeVisible();
+			await expect(page.getByText("Completion", { exact: true })).toBeVisible();
+			await expect(page.getByText("In Progress").first()).toBeVisible();
 		});
 	});
 
@@ -38,7 +38,8 @@ test.describe("Dashboard", () => {
 		});
 
 		await test.step("Tasks section shows status counts", async () => {
-			await expect(page.locator("section").filter({ hasText: "Tasks" }).getByText("To Do")).toBeVisible();
+			// Status Distribution donut chart shows status labels for non-zero segments
+			await expect(page.getByText("Status Distribution")).toBeVisible();
 		});
 	});
 

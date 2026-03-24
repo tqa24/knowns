@@ -258,6 +258,26 @@ export async function saveConfig(config: Record<string, unknown>): Promise<void>
 	}
 }
 
+// User Preferences API (user-level, cross-project)
+export async function getUserPreferences(): Promise<Record<string, unknown>> {
+	const res = await fetch(`${API_BASE}/api/user-preferences`);
+	if (!res.ok) {
+		throw new Error("Failed to fetch user preferences");
+	}
+	return res.json();
+}
+
+export async function saveUserPreferences(prefs: Record<string, unknown>): Promise<void> {
+	const res = await fetch(`${API_BASE}/api/user-preferences`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(prefs),
+	});
+	if (!res.ok) {
+		throw new Error("Failed to save user preferences");
+	}
+}
+
 // Docs API
 export interface Doc {
 	path: string;
@@ -1283,5 +1303,56 @@ export const opencodeApi = {
 			body: JSON.stringify({ messageID: messageId }),
 		});
 		if (!res.ok) throw new Error("Failed to revert message");
+	},
+};
+
+// Workspace API
+export interface WorkspaceProject {
+	id: string;
+	name: string;
+	path: string;
+	lastUsed: string;
+}
+
+export const workspaceApi = {
+	async list(): Promise<WorkspaceProject[]> {
+		const res = await fetch(`${API_BASE}/api/workspaces`);
+		if (!res.ok) throw new Error("Failed to fetch workspaces");
+		return res.json();
+	},
+
+	async switchProject(id: string): Promise<WorkspaceProject> {
+		const res = await fetch(`${API_BASE}/api/workspaces/switch`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ id }),
+		});
+		if (!res.ok) throw new Error("Failed to switch workspace");
+		return res.json();
+	},
+
+	async scan(dirs: string[]): Promise<WorkspaceProject[]> {
+		const res = await fetch(`${API_BASE}/api/workspaces/scan`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ dirs }),
+		});
+		if (!res.ok) throw new Error("Failed to scan workspaces");
+		return res.json();
+	},
+
+	async remove(id: string): Promise<void> {
+		const res = await fetch(`${API_BASE}/api/workspaces/${encodeURIComponent(id)}`, {
+			method: "DELETE",
+		});
+		if (!res.ok) throw new Error("Failed to remove workspace");
+	},
+
+	async autoScan(): Promise<WorkspaceProject[]> {
+		const res = await fetch(`${API_BASE}/api/workspaces/auto-scan`, {
+			method: "POST",
+		});
+		if (!res.ok) throw new Error("Failed to auto-scan workspaces");
+		return res.json();
 	},
 };

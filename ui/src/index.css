@@ -3,9 +3,6 @@
 /* Highlight.js themes */
 @import "highlight.js/styles/github.css";
 
-/* BlockNote Shadcn styles */
-@source "../node_modules/@blocknote/shadcn";
-
 @custom-variant dark (&:is(.dark *));
 
 :root {
@@ -133,10 +130,6 @@ body {
 	}
   body {
     @apply bg-background text-foreground;
-	}
-	/* BlockNote Shadcn border styles */
-	.bn-shadcn * {
-		@apply border-border outline-ring/50;
 	}
 }
 
@@ -931,127 +924,15 @@ body {
 }
 
 /* ===== Shared Editor Typography ===== */
-/* These styles ensure consistent look between MDRender and BlockNoteEditor */
-/* Based on BlockNote's default styles for perfect alignment */
 
 :root {
-  --editor-font-size: 1rem; /* 16px - matches BlockNote default */
-  --editor-line-height: 1.5; /* matches BlockNote .bn-block-outer */
+  --editor-font-size: 1rem;
+  --editor-line-height: 1.5;
   --editor-heading-line-height: 1.3;
   --editor-code-font-size: 0.875em;
   --editor-code-font: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   --editor-font-family: Inter, "SF Pro Display", -apple-system, BlinkMacSystemFont, "Open Sans", "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
-  --editor-block-padding: 3px 0; /* matches BlockNote .bn-block-content padding */
-}
-
-/* ===== BlockNote Editor ===== */
-
-.blocknote-editor-wrapper {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.blocknote-editor-wrapper .bn-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.blocknote-editor-wrapper .bn-editor {
-  flex: 1;
-  overflow-y: auto;
-  min-height: 0;
-  font-size: var(--editor-font-size);
-  line-height: var(--editor-line-height);
-}
-
-.blocknote-render-wrapper {
-  width: 100%;
-}
-
-.blocknote-render-wrapper .bn-editor {
-  min-height: auto;
-  font-size: var(--editor-font-size);
-  line-height: var(--editor-line-height);
-}
-
-/* BlockNote typography sync */
-.blocknote-editor-wrapper .bn-block-content,
-.blocknote-render-wrapper .bn-block-content {
-  font-size: var(--editor-font-size);
-  line-height: var(--editor-line-height);
-}
-
-.blocknote-editor-wrapper [data-content-type="heading"] h1,
-.blocknote-render-wrapper [data-content-type="heading"] h1 {
-  font-size: 1.875rem;
-  font-weight: 700;
-  line-height: var(--editor-heading-line-height);
-  margin-top: 1.5rem;
-  margin-bottom: 0.75rem;
-}
-
-.blocknote-editor-wrapper [data-content-type="heading"] h2,
-.blocknote-render-wrapper [data-content-type="heading"] h2 {
-  font-size: 1.5rem;
-  font-weight: 600;
-  line-height: var(--editor-heading-line-height);
-  margin-top: 1.25rem;
-  margin-bottom: 0.625rem;
-}
-
-.blocknote-editor-wrapper [data-content-type="heading"] h3,
-.blocknote-render-wrapper [data-content-type="heading"] h3 {
-  font-size: 1.25rem;
-  font-weight: 600;
-  line-height: var(--editor-heading-line-height);
-  margin-top: 1rem;
-  margin-bottom: 0.5rem;
-}
-
-/* BlockNote code blocks */
-.blocknote-editor-wrapper [data-content-type="codeBlock"] pre,
-.blocknote-render-wrapper [data-content-type="codeBlock"] pre {
-  font-family: var(--editor-code-font);
-  font-size: var(--editor-code-font-size);
-  border-radius: 0.375rem;
-  padding: 1rem;
-}
-
-/* BlockNote inline code */
-.blocknote-editor-wrapper code:not(pre code),
-.blocknote-render-wrapper code:not(pre code) {
-  font-family: var(--editor-code-font);
-  font-size: var(--editor-code-font-size);
-  padding: 0.125rem 0.375rem;
-  border-radius: 0.25rem;
-  background-color: var(--muted);
-}
-
-/* BlockNote tables */
-.blocknote-editor-wrapper table,
-.blocknote-render-wrapper table {
-  border-collapse: collapse;
-  width: 100%;
-  font-size: var(--editor-font-size);
-}
-
-.blocknote-editor-wrapper th,
-.blocknote-editor-wrapper td,
-.blocknote-render-wrapper th,
-.blocknote-render-wrapper td {
-  border: 1px solid var(--border);
-  padding: 0.5rem 0.75rem;
-}
-
-.blocknote-editor-wrapper th,
-.blocknote-render-wrapper th {
-  background-color: var(--muted);
-  font-weight: 600;
+  --editor-block-padding: 3px 0;
 }
 
 /* Mention badge styles */
@@ -1080,7 +961,7 @@ body {
   border-radius: 0 0 0.5rem 0.5rem !important;
 }
 
-/* ===== MDRender Styles (synchronized with BlockNote) ===== */
+/* ===== MDRender Styles ===== */
 
 .md-render-wrapper .wmde-markdown {
   font-size: var(--editor-font-size);
@@ -1224,4 +1105,102 @@ body {
 /* Disable view transitions for elements that shouldn't animate */
 .no-view-transition {
   view-transition-name: none;
+}
+
+/* ===== Doc Content Transition ===== */
+@keyframes doc-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-doc-in {
+  animation: doc-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes list-in {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-list-in {
+  animation: list-in 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-doc-in,
+  .animate-list-in {
+    animation: none;
+  }
+}
+
+/* ===== Dialog Animations ===== */
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -48%) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes dialog-out {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -48%) scale(0.96);
+  }
+}
+
+.animate-dialog-in {
+  animation: dialog-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-dialog-out {
+  animation: dialog-out 0.18s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-dialog-in,
+  .animate-dialog-out {
+    animation: none;
+  }
+}
+
+/* ===== Page Transition Animation ===== */
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-page-in {
+  animation: page-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-page-in {
+    animation: none;
+  }
 }

@@ -29,6 +29,7 @@ import (
 
 	"github.com/howznguyen/knowns/internal/agents/opencode"
 	"github.com/howznguyen/knowns/internal/models"
+	"github.com/howznguyen/knowns/internal/registry"
 	"github.com/howznguyen/knowns/internal/server/routes"
 	"github.com/howznguyen/knowns/internal/storage"
 	ui "github.com/howznguyen/knowns/ui"
@@ -48,15 +49,17 @@ type Options struct {
 // Server is the top-level HTTP server.
 type Server struct {
 	store           *storage.Store
+	manager         *storage.Manager // Multi-project store manager (may be nil)
 	router          chi.Router
 	sse             *SSEBroker
 	port            int
 	projectRoot     string
 	opts            Options
-	opencodeProcess *os.Process // Track auto-started OpenCode server for cleanup
+	opencodeDaemon  *opencode.Daemon // Shared OpenCode daemon (may be nil if not configured)
 	runtimeOpenCode *opencode.Config
 	opencodeProxy   *httputil.ReverseProxy // Shared proxy singleton — reused across requests
 	opencodeProxyMu sync.RWMutex
+	shutdownCh      chan struct{} // Signals graceful shutdown from /api/shutdown endpoint
 }
 
 type openCodeConfigResolution struct {
@@ -122,45 +125,6 @@ func resolveOpenCodeConfig(browserPort int, stored *models.OpenCodeServerConfig)
 	}
 }
 
-// tryAutoStartOpenCodeServer attempts to start the OpenCode server if the CLI is available.
-// Returns the process if started by us, nil if already running or failed.
-func tryAutoStartOpenCodeServer(host string, ports []int) (*os.Process, int, error) {
-	// Check if opencode CLI is available
-	if _, err := exec.LookPath("opencode"); err != nil {
-		return nil, 0, fmt.Errorf("opencode CLI not found: %w", err)
-	}
-
-	for _, port := range ports {
-		// Skip ports that are already occupied. In auto-port mode this avoids
-		// binding OpenCode to the Knowns UI port or another local service.
-		addr := net.JoinHostPort(host, strconv.Itoa(port))
-		conn, err := net.DialTimeout("tcp", addr, 250*time.Millisecond)
-		if err == nil {
-			conn.Close()
-			continue
-		}
-
-		// Start opencode serve in background
-		// Command must be first positional argument
-		args := []string{"serve", "--hostname", host, "--port", strconv.Itoa(port), "--cors", "*"}
-		cmd := exec.Command("opencode", args...)
-		cmd.Stdout = io.Discard
-		cmd.Stderr = io.Discard
-
-		// Explicitly set empty stdin to prevent interactive mode
-		cmd.Stdin = strings.NewReader("")
-
-		if err := cmd.Start(); err != nil {
-			return nil, 0, fmt.Errorf("failed to start opencode serve on port %d: %w", port, err)
-		}
-
-		log.Printf("[server] Spawned OpenCode server (pid %d) on port %d", cmd.Process.Pid, port)
-		return cmd.Process, port, nil
-	}
-
-	return nil, 0, fmt.Errorf("no available OpenCode port for host %s in candidates %v", host, ports)
-}
-
 // buildOpenCodeProxy creates a shared reverse proxy for the OpenCode server.
 // The proxy uses a pooled transport with keep-alive so connections are reused
 // across requests instead of creating a new TCP connection each time.
@@ -205,47 +169,36 @@ func buildOpenCodeProxy(cfg opencode.Config) *httputil.ReverseProxy {
 // projectRoot is the directory that contains the .knowns/ folder.
 // port is the TCP port to listen on (e.g. 3737).
 func NewServer(store *storage.Store, projectRoot string, port int, opts Options) *Server {
-	var opencodeProcess *os.Process
 	var runtimeOpenCode *opencode.Config
+	var daemon *opencode.Daemon
 
-	// Initialize OpenCode server client if configured
-	if resolution := resolveOpenCodeConfig(port, store.Config.GetOpenCodeServerConfig()); resolution.configured {
-		cfg := resolution.cfg
-		if resolution.explicitPort {
-			client := opencode.NewClient(cfg)
-			if !client.IsServerAvailable() {
-				var err error
-				opencodeProcess, _, err = tryAutoStartOpenCodeServer(cfg.Host, []int{cfg.Port})
-				if err != nil {
-					log.Printf("[server] OpenCode server not available at %s:%d, using CLI fallback", cfg.Host, cfg.Port)
-				} else {
-					time.Sleep(2 * time.Second)
-				}
-			}
-		} else {
-			for _, candidate := range deriveOpenCodePortCandidates(port, cfg.Port) {
-				candidateCfg := cfg
-				candidateCfg.Port = candidate
-				if opencode.NewClient(candidateCfg).IsServerAvailable() {
-					cfg = candidateCfg
-					break
+	// Initialize OpenCode daemon if configured (only when a project is loaded).
+	if store != nil {
+		if resolution := resolveOpenCodeConfig(port, store.Config.GetOpenCodeServerConfig()); resolution.configured {
+			cfg := resolution.cfg
+
+			// For non-explicit ports, scan candidates to find one already running.
+			if !resolution.explicitPort {
+				for _, candidate := range deriveOpenCodePortCandidates(port, cfg.Port) {
+					candidateCfg := cfg
+					candidateCfg.Port = candidate
+					if opencode.NewClient(candidateCfg).IsServerAvailable() {
+						cfg = candidateCfg
+						break
+					}
 				}
 			}
 
-			client := opencode.NewClient(cfg)
-			if !client.IsServerAvailable() {
-				var err error
-				opencodeProcess, cfg.Port, err = tryAutoStartOpenCodeServer(cfg.Host, deriveOpenCodePortCandidates(port, cfg.Port))
-				if err != nil {
-					log.Printf("[server] OpenCode server not available on derived ports for %s, using CLI fallback", cfg.Host)
-				} else {
-					time.Sleep(2 * time.Second)
-				}
+			// Use the shared daemon to ensure exactly one OpenCode process.
+			daemon = opencode.NewDaemon(cfg.Host, cfg.Port)
+			if err := daemon.EnsureRunning(); err != nil {
+				log.Printf("[server] OpenCode daemon not available: %v, using CLI fallback", err)
+				daemon = nil
 			}
+
+			cfgCopy := cfg
+			runtimeOpenCode = &cfgCopy
 		}
-
-		cfgCopy := cfg
-		runtimeOpenCode = &cfgCopy
 	}
 
 	// Silence standard log output unless dev mode is enabled.
@@ -259,9 +212,17 @@ func NewServer(store *storage.Store, projectRoot string, port int, opts Options)
 		port:            port,
 		projectRoot:     projectRoot,
 		opts:            opts,
-		opencodeProcess: opencodeProcess,
+		opencodeDaemon:  daemon,
 		runtimeOpenCode: runtimeOpenCode,
+		shutdownCh:      make(chan struct{}, 1),
 	}
+
+	// Create multi-project manager wrapping the initial store.
+	reg := registry.NewRegistry()
+	if err := reg.Load(); err != nil {
+		log.Printf("warn: could not load project registry: %v", err)
+	}
+	s.manager = storage.NewManager(store, reg)
 
 	// Build shared proxy singleton once at startup.
 	if runtimeOpenCode != nil {
@@ -269,13 +230,17 @@ func NewServer(store *storage.Store, projectRoot string, port int, opts Options)
 	}
 
 	// Startup recovery: mark all previously running workspaces as stopped.
-	if err := store.Workspaces.MarkAllStopped(); err != nil {
-		log.Printf("warn: could not mark workspaces stopped: %v", err)
+	if store != nil {
+		if err := store.Workspaces.MarkAllStopped(); err != nil {
+			log.Printf("warn: could not mark workspaces stopped: %v", err)
+		}
 	}
 
 	// Startup recovery: mark all streaming chat sessions as idle.
-	if err := store.Chats.MarkAllIdle(); err != nil {
-		log.Printf("warn: could not mark chats idle: %v", err)
+	if store != nil {
+		if err := store.Chats.MarkAllIdle(); err != nil {
+			log.Printf("warn: could not mark chats idle: %v", err)
+		}
 	}
 
 	s.router = s.buildRouter()
@@ -283,60 +248,68 @@ func NewServer(store *storage.Store, projectRoot string, port int, opts Options)
 }
 
 // Start listens on the configured port and serves HTTP.
-// It writes the port number to .knowns/.server-port before accepting connections.
+// It binds the port first, then writes the port file only after a successful bind.
 func (s *Server) Start() error {
-	if err := s.writePortFile(); err != nil {
-		// Non-fatal: log and continue.
-		fmt.Fprintf(os.Stderr, "warn: could not write .server-port: %v\n", err)
+	addr := ":" + strconv.Itoa(s.port)
+
+	// 1. Bind FIRST — fail fast if port is unavailable.
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("failed to listen on %s: %w", addr, err)
 	}
 
-	// Save the active port into config.json so the UI can discover it.
+	// 2. Port is bound — now safe to write the port file.
+	if err := s.writePortFile(); err != nil {
+		fmt.Fprintf(os.Stderr, "warn: could not write .server-port: %v\n", err)
+	}
 	if err := s.savePortToConfig(); err != nil {
 		fmt.Fprintf(os.Stderr, "warn: could not save port to config: %v\n", err)
 	}
 
-	addr := ":" + strconv.Itoa(s.port)
-	srv := &http.Server{
-		Addr:    addr,
-		Handler: s.router,
-	}
+	srv := &http.Server{Handler: s.router}
 
-	// Start server in goroutine
+	// 3. Serve on the already-bound listener.
+	serverErr := make(chan error, 1)
 	go func() {
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("[server] HTTP server error: %v", err)
+		if err := srv.Serve(listener); err != nil && err != http.ErrServerClosed {
+			serverErr <- err
 		}
 	}()
 
-	// Wait for shutdown signal
+	// 4. Wait for shutdown signal, server error, or remote shutdown request.
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-	signal.Stop(quit)
 
-	// Shutdown HTTP server
+	select {
+	case <-quit:
+		signal.Stop(quit)
+	case err := <-serverErr:
+		s.cleanupPortFile()
+		return fmt.Errorf("server error: %w", err)
+	case <-s.shutdownCh:
+		log.Printf("[server] Remote shutdown requested")
+	}
+
+	// 5. Graceful shutdown.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Printf("[server] HTTP server shutdown error: %v", err)
 	}
 
-	// Cleanup: kill auto-started OpenCode server
+	// 6. Cleanup port file + OpenCode.
+	s.cleanupPortFile()
 	s.cleanupOpenCodeServer()
 
 	log.Printf("[server] Shutdown complete")
 	return nil
 }
 
-// cleanupOpenCodeServer kills the auto-started OpenCode server process.
+// cleanupOpenCodeServer stops the OpenCode daemon if we started it.
 func (s *Server) cleanupOpenCodeServer() {
-	if s.opencodeProcess != nil {
-		log.Printf("[server] Stopping auto-started OpenCode server (pid %d)", s.opencodeProcess.Pid)
-		if err := s.opencodeProcess.Kill(); err != nil {
-			log.Printf("[server] Failed to kill OpenCode server: %v", err)
-		} else {
-			s.opencodeProcess.Wait()
-			log.Printf("[server] OpenCode server stopped")
+	if s.opencodeDaemon != nil && s.opencodeDaemon.StartedByUs() {
+		if err := s.opencodeDaemon.Stop(); err != nil {
+			log.Printf("[server] Failed to stop OpenCode daemon: %v", err)
 		}
 	}
 }
@@ -346,6 +319,23 @@ func (s *Server) cleanupOpenCodeServer() {
 func (s *Server) writePortFile() error {
 	portFile := filepath.Join(s.store.Root, ".server-port")
 	return os.WriteFile(portFile, []byte(strconv.Itoa(s.port)), 0644)
+}
+
+// cleanupPortFile removes the .server-port file on shutdown so stale port
+// references don't linger after the server exits.
+func (s *Server) cleanupPortFile() {
+	portFile := filepath.Join(s.store.Root, ".server-port")
+	os.Remove(portFile)
+}
+
+// handleShutdown handles POST /api/shutdown for graceful remote stop.
+func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"status": "shutting down"})
+	// Signal the main loop to initiate graceful shutdown.
+	select {
+	case s.shutdownCh <- struct{}{}:
+	default:
+	}
 }
 
 // savePortToConfig persists the server port into config.json so the browser
@@ -385,9 +375,12 @@ func (s *Server) buildRouter() chi.Router {
 	// --- SSE endpoint ---
 	r.Get("/api/events", s.sse.Subscribe)
 
+	// --- Shutdown endpoint (for remote graceful stop) ---
+	r.Post("/api/shutdown", s.handleShutdown)
+
 	// --- API routes ---
 	r.Route("/api", func(r chi.Router) {
-		routes.SetupRoutes(r, s.store, s.sse, s.projectRoot)
+		routes.SetupRoutes(r, s.store, s.sse, s.projectRoot, s.manager)
 	})
 
 	// --- OpenCode API proxy (for frontend to call OpenCode directly) ---

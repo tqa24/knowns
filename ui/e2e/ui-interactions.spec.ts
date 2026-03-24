@@ -43,7 +43,13 @@ test.describe("Task Creation via UI", () => {
 		});
 
 		await test.step("Click new task button", async () => {
-			await page.getByRole("button", { name: /new task/i }).first().click();
+			const newTaskBtn = page.getByRole("button", { name: /new task/i }).first();
+			if (await newTaskBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+				await newTaskBtn.click();
+			} else {
+				// Table view shows a compact "New" button
+				await page.getByRole("button", { name: /^new$/i }).first().click();
+			}
 		});
 
 		await test.step("Type task title", async () => {
@@ -55,7 +61,7 @@ test.describe("Task Creation via UI", () => {
 		});
 
 		await test.step("Task appears in the table", async () => {
-			await expect(page.locator("tbody").getByText("Design login page")).toBeVisible({ timeout: 5000 });
+			await expect(page.getByText("Design login page").first()).toBeVisible({ timeout: 5000 });
 		});
 	});
 

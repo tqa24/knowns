@@ -2,9 +2,8 @@ import { useEffect, useState } from "react";
 import { LayoutList, LayoutGrid } from "lucide-react";
 import type { Task } from "@/ui/models/task";
 import { navigateTo } from "../lib/navigation";
-import { TaskDataTable } from "../components/organisms";
+import { TaskNotionList } from "../components/organisms";
 import { TaskDetailSheet } from "../components/organisms/TaskDetail/TaskDetailSheet";
-import { ScrollArea } from "../components/ui/ScrollArea";
 import { TaskGroupedView } from "./TasksPage/TaskGroupedView";
 
 interface TasksPageProps {
@@ -97,15 +96,11 @@ export default function TasksPage({
 			{/* Content */}
 			<div className="flex-1 overflow-hidden px-6 pb-6">
 				{viewMode === "table" ? (
-					<ScrollArea className="h-full">
-						<div className="pr-4">
-							<TaskDataTable
-								tasks={tasks}
-								onTaskClick={handleTaskClick}
-								onNewTask={onNewTask}
-							/>
-						</div>
-					</ScrollArea>
+					<TaskNotionList
+						tasks={tasks}
+						onTaskClick={handleTaskClick}
+						onNewTask={onNewTask}
+					/>
 				) : (
 					<TaskGroupedView
 						tasks={tasks}

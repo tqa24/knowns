@@ -60,8 +60,8 @@ test.describe("Tasks Page", () => {
 			if (await newBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
 				await newBtn.click();
 			} else {
-				// Try alternative: "+" or "Create" button
-				await page.getByRole("button", { name: /create|add|\+/i }).first().click();
+				// Table view shows a compact "New" button
+				await page.getByRole("button", { name: /^new$/i }).first().click();
 			}
 		});
 
@@ -74,7 +74,7 @@ test.describe("Tasks Page", () => {
 		});
 
 		await test.step("New task appears in list", async () => {
-			await expect(page.locator("tbody").getByText("New Page Task")).toBeVisible({ timeout: 5000 });
+			await expect(page.getByText("New Page Task").first()).toBeVisible({ timeout: 5000 });
 		});
 	});
 

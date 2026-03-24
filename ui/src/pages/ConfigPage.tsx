@@ -33,7 +33,7 @@ import { useOpenCode } from "../contexts/OpenCodeContext";
 import { useOpenCodeModelManager } from "../hooks/useOpencodeModelManager";
 import { OpenCodeModelManager } from "../components/organisms/OpenCodeModelManager";
 import { toast } from "../components/ui/sonner";
-import { importApi, type Import, type ImportDetail, type ImportResult } from "../api/client";
+import { importApi, saveUserPreferences, type Import, type ImportDetail, type ImportResult } from "../api/client";
 
 const DEFAULT_STATUSES = ["todo", "in-progress", "in-review", "done", "blocked", "on-hold", "urgent"];
 const COLOR_OPTIONS = ["gray", "blue", "green", "yellow", "red", "purple", "orange", "pink", "cyan", "indigo"];
@@ -353,7 +353,10 @@ export default function ConfigPage() {
 		providerResponse,
 		status: openCodeStatus,
 		lastLoadedAt,
-		onChange: (nextSettings) => update({ opencodeModels: nextSettings }),
+		onChange: async (nextSettings) => {
+			await saveUserPreferences({ opencodeModels: nextSettings });
+			update({ opencodeModels: nextSettings });
+		},
 	});
 
 	if (loading) {

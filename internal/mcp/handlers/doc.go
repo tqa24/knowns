@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -77,6 +78,9 @@ func RegisterDocTools(s *server.MCPServer, getStore func() *storage.Store) {
 			mcp.WithString("section",
 				mcp.Description("Return specific section by heading title or number (e.g., '2. Overview' or '2')"),
 			),
+			mcp.WithString("line",
+				mcp.Description("Return specific lines. Single line (e.g., '42') or range (e.g., '10-20')"),
+			),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			store := getStore()
@@ -99,6 +103,7 @@ func RegisterDocTools(s *server.MCPServer, getStore func() *storage.Store) {
 			info := boolArg(args, "info")
 			tocOnly := boolArg(args, "toc")
 			section, hasSection := stringArg(args, "section")
+			lineParam, hasLine := stringArg(args, "line")
 
 			contentLen := utf8.RuneCountInString(doc.Content)
 			// Approximate token count: ~4 chars per token.
@@ -139,6 +144,21 @@ func RegisterDocTools(s *server.MCPServer, getStore func() *storage.Store) {
 					"title":   doc.Title,
 					"section": section,
 					"content": sectionContent,
+				}
+				out, _ := json.MarshalIndent(result, "", "  ")
+				return mcp.NewToolResultText(string(out)), nil
+			}
+
+			if hasLine && lineParam != "" {
+				lineContent, lineLabel, err := extractLines(doc.Content, lineParam)
+				if err != nil {
+					return mcp.NewToolResultError(err.Error()), nil
+				}
+				result := map[string]any{
+					"path":  doc.Path,
+					"title": doc.Title,
+					"lines": lineLabel,
+					"content": lineContent,
 				}
 				out, _ := json.MarshalIndent(result, "", "  ")
 				return mcp.NewToolResultText(string(out)), nil
@@ -477,6 +497,41 @@ func extractHeadings(content string) []string {
 		}
 	}
 	return headings
+}
+
+// extractLines returns specific lines from content.
+// lineParam can be "42" (single line) or "10-20" (range).
+// Returns the extracted content, a human-readable label, and any error.
+func extractLines(content, lineParam string) (string, string, error) {
+	allLines := strings.Split(content, "\n")
+	total := len(allLines)
+
+	// Try range first: "10-20"
+	if parts := strings.SplitN(lineParam, "-", 2); len(parts) == 2 {
+		start, err1 := strconv.Atoi(parts[0])
+		end, err2 := strconv.Atoi(parts[1])
+		if err1 == nil && err2 == nil && start >= 1 && end >= start {
+			if start > total {
+				return "", "", fmt.Errorf("line %d exceeds document length (%d lines)", start, total)
+			}
+			if end > total {
+				end = total
+			}
+			extracted := allLines[start-1 : end]
+			label := fmt.Sprintf("%d-%d", start, end)
+			return strings.Join(extracted, "\n"), label, nil
+		}
+	}
+
+	// Single line: "42"
+	line, err := strconv.Atoi(lineParam)
+	if err != nil {
+		return "", "", fmt.Errorf("invalid line parameter: %q (use '42' or '10-20')", lineParam)
+	}
+	if line < 1 || line > total {
+		return "", "", fmt.Errorf("line %d out of range (document has %d lines)", line, total)
+	}
+	return allLines[line-1], fmt.Sprintf("%d", line), nil
 }
 
 // extractSection finds the content of a specific heading section.
