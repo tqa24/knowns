@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -84,7 +83,7 @@ func (d *Daemon) Stop() error {
 	}
 
 	log.Printf("[daemon] Stopping OpenCode daemon (pid %d)", pid)
-	if err := process.Signal(syscall.SIGTERM); err != nil {
+	if err := signalTerm(process); err != nil {
 		// Process may already be dead — that's fine.
 		log.Printf("[daemon] Signal failed (process may be dead): %v", err)
 	}
@@ -148,7 +147,7 @@ func (d *Daemon) start() error {
 	cmd.Stdin = strings.NewReader("")
 
 	// Detach: new session so the daemon survives parent exit.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	setSysProcAttr(cmd)
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start opencode daemon on port %d: %w", d.Port, err)
@@ -184,12 +183,4 @@ func (d *Daemon) WritePID(pid int) error {
 	return os.WriteFile(d.PIDFile, []byte(strconv.Itoa(pid)), 0644)
 }
 
-// isProcessAlive checks if a process with the given PID exists and is running.
-func isProcessAlive(pid int) bool {
-	process, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	// Signal 0 checks existence without actually sending a signal.
-	return process.Signal(syscall.Signal(0)) == nil
-}
+

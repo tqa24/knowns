@@ -10,9 +10,14 @@ import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+const isWindows = process.platform === "win32";
+const defaultBinary = resolve(
+	__dirname,
+	isWindows ? "../../bin/knowns.exe" : "../../bin/knowns",
+);
 const BINARY = process.env.TEST_BINARY
 	? resolve(process.cwd(), process.env.TEST_BINARY)
-	: resolve(__dirname, "../../bin/knowns");
+	: defaultBinary;
 
 /** Find an available port */
 function findPort(): number {
