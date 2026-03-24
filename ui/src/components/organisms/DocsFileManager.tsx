@@ -3,6 +3,7 @@ import {
 	FileText,
 	FolderOpen,
 	ChevronRight,
+	ChevronLeft,
 	ClipboardCheck,
 	Filter,
 	Plus,
@@ -13,8 +14,6 @@ import {
 	GitBranch,
 	Package2,
 	FolderGit2,
-	RefreshCw,
-	ExternalLink,
 } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -318,19 +317,6 @@ export function DocsFileManager({
 		return group ? group.docs : null;
 	}, [viewingImportSource, importGroups]);
 
-	// Breadcrumb segments (strip import source prefix if viewing import source)
-	const breadcrumbSegments = useMemo(() => {
-		if (!currentFolder) return [];
-		const segments = currentFolder.split("/");
-		
-		// If viewing import source, remove the source prefix from segments
-		if (viewingImportSource && segments[0] === viewingImportSource) {
-			return segments.slice(1);
-		}
-		
-		return segments;
-	}, [currentFolder, viewingImportSource]);
-
 	// Navigate back to root (clear both folder and import source view)
 	const navigateToRoot = () => {
 		navigateToFolder(null);
@@ -353,63 +339,34 @@ export function DocsFileManager({
 
 	return (
 		<div className={cn("h-full flex flex-col", className)}>
-			{/* Breadcrumb */}
-			<nav className="flex items-center gap-1 text-[12px] mb-3 flex-wrap px-1 text-muted-foreground/80">
+			{/* Back button when inside a folder or import source */}
+			{(currentFolder !== null || viewingImportSource !== null) && !isSearching && (
 				<button
 					type="button"
-					onClick={navigateToRoot}
-					disabled={isSearching}
-					className={`hover:text-foreground transition-colors ${
-						isSearching
-							? "text-muted-foreground cursor-default"
-							: currentFolder === null && !viewingImportSource
-								? "text-foreground font-medium"
-								: "text-muted-foreground"
-					}`}
+					onClick={currentFolder !== null ? () => {
+						// Navigate to parent folder or root
+						const parts = currentFolder.split("/");
+						if (parts.length > 1) {
+							navigateToFolder(parts.slice(0, -1).join("/"));
+						} else {
+							navigateToFolder(null);
+							if (viewingImportSource) setViewingImportSource(null);
+						}
+					} : navigateToRoot}
+					className="flex items-center gap-1.5 mb-2 px-1 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors rounded-lg hover:bg-accent/40 w-fit"
 				>
-					docs
+					<ChevronLeft className="w-3.5 h-3.5" />
+					<span>
+						{currentFolder
+							? currentFolder.includes("/")
+								? currentFolder.split("/").slice(-2, -1)[0]
+								: viewingImportSource || "docs"
+							: "docs"}
+					</span>
 				</button>
-				{isSearching && (
-					<span className="text-muted-foreground/70">/ search</span>
-				)}
-				{/* Import source breadcrumb */}
-				{viewingImportSource && !isSearching && (
-					<>
-						<ChevronRight className="w-3.5 h-3.5 text-muted-foreground/60" />
-						<span className="text-foreground font-medium flex items-center gap-1">
-							<Package className="w-3 h-3" />
-							{viewingImportSource}
-						</span>
-					</>
-				)}
-				{/* Regular folder breadcrumb (already stripped import prefix if viewing import source) */}
-				{breadcrumbSegments.map((segment, i) => {
-					const relativePath = breadcrumbSegments.slice(0, i + 1).join("/");
-					// When viewing import source, prepend the source to navigate correctly
-					const fullPath = viewingImportSource 
-						? `${viewingImportSource}/${relativePath}` 
-						: relativePath;
-					const isLast = i === breadcrumbSegments.length - 1;
-					return (
-						<span key={relativePath} className="flex items-center gap-1">
-							<ChevronRight className="w-3.5 h-3.5 text-muted-foreground/60" />
-							<button
-								type="button"
-								onClick={() => navigateToFolder(fullPath)}
-								className={`hover:text-foreground transition-colors ${
-									isLast
-										? "text-foreground font-medium"
-										: "text-muted-foreground"
-								}`}
-							>
-								{segment}
-							</button>
-						</span>
-					);
-				})}
-			</nav>
+			)}
 
-			<div className="mb-3 px-1">
+			<div className="mb-3">
 				<div className="relative">
 					<Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/70" />
 					<Input
@@ -432,7 +389,7 @@ export function DocsFileManager({
 			</div>
 
 			{/* Toolbar */}
-			<div className="flex items-center gap-2 mb-4 px-1">
+			<div className="flex items-center gap-2 mb-4">
 				<Button
 					variant={showSpecsOnly ? "default" : "outline"}
 					size="sm"
@@ -461,6 +418,7 @@ export function DocsFileManager({
 
 			{/* Entries list */}
 			<div className="overflow-y-auto min-h-0 pr-1">
+			<div key={`${currentFolder ?? "root"}__${viewingImportSource ?? ""}`} className="space-y-0.5 animate-list-in">
 				{/* If viewing an import source, show only its docs */}
 				{viewingImportSource && importSourceDocs ? (
 					<>
@@ -597,8 +555,8 @@ export function DocsFileManager({
 							key={doc.path}
 							onClick={() => handleDocClick(doc)}
 							className={cn(
-								"flex items-start gap-3 py-2 px-2 w-full text-left transition-colors group rounded-xl",
-								isSelected ? "bg-accent/70 text-foreground shadow-[inset_0_0_0_1px_rgba(0,0,0,0.04)]" : "hover:bg-accent/45",
+								"flex items-start gap-3 py-2 px-2 w-full text-left transition-all duration-150 group rounded-xl",
+								isSelected ? "bg-accent/70 text-foreground shadow-[inset_0_0_0_1px_rgba(0,0,0,0.04)]" : "hover:bg-accent/45 active:scale-[0.98] active:bg-accent/60",
 							)}
 						>
 							{docIsSpec ? (
@@ -712,6 +670,7 @@ export function DocsFileManager({
 						)}
 					</>
 				)}
+			</div>
 			</div>
 		</div>
 	);

@@ -4,6 +4,7 @@ import type { Task } from "../models/task";
 import { api } from "./api/client";
 import { useSSEEvent } from "./contexts/SSEContext";
 import { AppSidebar, TaskCreateForm, SearchCommandDialog, NotificationBell, TaskDetailSheet } from "./components/organisms";
+import { WorkspacePicker } from "./components/organisms/WorkspacePicker";
 import { ConnectionStatus, ThemeToggle, ErrorBoundary } from "./components/atoms";
 import { HeaderTimeTracker } from "./components/molecules";
 import { AppBreadcrumb } from "./components/molecules/AppBreadcrumb";
@@ -64,6 +65,7 @@ export default function AppShell() {
 	const [loading, setLoading] = useState(true);
 	const [showCreateForm, setShowCreateForm] = useState(false);
 	const [showCommandDialog, setShowCommandDialog] = useState(false);
+	const [showWorkspacePicker, setShowWorkspacePicker] = useState(false);
 	const [sidebarOpen, setSidebarOpen] = useState(true);
 	const [isDark, setIsDark] = useState(() => {
 		if (typeof window !== "undefined") {
@@ -76,6 +78,22 @@ export default function AppShell() {
 
 	const currentPage = getCurrentPage(location.pathname);
 	const isChatPage = currentPage === "chat";
+
+	// Update document title based on current page
+	useEffect(() => {
+		const titles: Record<string, string> = {
+			dashboard: "Dashboard",
+			kanban: "Kanban",
+			tasks: "Tasks",
+			docs: "Docs",
+			imports: "Imports",
+			chat: "Chat",
+			config: "Settings",
+		};
+		const pageTitle = titles[currentPage] || "Dashboard";
+		const projectName = config.name || "Knowns";
+		document.title = `${pageTitle} · ${projectName}`;
+	}, [currentPage, config.name]);
 
 	const handleSidebarOpenChange = (open: boolean) => {
 		setSidebarOpen(open);
@@ -130,6 +148,16 @@ export default function AppShell() {
 
 	useSSEEvent("tasks:refresh", () => {
 		api.getTasks().then(setTasks).catch(console.error);
+	});
+
+	// Handle workspace switch — reload all data
+	useSSEEvent("refresh", (data) => {
+		if (data?.reason === "workspace-switch") {
+			api.getTasks().then((data) => {
+				setTasks(data);
+				setLoading(false);
+			}).catch(console.error);
+		}
 	});
 
 	const handleTaskCreated = () => {
@@ -242,6 +270,7 @@ export default function AppShell() {
 				<AppSidebar
 					currentPage={currentPage}
 					onSearchClick={() => setShowCommandDialog(true)}
+					onWorkspacePickerClick={() => setShowWorkspacePicker(true)}
 				/>
 					<main className={cn("flex min-w-0 flex-1 flex-col overflow-hidden", isChatPage ? "bg-background" : "bg-background")}>
 						<header
@@ -277,13 +306,18 @@ export default function AppShell() {
 
 						<div
 							className={cn(
-								"flex-1 w-full overflow-x-hidden",
+								"flex-1 w-full overflow-x-hidden flex flex-col",
 								isChatPage ? "min-h-0 overflow-hidden bg-muted/10" : "overflow-y-auto",
 							)}
 						>
 							<ErrorBoundary>
 								<Suspense fallback={<PageLoading />}>
-									{renderPage()}
+									<div
+										key={currentPage}
+										className="animate-page-in flex-1 flex flex-col min-h-0"
+									>
+										{renderPage()}
+									</div>
 							</Suspense>
 						</ErrorBoundary>
 					</div>
@@ -301,6 +335,11 @@ export default function AppShell() {
 					onOpenChange={setShowCommandDialog}
 					onTaskSelect={handleSearchTaskSelect}
 					onDocSelect={handleSearchDocSelect}
+				/>
+
+				<WorkspacePicker
+					open={showWorkspacePicker}
+					onOpenChange={setShowWorkspacePicker}
 				/>
 
 				<TaskDetailSheet

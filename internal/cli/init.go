@@ -114,11 +114,11 @@ Creates a .knowns/ directory with the required structure and a default config.js
 
 // allPlatformIDs is the full ordered list of supported platform identifiers.
 // "opencode" is handled separately via EnableChatUI — not shown in the multi-select.
-var allPlatformIDs = []string{"claude-code", "opencode", "gemini", "copilot", "agents"}
+var allPlatformIDs = []string{"claude-code", "opencode", "gemini", "copilot", "kiro", "agents"}
 
 // wizardPlatformIDs is the subset shown in the wizard multi-select.
 // OpenCode is asked as a dedicated ChatUI question instead.
-var wizardPlatformIDs = []string{"claude-code", "gemini", "copilot", "agents"}
+var wizardPlatformIDs = []string{"claude-code", "gemini", "copilot", "kiro", "agents"}
 
 // platformLabel returns the human-readable label for a platform ID.
 func platformLabel(id string) string {
@@ -131,6 +131,8 @@ func platformLabel(id string) string {
 		return "Google Gemini  (GEMINI.md)"
 	case "copilot":
 		return "GitHub Copilot  (.github/copilot-instructions.md)"
+	case "kiro":
+		return "Kiro IDE  (.kiro/steering/, .kiro/skills/)"
 	case "agents":
 		return "Generic Agents  (AGENTS.md, .agent/skills/)"
 	default:
@@ -339,6 +341,14 @@ func runInit(cmd *cobra.Command, args []string) error {
 			label: "Creating OpenCode config",
 			run: func() error {
 				return createOpenCodeConfigQuiet(cwd)
+			},
+		})
+	}
+	if hasPlatform(cfg.Platforms, "kiro") {
+		steps = append(steps, initStep{
+			label: "Creating Kiro steering",
+			run: func() error {
+				return createKiroSteeringQuiet(cwd, force)
 			},
 		})
 	}
@@ -608,6 +618,33 @@ func createOpenCodeConfigQuiet(projectRoot string) error {
 	return os.WriteFile(configPath, append(data, '\n'), 0644)
 }
 
+// createKiroSteeringQuiet creates .kiro/steering/knowns.md that references
+// KNOWNS.md via Kiro's #[[file:...]] directive so the agent always loads the
+// canonical guidelines automatically.
+func createKiroSteeringQuiet(projectRoot string, force bool) error {
+	steeringDir := filepath.Join(projectRoot, ".kiro", "steering")
+	if err := os.MkdirAll(steeringDir, 0755); err != nil {
+		return fmt.Errorf("create .kiro/steering: %w", err)
+	}
+
+	steeringPath := filepath.Join(steeringDir, "knowns.md")
+	if _, err := os.Stat(steeringPath); err == nil && !force {
+		return nil
+	}
+
+	content := `---
+description: Knowns project guidelines — always included so the agent follows repo conventions.
+---
+
+# Knowns Guidelines
+
+This steering file ensures the agent reads the canonical project guidance on every interaction.
+
+#[[file:KNOWNS.md]]
+`
+	return os.WriteFile(steeringPath, []byte(content), 0644)
+}
+
 // createInstructionFilesForPlatforms generates only instruction files for the
 // given platform IDs. If platforms is empty all files are generated.
 func createInstructionFilesForPlatforms(projectRoot string, force bool, platforms []string) error {
@@ -817,6 +854,10 @@ func renderCanonicalInstructionContent() string {
 	sb.WriteString("- Task references use `@task-<id>`.\n")
 	sb.WriteString("- Doc references use `@doc/<path>`.\n")
 	sb.WriteString("- Template references use `@template/<name>`.\n")
+	sb.WriteString("- Doc references support line and range suffixes:\n")
+	sb.WriteString("  - `@doc/<path>:42` — link to a specific line.\n")
+	sb.WriteString("  - `@doc/<path>:10-25` — link to a line range.\n")
+	sb.WriteString("  - `@doc/<path>#heading-slug` — link to a heading anchor.\n")
 	sb.WriteString("- Follow references recursively before planning, implementation, or validation work.\n\n")
 	sb.WriteString("## Common Mistakes\n\n")
 	sb.WriteString("### Notes vs Append Notes\n\n")
@@ -855,6 +896,13 @@ func renderCompatibilityInstructionContent(relativePath, platform, projectRoot s
 	sb.WriteString(fmt.Sprintf("# %s\n\n", compatibilityInstructionTitle(relativePath, platform, projectName)))
 	sb.WriteString(fmt.Sprintf("Compatibility entrypoint for runtimes that auto-detect `%s`.\n\n", relativePath))
 	sb.WriteString("<!-- KNOWNS GUIDELINES START -->\n\n")
+
+	// Platform-specific file import directive so the runtime actually loads KNOWNS.md.
+	if relativePath == "CLAUDE.md" || relativePath == "GEMINI.md" {
+		sb.WriteString("@KNOWNS.md\n\n")
+	}
+
+	sb.WriteString("**CRITICAL: You MUST read and follow `KNOWNS.md` in the repository root before doing any work. It is the canonical source of truth for all agent behavior in this project.**\n\n")
 	sb.WriteString("## Canonical Guidance\n\n")
 	sb.WriteString("- Knowns is the repository memory layer for humans and the AI-friendly working layer for agents.\n")
 	sb.WriteString("- The source of truth for repo-level agent guidance is `KNOWNS.md`.\n")

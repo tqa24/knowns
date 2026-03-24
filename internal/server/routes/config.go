@@ -64,8 +64,15 @@ func (cr *ConfigRoutes) get(w http.ResponseWriter, r *http.Request) {
 	if s.OpenCodeServerConfig != nil {
 		flat["opencodeServer"] = s.OpenCodeServerConfig
 	}
+	// opencodeModels: project-level overrides user-level.
+	// If the project has no opencodeModels, fall back to user-level preferences.
 	if s.OpenCodeModels != nil {
 		flat["opencodeModels"] = s.OpenCodeModels
+	} else {
+		userPrefs := storage.NewUserPrefsStore()
+		if up, err := userPrefs.Load(); err == nil && up.OpenCodeModels != nil {
+			flat["opencodeModels"] = up.OpenCodeModels
+		}
 	}
 	if s.Platforms != nil {
 		flat["platforms"] = s.Platforms

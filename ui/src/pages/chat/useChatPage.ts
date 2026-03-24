@@ -8,7 +8,7 @@ import { useOpenCodeModelManager } from "../../hooks/useOpencodeModelManager";
 import { useSlashItems } from "../../data/skills";
 import { useChatNotifications } from "../../hooks/useChatNotifications";
 import { playNotificationSound } from "../../lib/notifications";
-import { opencodeApi, type OpenCodePendingPermission } from "../../api/client";
+import { opencodeApi, saveUserPreferences, type OpenCodePendingPermission } from "../../api/client";
 import { toast } from "../../components/ui/sonner";
 import type { ChatComposerFile, ChatSession } from "../../models/chat";
 import {
@@ -265,7 +265,10 @@ export function useChatPage() {
 		providerResponse,
 		status: opencodeStatus,
 		lastLoadedAt,
-		onChange: async (nextSettings) => updateConfig({ opencodeModels: nextSettings }),
+		onChange: async (nextSettings) => {
+			await saveUserPreferences({ opencodeModels: nextSettings });
+			await updateConfig({ opencodeModels: nextSettings });
+		},
 	});
 	const pickerProviders = useMemo(() => getPickerModels(catalog), [catalog]);
 	const autoModelLabel = useMemo(() => buildAutoModelLabel(catalog), [catalog]);

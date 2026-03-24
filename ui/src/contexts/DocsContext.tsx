@@ -45,11 +45,16 @@ export function DocsProvider({ children }: { children: React.ReactNode }) {
 	});
 	const [currentFolder, setCurrentFolder] = useState<string | null>(null);
 	const docsRef = useRef<Doc[]>([]);
+	const selectedDocRef = useRef<Doc | null>(null);
 
 	// Keep ref in sync
 	useEffect(() => {
 		docsRef.current = docs;
 	}, [docs]);
+
+	useEffect(() => {
+		selectedDocRef.current = selectedDoc;
+	}, [selectedDoc]);
 
 	// Persist filter state
 	useEffect(() => {
@@ -80,20 +85,27 @@ export function DocsProvider({ children }: { children: React.ReactNode }) {
 	}, [loadDocs]);
 
 	// Fetch linked tasks when a spec is selected
-	useEffect(() => {
-		if (selectedDoc && isSpec(selectedDoc)) {
-			const specPath = toDisplayPath(selectedDoc.path).replace(/\.md$/, "");
+	const refreshLinkedTasks = useCallback(() => {
+		const doc = selectedDocRef.current;
+		if (doc && isSpec(doc)) {
+			const specPath = toDisplayPath(doc.path).replace(/\.md$/, "");
 			getTasksBySpec(specPath)
 				.then((tasks) => setLinkedTasks(tasks))
 				.catch(() => setLinkedTasks([]));
 		} else {
 			setLinkedTasks([]);
 		}
-	}, [selectedDoc]);
+	}, []);
+
+	useEffect(() => {
+		refreshLinkedTasks();
+	}, [selectedDoc, refreshLinkedTasks]);
 
 	// SSE updates
 	useSSEEvent("docs:updated", () => loadDocs());
 	useSSEEvent("docs:refresh", () => loadDocs());
+	useSSEEvent("tasks:updated", () => refreshLinkedTasks());
+	useSSEEvent("tasks:refresh", () => refreshLinkedTasks());
 
 	const setSelectedDoc = useCallback((doc: Doc | null) => {
 		setSelectedDocState(doc);
@@ -216,4 +228,9 @@ export function useDocs() {
 		throw new Error("useDocs must be used within a DocsProvider");
 	}
 	return context;
+}
+
+/** Safe version that returns null when outside DocsProvider instead of throwing. */
+export function useDocsOptional() {
+	return useContext(DocsContext);
 }

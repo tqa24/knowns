@@ -150,6 +150,7 @@ func runDocView(cmd *cobra.Command, path string) error {
 	tocOnly, _ := cmd.Flags().GetBool("toc")
 	infoOnly, _ := cmd.Flags().GetBool("info")
 	section, _ := cmd.Flags().GetString("section")
+	lineParam, _ := cmd.Flags().GetString("line")
 	smart, _ := cmd.Flags().GetBool("smart")
 
 	if jsonOut {
@@ -194,6 +195,19 @@ func runDocView(cmd *cobra.Command, path string) error {
 			return fmt.Errorf("section %q not found in %s", section, doc.Path)
 		}
 		fmt.Println(content)
+		return nil
+	}
+
+	if lineParam != "" {
+		lineContent, lineLabel, err := extractDocLines(doc.Content, lineParam)
+		if err != nil {
+			return err
+		}
+		if plain {
+			fmt.Printf("PATH: %s\nLINES: %s\n\n%s\n", doc.Path, lineLabel, lineContent)
+		} else {
+			fmt.Printf("Lines %s of %s:\n\n%s\n", lineLabel, doc.Title, lineContent)
+		}
 		return nil
 	}
 
@@ -774,6 +788,38 @@ func extractDocSection(content, sectionRef string) string {
 	return strings.TrimSpace(strings.Join(lines[startLine:endLine], "\n"))
 }
 
+// extractDocLines returns specific lines from content.
+// lineParam can be "42" (single line) or "10-20" (range).
+func extractDocLines(content, lineParam string) (string, string, error) {
+	allLines := strings.Split(content, "\n")
+	total := len(allLines)
+
+	// Try range: "10-20"
+	if parts := strings.SplitN(lineParam, "-", 2); len(parts) == 2 {
+		start, err1 := strconv.Atoi(parts[0])
+		end, err2 := strconv.Atoi(parts[1])
+		if err1 == nil && err2 == nil && start >= 1 && end >= start {
+			if start > total {
+				return "", "", fmt.Errorf("line %d exceeds document length (%d lines)", start, total)
+			}
+			if end > total {
+				end = total
+			}
+			return strings.Join(allLines[start-1:end], "\n"), fmt.Sprintf("%d-%d", start, end), nil
+		}
+	}
+
+	// Single line: "42"
+	line, err := strconv.Atoi(lineParam)
+	if err != nil {
+		return "", "", fmt.Errorf("invalid line parameter: %q (use '42' or '10-20')", lineParam)
+	}
+	if line < 1 || line > total {
+		return "", "", fmt.Errorf("line %d out of range (document has %d lines)", line, total)
+	}
+	return allLines[line-1], fmt.Sprintf("%d", line), nil
+}
+
 func replaceDocSection(content, sectionRef, newContent string) string {
 	lines := strings.Split(content, "\n")
 	headingCount := 0
@@ -835,12 +881,14 @@ func init() {
 	docViewCmd.Flags().Bool("toc", false, "Show table of contents only")
 	docViewCmd.Flags().Bool("info", false, "Show document stats without content")
 	docViewCmd.Flags().String("section", "", "Show specific section by number or title")
+	docViewCmd.Flags().String("line", "", "Show specific lines (e.g., '42' or '10-20')")
 	docViewCmd.Flags().Bool("smart", false, "Auto-optimize reading for large documents")
 
 	// doc shorthand (the docCmd itself) also needs view flags
 	docCmd.Flags().Bool("toc", false, "Show table of contents only")
 	docCmd.Flags().Bool("info", false, "Show document stats without content")
 	docCmd.Flags().String("section", "", "Show specific section by number or title")
+	docCmd.Flags().String("line", "", "Show specific lines (e.g., '42' or '10-20')")
 	docCmd.Flags().Bool("smart", false, "Auto-optimize reading for large documents")
 
 	// doc create flags

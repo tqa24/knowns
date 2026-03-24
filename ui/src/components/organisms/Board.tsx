@@ -5,6 +5,7 @@ import type { Task, TaskStatus } from "@/ui/models/task";
 import { api } from "../../api/client";
 import { navigateTo } from "../../lib/navigation";
 import { useConfig } from "../../contexts/ConfigContext";
+import { useNewTaskIds } from "../../hooks/useNewTaskIds";
 import { TaskDetailSheet } from "./TaskDetail/TaskDetailSheet";
 import { ScrollArea, ScrollBar } from "../ui/ScrollArea";
 import {
@@ -72,6 +73,7 @@ interface BoardProps {
 export default function Board({ tasks, loading, onTasksUpdate }: BoardProps) {
 	const location = useRouterState({ select: (state) => state.location });
 	const { config, updateConfig } = useConfig();
+	const newTaskIds = useNewTaskIds(tasks);
 	const [visibleColumns, setVisibleColumns] = useState<Set<TaskStatus>>(new Set());
 	const [columnControlsOpen, setColumnControlsOpen] = useState(false);
 	const [isDragging, setIsDragging] = useState(false);
@@ -431,6 +433,7 @@ export default function Board({ tasks, loading, onTasksUpdate }: BoardProps) {
 											<TaskKanbanCard
 												key={item.id}
 												item={item}
+												isNew={newTaskIds.has(item.id)}
 												statusColors={statusColors}
 												onClick={() => handleTaskClick(item.task)}
 											/>
@@ -465,11 +468,12 @@ export default function Board({ tasks, loading, onTasksUpdate }: BoardProps) {
 // Task card content component for KanbanCard
 interface TaskKanbanCardProps {
 	item: KanbanTaskItem;
+	isNew?: boolean;
 	statusColors: Record<string, ColorName>;
 	onClick: () => void;
 }
 
-function TaskKanbanCard({ item, statusColors, onClick }: TaskKanbanCardProps) {
+function TaskKanbanCard({ item, isNew, statusColors, onClick }: TaskKanbanCardProps) {
 	const { task } = item;
 	const statusBadgeClasses = getStatusBadgeClasses(task.status, statusColors);
 	const ac = task.acceptanceCriteria ?? [];
@@ -480,7 +484,7 @@ function TaskKanbanCard({ item, statusColors, onClick }: TaskKanbanCardProps) {
 			id={item.id}
 			name={item.name}
 			column={item.column}
-			className="w-full group/card"
+			className={cn("w-full group/card", isNew && "animate-[fade-in-up_0.5s_ease-out]")}
 		>
 			<div
 				onClick={onClick}

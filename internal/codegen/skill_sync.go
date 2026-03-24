@@ -25,6 +25,7 @@ func ReadSyncedSkillVersion(projectRoot string) string {
 	candidates := []string{
 		filepath.Join(projectRoot, ".claude", "skills", ".version"),
 		filepath.Join(projectRoot, ".agent", "skills", ".version"),
+		filepath.Join(projectRoot, ".kiro", "skills", ".version"),
 	}
 	for _, p := range candidates {
 		data, err := os.ReadFile(p)
@@ -61,18 +62,27 @@ func platformNeedsAgentSkills(p string) bool {
 	return p == "opencode" || p == "agents"
 }
 
+// platformNeedsKiroSkills returns true if the platform writes to .kiro/skills/.
+func platformNeedsKiroSkills(p string) bool {
+	return p == "kiro"
+}
+
 // SyncSkillsForPlatforms copies embedded built-in skills only to the directories
 // required by the given platforms. If platforms is empty, all directories are synced
 // (backwards-compatible behaviour matching SyncSkills).
 func SyncSkillsForPlatforms(projectRoot string, platforms []string) error {
 	wantClaude := len(platforms) == 0
 	wantAgent := len(platforms) == 0
+	wantKiro := len(platforms) == 0
 	for _, p := range platforms {
 		if platformNeedsClaudeSkills(p) {
 			wantClaude = true
 		}
 		if platformNeedsAgentSkills(p) {
 			wantAgent = true
+		}
+		if platformNeedsKiroSkills(p) {
+			wantKiro = true
 		}
 	}
 
@@ -82,6 +92,9 @@ func SyncSkillsForPlatforms(projectRoot string, platforms []string) error {
 	}
 	if wantAgent {
 		targets = append(targets, filepath.Join(projectRoot, ".agent", "skills"))
+	}
+	if wantKiro {
+		targets = append(targets, filepath.Join(projectRoot, ".kiro", "skills"))
 	}
 	if len(targets) == 0 {
 		return nil
@@ -122,6 +135,7 @@ func SyncSkills(projectRoot string) error {
 	targets := []string{
 		filepath.Join(projectRoot, ".claude", "skills"),
 		filepath.Join(projectRoot, ".agent", "skills"),
+		filepath.Join(projectRoot, ".kiro", "skills"),
 	}
 
 	for _, targetDir := range targets {

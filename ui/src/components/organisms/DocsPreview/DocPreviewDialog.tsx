@@ -1,10 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Dialog, DialogContent, DialogTitle } from "../../ui/dialog";
 import { Button } from "../../ui/button";
 import { ExternalLink, Loader2, FileText } from "lucide-react";
 import { getDoc, type Doc } from "../../../api/client";
 import { navigateTo } from "../../../lib/navigation";
-import { MDRender } from "../../editor";
+import { MDRenderWithHighlight } from "../../editor/MDRenderWithHighlight";
+import { parseDocFragment } from "../../editor/DocMentionBadge";
 
 interface DocPreviewDialogProps {
 	docPath: string | null;
@@ -21,6 +22,14 @@ export function DocPreviewDialog({
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
+	const frag = useMemo(() => (docPath ? parseDocFragment(docPath) : null), [docPath]);
+	const lineHighlight = useMemo(() => {
+		if (!frag) return null;
+		if (frag.startLine != null && frag.endLine != null) return { start: frag.startLine, end: frag.endLine };
+		if (frag.line != null) return { start: frag.line, end: frag.line };
+		return null;
+	}, [frag]);
+
 	useEffect(() => {
 		if (!open || !docPath) {
 			setDoc(null);
@@ -31,7 +40,10 @@ export function DocPreviewDialog({
 		setLoading(true);
 		setError(null);
 
-		getDoc(docPath)
+		// Strip line/range/heading suffixes before fetching
+		const cleanPath = frag?.path || docPath;
+
+		getDoc(cleanPath)
 			.then((data) => {
 				if (data) {
 					setDoc(data);
@@ -49,9 +61,6 @@ export function DocPreviewDialog({
 
 	const handleViewInDocs = () => {
 		if (docPath) {
-			console.log("🔍 handleViewInDocs - docPath:", docPath);
-			console.log("🔍 handleViewInDocs - doc:", doc);
-			console.log("🔍 handleViewInDocs - navigating to:", `/docs/${docPath}`);
 			navigateTo(`/docs/${docPath}`);
 			onOpenChange(false);
 		}
@@ -112,8 +121,9 @@ export function DocPreviewDialog({
 						<div className="min-h-0 flex-1 overflow-y-auto bg-background">
 							<div className="mx-auto max-w-2xl px-6 py-6">
 								{contentPreview ? (
-									<MDRender
-										markdown={contentPreview}
+									<MDRenderWithHighlight
+										content={contentPreview}
+										lineHighlight={lineHighlight}
 										className="prose prose-sm max-w-none dark:prose-invert [&_h1]:text-2xl [&_h2]:text-xl [&_p]:leading-7"
 									/>
 								) : (

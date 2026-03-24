@@ -1,8 +1,10 @@
-# knowns - GitHub Copilot Instructions
+# knowns-go - GitHub Copilot Instructions
 
 Compatibility entrypoint for runtimes that auto-detect `.github/copilot-instructions.md`.
 
 <!-- KNOWNS GUIDELINES START -->
+
+**CRITICAL: You MUST read and follow `KNOWNS.md` in the repository root before doing any work. It is the canonical source of truth for all agent behavior in this project.**
 
 ## Canonical Guidance
 

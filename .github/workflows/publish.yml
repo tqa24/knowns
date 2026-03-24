@@ -413,6 +413,28 @@ jobs:
             rm "$base"
           done
 
+      - name: Verify tarball contents
+        run: |
+          for archive in \
+            knowns-darwin-arm64.tar.gz \
+            knowns-darwin-x64.tar.gz \
+            knowns-linux-arm64.tar.gz \
+            knowns-linux-x64.tar.gz; do
+            tar -tzf "$archive" | grep -Fx "knowns" >/dev/null || {
+              echo "Expected $archive to contain 'knowns'"
+              exit 1
+            }
+          done
+
+          for archive in \
+            knowns-win-arm64.tar.gz \
+            knowns-win-x64.tar.gz; do
+            tar -tzf "$archive" | grep -Fx "knowns.exe" >/dev/null || {
+              echo "Expected $archive to contain 'knowns.exe'"
+              exit 1
+            }
+          done
+
       - name: Ensure GitHub release exists
         if: github.event_name == 'release'
         env:
@@ -477,11 +499,11 @@ jobs:
 
             def install
               if OS.mac? && Hardware::CPU.arm?
-                bin.install "knowns-darwin-arm64" => "knowns"
+                bin.install "knowns" => "knowns"
               elsif OS.mac? && Hardware::CPU.intel?
-                bin.install "knowns-darwin-x64" => "knowns"
+                bin.install "knowns" => "knowns"
               elsif OS.linux? && Hardware::CPU.intel?
-                bin.install "knowns-linux-x64" => "knowns"
+                bin.install "knowns" => "knowns"
               end
               bin.install_symlink "knowns" => "kn"
             end

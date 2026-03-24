@@ -9,7 +9,8 @@ import (
 
 // SetupRoutes registers all /api sub-routes onto r.
 // The caller is responsible for mounting r at the /api prefix.
-func SetupRoutes(r chi.Router, store *storage.Store, sse Broadcaster, projectRoot string) {
+// manager may be nil when workspace switching is not needed (e.g. tests).
+func SetupRoutes(r chi.Router, store *storage.Store, sse Broadcaster, projectRoot string, manager *storage.Manager) {
 	// Tasks
 	tr := &TaskRoutes{store: store, sse: sse}
 	tr.Register(r)
@@ -61,4 +62,14 @@ func SetupRoutes(r chi.Router, store *storage.Store, sse Broadcaster, projectRoo
 	// Skills
 	skr := NewSkillRoutes(projectRoot)
 	skr.Register(r)
+
+	// User-level preferences (cross-project)
+	upr := &UserPrefsRoutes{store: storage.NewUserPrefsStore()}
+	upr.Register(r)
+
+	// Workspaces (multi-project management)
+	if manager != nil {
+		wsr := &WorkspaceRoutes{manager: manager, sse: sse}
+		wsr.Register(r)
+	}
 }

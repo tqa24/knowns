@@ -9,6 +9,7 @@ import {
 	Search,
 	Github,
 	ExternalLink,
+	ArrowRightLeft,
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import logoImage from "../../public/logo.png";
@@ -31,6 +32,7 @@ import { useConfig } from "@/ui/contexts/ConfigContext";
 interface AppSidebarProps {
 	currentPage: string;
 	onSearchClick: () => void;
+	onWorkspacePickerClick: () => void;
 }
 
 const topNavItems = [
@@ -69,6 +71,7 @@ const topNavItems = [
 export function AppSidebar({
 	currentPage,
 	onSearchClick,
+	onWorkspacePickerClick,
 }: AppSidebarProps) {
 	const { state } = useSidebar();
 	const isMobile = useIsMobile();
@@ -98,6 +101,14 @@ export function AppSidebar({
 										{import.meta.env.APP_VERSION || "v0.0.0"}
 									</span>
 								</div>
+								<button
+									type="button"
+									onClick={onWorkspacePickerClick}
+									className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+									title="Switch workspace"
+								>
+									<ArrowRightLeft className="h-4 w-4" />
+								</button>
 						</div>
 					</SidebarMenuItem>
 				</SidebarMenu>
