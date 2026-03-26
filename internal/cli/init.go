@@ -351,6 +351,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 				return createKiroSteeringQuiet(cwd, force)
 			},
 		})
+		steps = append(steps, initStep{
+			label: "Creating Kiro MCP config",
+			run: func() error {
+				return createKiroMCPConfigQuiet(cwd)
+			},
+		})
 	}
 	steps = append(steps,
 		initStep{
@@ -644,6 +650,49 @@ This steering file ensures the agent reads the canonical project guidance on eve
 `
 	return os.WriteFile(steeringPath, []byte(content), 0644)
 }
+
+// createKiroMCPConfigQuiet creates .kiro/settings/mcp.json with the Knowns
+// MCP server entry. It merges into an existing file if present.
+func createKiroMCPConfigQuiet(projectRoot string) error {
+	settingsDir := filepath.Join(projectRoot, ".kiro", "settings")
+	if err := os.MkdirAll(settingsDir, 0755); err != nil {
+		return fmt.Errorf("create .kiro/settings: %w", err)
+	}
+
+	configPath := filepath.Join(settingsDir, "mcp.json")
+
+	config := map[string]any{}
+
+	if data, err := os.ReadFile(configPath); err == nil {
+		if err := json.Unmarshal(data, &config); err != nil {
+			return fmt.Errorf("parse .kiro/settings/mcp.json: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	servers, ok := config["mcpServers"].(map[string]any)
+	if !ok || servers == nil {
+		servers = make(map[string]any)
+	}
+
+	servers["knowns"] = map[string]any{
+		"command":     "npx",
+		"args":        []string{"-y", "knowns", "mcp", "--stdio"},
+		"disabled":    false,
+		"autoApprove": []string{"*"},
+	}
+
+	config["mcpServers"] = servers
+
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(configPath, append(data, '\n'), 0644)
+}
+
 
 // createInstructionFilesForPlatforms generates only instruction files for the
 // given platform IDs. If platforms is empty all files are generated.
