@@ -1383,6 +1383,8 @@ export function useChatPage() {
 		lastLoadedAt,
 		// slash items
 		slashItems,
+		// provider
+		providerResponse,
 		// preview dialogs
 		previewTaskId,
 		setPreviewTaskId,

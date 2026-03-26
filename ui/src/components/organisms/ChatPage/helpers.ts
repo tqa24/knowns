@@ -384,6 +384,7 @@ export function normalizeOpenCodeMessage(rawMessage: OpenCodeMessage): ChatMessa
 		parentMessageId: info.parentID || undefined,
 		createdAt: info.time?.created ? new Date(info.time.created).toISOString() : new Date().toISOString(),
 		cost: typeof info.cost === "number" ? info.cost : undefined,
+		providerID: info.providerID || undefined,
 		tokens: typeof info.tokens?.total === "number" ? info.tokens.total : undefined,
 		inputTokens: typeof info.tokens?.input === "number" ? info.tokens.input : undefined,
 		outputTokens: typeof info.tokens?.output === "number" ? info.tokens.output : undefined,

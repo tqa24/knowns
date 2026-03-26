@@ -28,6 +28,7 @@ export interface ChatMessage {
 	outputTokens?: number;
 	// OpenCode extended fields
 	reasoning?: string;
+	providerID?: string;
 	toolCalls?: ChatToolCall[];
 	questionBlocks?: ChatQuestionBlock[];
 	attachments?: ChatMessageAttachment[];

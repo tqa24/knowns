@@ -43,7 +43,8 @@ function isExplorationOnlyMessage(message: ChatMessage): boolean {
 
 type RenderItem =
 	| { type: "message"; message: ChatMessage; index: number }
-	| { type: "explored"; id: string; toolCalls: NonNullable<ChatMessage["toolCalls"]> };
+	| { type: "explored"; id: string; toolCalls: NonNullable<ChatMessage["toolCalls"]> }
+	| { type: "compaction"; message: ChatMessage; index: number };
 
 function WorkingIndicator({ compact = false }: { compact?: boolean }) {
 	return (
@@ -189,6 +190,12 @@ export function ChatThread({
 
 		session.messages.forEach((message, index) => {
 			if (index === streamingAssistantIndex) return;
+
+			// Hide empty compaction trigger messages (user message with no content)
+			if (message.role === "user" && !message.content.trim() && !message.toolCalls?.length && !message.attachments?.length) {
+				return;
+			}
+
 			if (isExplorationOnlyMessage(message)) {
 				bufferedToolCalls = [...bufferedToolCalls, ...(message.toolCalls || [])];
 				bufferedIds.push(message.id);
@@ -196,7 +203,20 @@ export function ChatThread({
 			}
 
 			flushBufferedToolCalls();
-			items.push({ type: "message", message, index });
+
+			// Detect compaction summary: assistant message right after an empty user message
+			const prevMsg = index > 0 ? session.messages[index - 1] : null;
+			const isCompactionSummary = message.role === "assistant"
+				&& prevMsg?.role === "user"
+				&& !prevMsg.content.trim()
+				&& !prevMsg.toolCalls?.length
+				&& !prevMsg.attachments?.length;
+
+			if (isCompactionSummary) {
+				items.push({ type: "compaction", message, index });
+			} else {
+				items.push({ type: "message", message, index });
+			}
 		});
 
 		flushBufferedToolCalls();
@@ -208,6 +228,7 @@ export function ChatThread({
 		const q = searchQuery.toLowerCase();
 		return renderItems.filter((item) => {
 			if (item.type === "explored") return false;
+			if (item.type === "compaction") return true;
 			return item.message.content.toLowerCase().includes(q);
 		});
 	}, [renderItems, searchQuery]);
@@ -327,6 +348,30 @@ export function ChatThread({
 							return (
 								<div key={item.id} className="px-1">
 									<ToolCallList toolCalls={item.toolCalls} />
+								</div>
+							);
+						}
+
+						if (item.type === "compaction") {
+							return (
+								<div key={item.message.id} className="space-y-3">
+									<div className="flex items-center gap-3 px-2 py-2">
+										<div className="h-px flex-1 bg-border/60" />
+										<span className="text-[11px] text-muted-foreground shrink-0">
+											Session compacted
+										</span>
+										<div className="h-px flex-1 bg-border/60" />
+									</div>
+									{item.message.content.trim() && (
+										<MessageBubble
+											message={item.message}
+											parentSessionId={session.id}
+											showMetadata={false}
+											isLastUserMessage={false}
+											onPreviewTask={onPreviewTask}
+											onPreviewDoc={onPreviewDoc}
+										/>
+									)}
 								</div>
 							);
 						}
