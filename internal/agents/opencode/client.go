@@ -3,6 +3,7 @@ package opencode
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -451,6 +452,63 @@ func (c *Client) StreamEvents(sessionID string, handler EventHandler) error {
 	}
 
 	return nil
+}
+
+// StreamGlobalEvents connects to the global event stream (/global/event) using
+// SSE and calls handler for each event. It blocks until the stream ends or ctx
+// is cancelled. The caller is responsible for reconnection logic.
+func (c *Client) StreamGlobalEvents(ctx context.Context, handler EventHandler) error {
+	url := fmt.Sprintf("%s/global/event", c.baseURL)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	if c.config.Password != "" {
+		req.SetBasicAuth(c.config.Username, c.config.Password)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("SSE error: %s", string(body))
+	}
+
+	buf := make([]byte, 0, 4096)
+	chunk := make([]byte, 4096)
+
+	for {
+		n, readErr := resp.Body.Read(chunk)
+		if n > 0 {
+			buf = append(buf, chunk[:n]...)
+			for len(buf) > 0 {
+				lineEnd := bytes.IndexByte(buf, '\n')
+				if lineEnd == -1 {
+					break
+				}
+				line := string(buf[:lineEnd])
+				buf = buf[lineEnd+1:]
+
+				if len(line) > 6 && line[:6] == "data: " {
+					data := line[6:]
+					var event map[string]any
+					if err := json.Unmarshal([]byte(data), &event); err == nil {
+						handler(event)
+					}
+				}
+			}
+		}
+		if readErr != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			return readErr
+		}
+	}
 }
 
 // IsServerAvailable checks if the OpenCode server is running and accessible.

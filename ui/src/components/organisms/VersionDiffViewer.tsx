@@ -3,6 +3,7 @@ import { Columns2, AlignJustify } from "lucide-react";
 import type { TaskChange } from "@/ui/models/version";
 import { Button } from "../ui/button";
 import { DiffViewer } from "../ui/DiffViewer";
+import { cn } from "../../lib/utils";
 
 interface VersionDiffViewerProps {
 	changes: TaskChange[];
@@ -54,7 +55,7 @@ export default function VersionDiffViewer({
 
 	if (changes.length === 0) {
 		return (
-			<div className="text-sm text-secondary-foreground text-center py-4">
+			<div className={cn('text-sm', 'text-secondary-foreground', 'text-center', 'py-4')}>
 				No changes to display
 			</div>
 		);
@@ -64,14 +65,14 @@ export default function VersionDiffViewer({
 		<div className="space-y-4">
 			{/* View Type Toggle */}
 			{showToggle && (
-				<div className="flex items-center justify-end gap-2">
+				<div className={cn('flex', 'items-center', 'justify-end', 'gap-2')}>
 					<Button
 						variant={viewType === "unified" ? "secondary" : "ghost"}
 						size="sm"
 						onClick={() => setViewType("unified")}
 						title="Unified view"
 					>
-						<AlignJustify className="w-4 h-4 mr-1" />
+						<AlignJustify className={cn('w-4', 'h-4', 'mr-1')} />
 						Unified
 					</Button>
 					<Button
@@ -80,7 +81,7 @@ export default function VersionDiffViewer({
 						onClick={() => setViewType("split")}
 						title="Split view"
 					>
-						<Columns2 className="w-4 h-4 mr-1" />
+						<Columns2 className={cn('w-4', 'h-4', 'mr-1')} />
 						Split
 					</Button>
 				</div>
@@ -95,19 +96,17 @@ export default function VersionDiffViewer({
 				return (
 					<div
 						key={`${change.field}-${idx}`}
-						className="rounded-lg border border-border overflow-hidden"
+						className={cn('rounded-lg', 'border', 'border-border', 'overflow-hidden')}
 					>
 						{/* Field Header */}
-						<div className="px-3 py-2 bg-muted border-b border-border font-medium text-sm text-secondary-foreground">
+						<div className={cn('px-3', 'py-2', 'bg-muted', 'border-b', 'border-border', 'font-medium', 'text-sm', 'text-secondary-foreground')}>
 							{label}
 						</div>
-
 						{/* Diff Content */}
 						<DiffViewer
 							oldValue={oldStr}
 							newValue={newStr}
-							splitView={viewType === "split"}
-							className="rounded-none border-0"
+							className={cn('rounded-none', 'border-0')}
 						/>
 					</div>
 				);

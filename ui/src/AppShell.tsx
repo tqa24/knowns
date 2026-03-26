@@ -17,13 +17,24 @@ import { Loader2 } from "lucide-react";
 import { ThemeContext } from "./App";
 import { cn } from "./lib/utils";
 
-const ConfigPage = lazy(() => import("./pages/ConfigPage"));
-const DashboardPage = lazy(() => import("./pages/DashboardPage"));
-const DocsPage = lazy(() => import("./pages/DocsPage"));
-const ImportsPage = lazy(() => import("./pages/ImportsPage"));
-const KanbanPage = lazy(() => import("./pages/KanbanPage"));
-const TasksPage = lazy(() => import("./pages/TasksPage"));
-const ChatPage = lazy(() => import("./pages/ChatPage"));
+// Retry wrapper for lazy imports — auto-reloads when chunks are stale after a deploy.
+function lazyWithRetry(factory: () => Promise<{ default: React.ComponentType<any> }>) {
+	return lazy(() =>
+		factory().catch(() => {
+			window.location.reload();
+			// Return a never-resolving promise so React doesn't render a broken component.
+			return new Promise(() => {});
+		}),
+	);
+}
+
+const ConfigPage = lazyWithRetry(() => import("./pages/ConfigPage"));
+const DashboardPage = lazyWithRetry(() => import("./pages/DashboardPage"));
+const DocsPage = lazyWithRetry(() => import("./pages/DocsPage"));
+const ImportsPage = lazyWithRetry(() => import("./pages/ImportsPage"));
+const KanbanPage = lazyWithRetry(() => import("./pages/KanbanPage"));
+const TasksPage = lazyWithRetry(() => import("./pages/TasksPage"));
+const ChatPage = lazyWithRetry(() => import("./pages/ChatPage"));
 
 function PageLoading() {
 	return (

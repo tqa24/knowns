@@ -122,6 +122,12 @@ func RegisterTaskTools(s *server.MCPServer, getStore func() *storage.Store) {
 				return mcp.NewToolResultError(fmt.Sprintf("Failed to create task: %s", err.Error())), nil
 			}
 
+			// Record initial version.
+			_ = store.Versions.SaveVersion(task.ID, models.TaskVersion{
+				Changes:  store.Versions.TrackChanges(nil, task),
+				Snapshot: storage.TaskToSnapshot(task),
+			})
+
 			search.BestEffortIndexTask(store, task.ID)
 
 			// Notify server for real-time UI updates.
@@ -248,6 +254,9 @@ func RegisterTaskTools(s *server.MCPServer, getStore func() *storage.Store) {
 				return mcp.NewToolResultError(fmt.Sprintf("Task not found: %s", err.Error())), nil
 			}
 
+			// Snapshot old state for version tracking.
+			oldTask := *task
+
 			args := req.GetArguments()
 
 			if v, ok := stringArg(args, "title"); ok {
@@ -353,6 +362,14 @@ func RegisterTaskTools(s *server.MCPServer, getStore func() *storage.Store) {
 
 			if err := store.Tasks.Update(task); err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("Failed to update task: %s", err.Error())), nil
+			}
+
+			// Record version if fields changed.
+			if changes := store.Versions.TrackChanges(&oldTask, task); len(changes) > 0 {
+				_ = store.Versions.SaveVersion(task.ID, models.TaskVersion{
+					Changes:  changes,
+					Snapshot: storage.TaskToSnapshot(task),
+				})
 			}
 
 			search.BestEffortIndexTask(store, task.ID)
