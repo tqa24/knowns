@@ -102,6 +102,42 @@ mcp__knowns__validate({ "entity": "$ARGUMENTS" })
 
 If errors found (broken `@doc/...` or `@task-...`), fix before asking approval.
 
+## Step 5.5: Pre-Execution Plan Check
+
+Before presenting the plan for approval, verify plan quality:
+
+### AC Coverage
+- Every requirement from the task description should map to at least one plan step
+- Every plan step should contribute to at least one AC
+- Flag any AC that no plan step addresses
+
+### Scope Sizing
+- Each plan step should be completable in a single implementation session
+- If a step requires reading >10 files or touching >5 files → recommend splitting
+- If total plan exceeds ~8 steps → consider splitting into subtasks
+
+### Dependency Check
+- Plan steps should be in logical order (foundational first, dependent last)
+- Flag circular dependencies between steps
+- Flag steps that assume undocumented context
+
+### Risk Assessment
+- Steps involving new external dependencies → flag as higher risk
+- Steps touching core/shared modules → flag blast radius
+- Steps with no test coverage in plan → flag
+
+**Report any issues found inline with the plan:**
+
+```
+Plan for task-<id>:
+1. Step one
+2. Step two
+⚠️ Plan check: AC-3 not covered by any step
+⚠️ Plan check: Step 4 touches 7 files — consider splitting
+```
+
+Fix issues before presenting for approval. If unfixable, surface them explicitly so the user can decide.
+
 ## Step 6: Ask Approval
 
 Present plan and **WAIT for explicit approval**.
@@ -163,6 +199,7 @@ Run: /kn-implement $ARGUMENTS
 - [ ] Refs followed
 - [ ] Templates checked
 - [ ] **Validated (no broken refs)**
+- [ ] **Pre-execution plan check passed**
 - [ ] User approved
 - [ ] **Next step suggested**
 

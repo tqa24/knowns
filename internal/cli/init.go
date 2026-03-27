@@ -216,14 +216,25 @@ func runInit(cmd *cobra.Command, args []string) error {
 		var existingPlatforms []string
 		var existingAutoSync *bool
 		var existingEnableChatUI *bool
+		var existingName string
+		var existingGitTrackingMode string
+		var existingSemanticEnabled *bool
+		var existingSemanticModel string
 		if existingCfg, err := storage.NewStore(root).Config.Load(); err == nil {
 			existingPlatforms = existingCfg.Settings.Platforms
 			existingAutoSync = existingCfg.Settings.AutoSyncOnUpdate
 			existingEnableChatUI = existingCfg.Settings.EnableChatUI
+			existingName = existingCfg.Name
+			existingGitTrackingMode = existingCfg.Settings.GitTrackingMode
+			if existingCfg.Settings.SemanticSearch != nil {
+				enabled := existingCfg.Settings.SemanticSearch.Enabled
+				existingSemanticEnabled = &enabled
+				existingSemanticModel = existingCfg.Settings.SemanticSearch.Model
+			}
 		}
 
 		// Run full wizard with huh
-		wizardCfg, err := runWizard(cwd, gitTracked, gitIgnored, existingPlatforms, existingAutoSync, existingEnableChatUI)
+		wizardCfg, err := runWizard(cwd, gitTracked, gitIgnored, existingPlatforms, existingAutoSync, existingEnableChatUI, existingName, existingGitTrackingMode, existingSemanticEnabled, existingSemanticModel)
 		if err != nil {
 			if err == huh.ErrUserAborted {
 				fmt.Println(warnStyle.Render("Setup cancelled."))
@@ -383,8 +394,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 	return maybeOpenBrowser(cwd, openFlag, noOpen)
 }
 
-func runWizard(cwd string, gitTracked, gitIgnored bool, existingPlatforms []string, existingAutoSync *bool, existingEnableChatUI *bool) (*initConfig, error) {
+func runWizard(cwd string, gitTracked, gitIgnored bool, existingPlatforms []string, existingAutoSync *bool, existingEnableChatUI *bool, existingName string, existingGitTrackingMode string, existingSemanticEnabled *bool, existingSemanticModel string) (*initConfig, error) {
 	defaultName := filepath.Base(cwd)
+	if existingName != "" {
+		defaultName = existingName
+	}
 	hasGit := isGitRepo(cwd)
 
 	fmt.Println()
@@ -395,8 +409,8 @@ func runWizard(cwd string, gitTracked, gitIgnored bool, existingPlatforms []stri
 	var cfg initConfig
 	cfg.Name = defaultName
 
-	// --- Group 1: Project name + Git tracking ---
-	fields := []huh.Field{
+	// --- Group 1: Project name ---
+	nameField := huh.NewGroup(
 		huh.NewInput().
 			Title("Project name").
 			Value(&cfg.Name).
@@ -407,12 +421,16 @@ func runWizard(cwd string, gitTracked, gitIgnored bool, existingPlatforms []stri
 				}
 				return nil
 			}),
-	}
+	)
 
-	// Git tracking mode (only if in a git repo and not set via flag)
+	// --- Group 1b: Git tracking mode (only if in a git repo and not set via flag) ---
+	var gitGroup *huh.Group
 	if hasGit && !gitTracked && !gitIgnored {
 		cfg.GitTrackingMode = "git-tracked"
-		fields = append(fields,
+		if existingGitTrackingMode != "" {
+			cfg.GitTrackingMode = existingGitTrackingMode
+		}
+		gitGroup = huh.NewGroup(
 			huh.NewSelect[string]().
 				Title("Git tracking mode").
 				Description("Controls what Knowns data is committed to git.\n"+
@@ -420,7 +438,7 @@ func runWizard(cwd string, gitTracked, gitIgnored bool, existingPlatforms []stri
 					"  git-ignored  → only docs & templates are committed; tasks stay local/private.\n"+
 					"  none         → no .gitignore changes; you manage git tracking manually.").
 				Options(
-					huh.NewOption("Git Tracked (recommended for teams)", "git-tracked").Selected(true),
+					huh.NewOption("Git Tracked (recommended for teams)", "git-tracked"),
 					huh.NewOption("Git Ignored (personal use)", "git-ignored"),
 					huh.NewOption("None (manage manually)", "none"),
 				).
@@ -431,8 +449,6 @@ func runWizard(cwd string, gitTracked, gitIgnored bool, existingPlatforms []stri
 	} else if gitIgnored {
 		cfg.GitTrackingMode = "git-ignored"
 	}
-
-	group1 := huh.NewGroup(fields...)
 
 	// --- Group 2: AI platform selection (opencode handled separately) ---
 	// Use existing config platforms if available (minus opencode), else default.
@@ -516,6 +532,12 @@ func runWizard(cwd string, gitTracked, gitIgnored bool, existingPlatforms []stri
 	// --- Group 5: Semantic search ---
 	cfg.EnableSemantic = true
 	cfg.SemanticModel = "gte-small"
+	if existingSemanticEnabled != nil {
+		cfg.EnableSemantic = *existingSemanticEnabled
+	}
+	if existingSemanticModel != "" {
+		cfg.SemanticModel = existingSemanticModel
+	}
 	group5 := huh.NewGroup(
 		huh.NewConfirm().
 			Title("Enable semantic search?").
@@ -538,7 +560,13 @@ func runWizard(cwd string, gitTracked, gitIgnored bool, existingPlatforms []stri
 	})
 
 	// Run form
-	form := huh.NewForm(group1, group2, group3, group4, group5, group6).
+	groups := []*huh.Group{nameField}
+	if gitGroup != nil {
+		groups = append(groups, gitGroup)
+	}
+	groups = append(groups, group2, group3, group4, group5, group6)
+
+	form := huh.NewForm(groups...).
 		WithTheme(huh.ThemeCatppuccin())
 
 	if err := form.Run(); err != nil {
@@ -1062,6 +1090,7 @@ func writeKnownsGitignore(dir, mode string) error {
 		)
 		block = append(block,
 			".knowns/*",
+			"!.knowns/config.json",
 			"!.knowns/docs/",
 			"!.knowns/docs/**",
 			"!.knowns/templates/",

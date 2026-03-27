@@ -67,7 +67,6 @@ func (s *Store) Init(name string) error {
 		filepath.Join(s.Root, "versions"),
 		filepath.Join(s.Root, "templates"),
 		filepath.Join(s.Root, "imports"),
-		filepath.Join(s.Root, "worktrees"),
 		filepath.Join(s.Root, ".search"),
 	}
 	for _, d := range dirs {

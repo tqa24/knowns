@@ -7,17 +7,27 @@ import (
 	"strings"
 
 	"github.com/howznguyen/knowns/internal/codegen"
+	"github.com/howznguyen/knowns/internal/storage"
 	"github.com/spf13/cobra"
 )
 
 var syncCmd = &cobra.Command{
 	Use:   "sync",
-	Short: "Sync skills and agent instruction files",
-	Long: `Sync skills and agent instruction files to their platform-specific locations.
+	Short: "Sync project from config.json (skills, instructions, model, search index)",
+	Long: `Apply project configuration from .knowns/config.json.
 
-This command copies embedded built-in skills from internal/instructions/skills/ to the
-appropriate platform directories and generates/updates agent instruction files
-(KNOWNS.md, CLAUDE.md, GEMINI.md, AGENTS.md, .github/copilot-instructions.md).`,
+This is the recommended command after cloning a repo with Knowns:
+  git clone <repo>
+  knowns sync
+
+It reads config.json and sets up everything locally:
+  • Skills — copies built-in skills to platform directories
+  • Instructions — generates agent instruction files (KNOWNS.md, CLAUDE.md, etc.)
+  • Model — downloads the configured embedding model (if not installed)
+  • Search index — rebuilds the semantic search index
+  • Git integration — applies .gitignore rules for the configured tracking mode
+
+Use flags to sync only specific parts.`,
 	RunE: runSync,
 }
 
@@ -30,42 +40,129 @@ func runSync(cmd *cobra.Command, args []string) error {
 	force, _ := cmd.Flags().GetBool("force")
 	skillsOnly, _ := cmd.Flags().GetBool("skills")
 	instructionsOnly, _ := cmd.Flags().GetBool("instructions")
+	modelOnly, _ := cmd.Flags().GetBool("model")
 	platform, _ := cmd.Flags().GetString("platform")
 
-	// If neither flag is set, sync both
-	syncSkills := !instructionsOnly || skillsOnly
-	syncInstructions := !skillsOnly || instructionsOnly
+	// If no specific flag is set, sync everything
+	specificFlag := skillsOnly || instructionsOnly || modelOnly
+	syncSkills := !specificFlag || skillsOnly
+	syncInstructions := !specificFlag || instructionsOnly
+	syncModel := !specificFlag || modelOnly
+	syncIndex := !specificFlag
 
-	// Derive the project root directory (parent of .knowns/)
-	projectRoot := filepath.Dir(store.Root)
-
-	synced := 0
-
-	// Load enabled platforms from project config (empty = all).
-	var configPlatforms []string
-	if cfg, err := store.Config.Load(); err == nil {
-		configPlatforms = cfg.Settings.Platforms
+	// Load project config
+	cfg, err := store.Config.Load()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
 	}
 
+	projectRoot := filepath.Dir(store.Root)
+	configPlatforms := cfg.Settings.Platforms
+
+	fmt.Printf("Syncing project %s from config.json...\n\n", StyleBold.Render(cfg.Name))
+
+	// 1. Skills
 	if syncSkills {
 		if err := runSyncSkillsForPlatforms(projectRoot, force, configPlatforms); err != nil {
 			return fmt.Errorf("sync skills: %w", err)
 		}
-		synced++
+		fmt.Println()
 	}
 
+	// 2. Instructions
 	if syncInstructions {
-		// --platform flag overrides config; if neither set use config platforms.
 		effectivePlatform := platform
 		if err := runSyncInstructions(projectRoot, effectivePlatform, force, configPlatforms); err != nil {
 			return fmt.Errorf("sync instructions: %w", err)
 		}
-		synced++
+		fmt.Println()
 	}
 
-	if synced > 0 {
-		fmt.Println(RenderSuccess("Sync complete."))
+	// 3. Git integration
+	if !specificFlag {
+		if cfg.Settings.GitTrackingMode != "" {
+			fmt.Printf("Applying git tracking mode: %s\n", StyleBold.Render(cfg.Settings.GitTrackingMode))
+			if err := writeKnownsGitignore(projectRoot, cfg.Settings.GitTrackingMode); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: git integration failed: %v\n", err)
+			} else {
+				fmt.Println(RenderSuccess("Git integration configured."))
+			}
+			fmt.Println()
+		}
 	}
+
+	// 4. Model download
+	if syncModel {
+		if err := runSyncModel(store, force); err != nil {
+			// Non-fatal — warn and continue
+			fmt.Fprintf(os.Stderr, "Warning: model sync failed: %v\n", err)
+			fmt.Println()
+		}
+	}
+
+	// 5. Reindex
+	if syncIndex {
+		fmt.Println(StyleBold.Render("Rebuilding search index..."))
+		if err := runReindex(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: reindex failed: %v\n", err)
+		}
+		fmt.Println()
+	}
+
+	fmt.Println(RenderSuccess("Sync complete."))
+	return nil
+}
+
+// runSyncModel downloads the embedding model configured in config.json if not already installed.
+func runSyncModel(store *storage.Store, force bool) error {
+	cfg, err := store.Config.Load()
+	if err != nil {
+		return nil // no config, skip silently
+	}
+
+	if cfg.Settings.SemanticSearch == nil || !cfg.Settings.SemanticSearch.Enabled {
+		fmt.Println(StyleDim.Render("Semantic search not enabled. Skipping model download."))
+		return nil
+	}
+
+	modelID := cfg.Settings.SemanticSearch.Model
+	if modelID == "" {
+		return nil
+	}
+
+	var selected *embeddingModel
+	for i := range supportedModels {
+		if supportedModels[i].ID == modelID {
+			selected = &supportedModels[i]
+			break
+		}
+	}
+	if selected == nil {
+		return fmt.Errorf("unknown model %q in config", modelID)
+	}
+
+	if isModelInstalled(selected) && !force {
+		fmt.Printf("%s Model %s already installed.\n", RenderSuccess("✓"), selected.Name)
+		return nil
+	}
+
+	fmt.Printf("Downloading embedding model: %s (~%dMB)...\n", StyleBold.Render(selected.Name), selected.SizeMB)
+
+	steps, alreadyInstalled, err := buildSemanticDownloadSteps(modelID)
+	if err != nil {
+		return err
+	}
+	if alreadyInstalled {
+		fmt.Printf("%s Model %s already installed.\n", RenderSuccess("✓"), selected.Name)
+		return nil
+	}
+
+	if err := runInitSteps(steps); err != nil {
+		return fmt.Errorf("model download failed: %w", err)
+	}
+
+	fmt.Println(RenderSuccess(fmt.Sprintf("Model %s installed.", selected.Name)))
+	fmt.Println()
 	return nil
 }
 
@@ -194,6 +291,7 @@ func init() {
 	syncCmd.Flags().Bool("force", false, "Force resync (overwrite existing files)")
 	syncCmd.Flags().Bool("skills", false, "Sync skills only")
 	syncCmd.Flags().Bool("instructions", false, "Sync instruction files only")
+	syncCmd.Flags().Bool("model", false, "Download embedding model only")
 	syncCmd.Flags().String("platform", "", "Sync specific platform (claude, gemini, copilot, agents)")
 
 	rootCmd.AddCommand(syncCmd)

@@ -9,13 +9,14 @@ Create a specification document for a feature using SDD (Spec-Driven Development
 
 **Announce:** "Using kn-spec to create spec for [name]."
 
-**Core principle:** SPEC FIRST → REVIEW → APPROVE → THEN PLAN TASKS.
+**Core principle:** EXPLORE DECISIONS → SPEC → REVIEW → APPROVE → THEN PLAN TASKS.
 
 ## Inputs
 
 - Feature name
 - User requirements, scenarios, constraints, and non-functional expectations
 - Related docs/tasks, if any
+- Optional: `--skip-explore` to jump straight to spec writing (for trivial features)
 
 ## Spec Quality Rules
 
@@ -24,6 +25,86 @@ Create a specification document for a feature using SDD (Spec-Driven Development
 - Scenarios should cover happy path plus at least important edge cases
 - Open questions should stay explicit instead of being buried in prose
 - If background knowledge is too broad for the spec body, move it into a supporting doc and reference it
+
+---
+
+## Phase 0: Exploring (Socratic Dialog)
+
+Extract decisions from the user BEFORE writing the spec. This prevents the agent from guessing wrong and writing a spec the user didn't want.
+
+### 0.1 Scope Assessment
+
+Assess from the request + a quick project scan:
+
+- **Quick** — bounded, low ambiguity (rename a flag, tweak a label). Skip to Step 1 (or use `--skip-explore`).
+- **Standard** — normal feature with decisions to extract. Run full Phase 0.
+- **Deep** — cross-cutting, strategic, or highly ambiguous. Run Phase 0 with extra depth.
+
+### 0.2 Domain Classification
+
+Classify what is being built — this determines which gray areas to probe:
+
+| Type | What it is | Example |
+|------|-----------|---------|
+| **SEE** | Something users look at | UI, dashboard, layout |
+| **CALL** | Something callers invoke | API, CLI command, webhook |
+| **RUN** | Something that executes | Background job, script, service |
+| **READ** | Something users read | Docs, emails, reports |
+| **ORGANIZE** | Something being structured | Data model, file layout, taxonomy |
+
+One feature can span types (e.g., SEE + CALL).
+
+### 0.3 Gray Area Identification
+
+Generate 2–4 gray areas for this feature. A gray area is a decision that:
+- Affects implementation specifics
+- Was not stated in the request
+- Would force the planner to make an assumption without it
+
+**Quick codebase scout** (grep only — no deep analysis):
+- Check what already exists that's related
+- Annotate options with what the codebase already has
+
+**Filter OUT:**
+- Technical implementation details (architecture, library choices) — that's planning's job
+- Performance concerns
+- Scope expansion (new capabilities not requested)
+
+### 0.4 Socratic Exploration
+
+<HARD-GATE>
+Ask ONE question at a time. Wait for the user's response before asking the next.
+Do NOT batch questions. Do NOT answer your own questions.
+Do NOT proceed to spec writing until all gray areas have been discussed.
+</HARD-GATE>
+
+**Rules:**
+1. One question per message — never bundled
+2. Single-select multiple choice preferred over open-ended
+3. Start broad (what/why/for whom) then narrow (constraints, edge cases)
+4. 3–4 questions per gray area, then checkpoint:
+   > "More questions about [area], or move on? (Remaining: [unvisited areas])"
+
+**Scope creep response** — when user suggests something outside scope:
+> "[Feature X] is a new capability — will be a separate work item. Noted. Back to [current area]: [question]"
+
+**Decision locking** — after each gray area is resolved:
+> "Lock decision D[N]: [summary]. Confirmed?"
+
+Assign stable IDs: D1, D2, D3... These IDs will be referenced in the spec.
+
+### 0.5 Transition to Spec
+
+After all gray areas resolved, summarize locked decisions:
+
+> Decisions locked:
+> - D1: [summary]
+> - D2: [summary]
+> - D3: [summary]
+>
+> Viết spec dựa trên các decisions này...
+
+---
 
 ## Step 1: Get Feature Name
 
@@ -67,6 +148,12 @@ mcp__knowns__create_doc({
 ## Overview
 
 Brief description of the feature and its purpose.
+
+## Locked Decisions
+
+Decisions extracted during exploring phase:
+- D1: [Decision summary]
+- D2: [Decision summary]
 
 ## Requirements
 
@@ -177,41 +264,52 @@ After spec is approved:
 ```
 ✓ Spec approved: @doc/specs/<name>
 
-This spec will generate multiple tasks. Ready to create them?
+Bước tiếp theo — chọn 1:
 
-Run: /kn-plan --from @doc/specs/<name>
+1. Làm từng task (review từng bước):
+   /kn-plan --from @doc/specs/<name>
+
+2. Chạy hết luôn (auto pipeline, không review giữa chừng):
+   /kn-go specs/<name>
 ```
 
-**Show what will happen:**
-```
-This will:
-1. Parse requirements from spec
-2. Generate tasks with ACs
-3. Link all tasks to this spec
-4. You review and approve before creation
-```
+**Option 1 (`kn-plan --from`):**
+- Parse requirements → preview tasks → user approve → create tasks
+- Sau đó `/kn-plan <id>` + `/kn-implement <id>` từng task
+
+**Option 2 (`kn-go`):**
+- Generate tasks → plan → implement all → verify → commit
+- Chỉ dừng 1 lần ở cuối để confirm commit
+- Tự động skip tasks đã done nếu re-run
 
 ---
 
 ## Related Skills
 
-- `/kn-plan --from @doc/specs/<name>` - Generate tasks from this spec
+- `/kn-plan --from @doc/specs/<name>` - Generate tasks from this spec (manual flow)
+- `/kn-go specs/<name>` - Execute entire spec in one run (auto pipeline)
 - `/kn-plan <id>` - Plan individual task
 - `/kn-verify` - Verify implementation against spec
 
 ## Checklist
 
+- [ ] Scope assessed (quick/standard/deep)
+- [ ] Gray areas identified and explored (Phase 0)
+- [ ] Decisions locked with stable IDs (D1, D2...)
 - [ ] Feature name determined
 - [ ] Requirements gathered
 - [ ] Spec created in specs/ folder
-- [ ] Includes: Overview, Requirements, ACs, Scenarios
+- [ ] Includes: Overview, Locked Decisions, Requirements, ACs, Scenarios
 - [ ] User reviewed
 - [ ] Status updated (draft → approved)
-- [ ] **Next step suggested** (/kn-plan --from)
+- [ ] **Next step suggested** (/kn-plan --from or /kn-go)
 
 ## Red Flags
 
 - Creating spec without user input
+- Skipping Phase 0 for standard/deep scope features
+- Batching multiple questions in one message (HARD GATE violation)
+- Answering your own questions during exploring
 - Skipping review step
 - Approving without explicit user confirmation
 - **Not suggesting task creation after approval**

@@ -6,20 +6,23 @@ Skills are reusable AI workflows bundled with Knowns.
 
 ## Built-in Skills
 
-Knowns currently ships these built-in skills:
+Knowns ships 13 built-in skills:
 
 | Skill | Trigger | Purpose |
 | ----- | ------- | ------- |
-| `kn-init` | `/kn-init` | Read project context and current state |
-| `kn-plan` | `/kn-plan` | Create an implementation plan |
+| `kn-init` | `/kn-init` | Read project context, load critical learnings |
+| `kn-spec` | `/kn-spec` | Create spec with Socratic exploring phase (SDD) |
+| `kn-plan` | `/kn-plan` | Create implementation plan with pre-execution validation |
 | `kn-research` | `/kn-research` | Research docs and code before changes |
 | `kn-implement` | `/kn-implement` | Execute an approved task |
-| `kn-verify` | `/kn-verify` | Validate work and report coverage |
-| `kn-spec` | `/kn-spec` | Create a spec document |
-| `kn-template` | `/kn-template` | Work with templates |
-| `kn-extract` | `/kn-extract` | Extract reusable knowledge |
+| `kn-review` | `/kn-review` | Multi-perspective code review (P1/P2/P3 severity) |
+| `kn-verify` | `/kn-verify` | SDD verification and coverage reporting |
+| `kn-commit` | `/kn-commit` | Commit changes with conventional format |
+| `kn-extract` | `/kn-extract` | Extract patterns, decisions, failures + consolidation |
 | `kn-doc` | `/kn-doc` | Create or update documentation |
-| `kn-commit` | `/kn-commit` | Commit changes safely |
+| `kn-template` | `/kn-template` | Work with code generation templates |
+| `kn-go` | `/kn-go` | Full pipeline from approved spec (no review gates) |
+| `kn-debug` | `/kn-debug` | Structured debugging: triage → fix → learn |
 
 ---
 
@@ -60,13 +63,41 @@ The exact synced output depends on the active platforms and sync implementation 
 
 ## Typical Workflow
 
-Common flow when working with tasks:
+### Manual flow (step by step)
 
 ```text
-/kn-init -> /kn-research -> /kn-plan -> /kn-implement -> /kn-verify -> /kn-commit
+/kn-init → /kn-research → /kn-spec → /kn-plan --from → /kn-plan <id> → /kn-implement <id> → /kn-review → /kn-commit → /kn-extract
 ```
 
-This mirrors the Knowns workflow of reading context first, planning before implementation, validating before completion, and only then committing.
+### Go mode (full pipeline from approved spec)
+
+After creating and approving a spec with `/kn-spec`, run the entire pipeline in one shot:
+
+```text
+/kn-spec <name> → approve → /kn-go specs/<name>
+```
+
+Go mode generates tasks, plans, implements, verifies, and commits — only stopping once at the end for commit confirmation.
+
+### Debugging flow
+
+```text
+/kn-debug → /kn-review → /kn-commit
+```
+
+### New skills detail
+
+**`kn-review`** — Runs after implementation, before commit. Reviews code from 4 perspectives (quality, architecture, security, completeness). Findings are triaged as P1 (blocks commit), P2 (should fix), P3 (nice to have). P1 findings are a hard gate.
+
+**`kn-go`** — Full pipeline execution from an approved spec. Generates tasks → plans each → implements each → verifies SDD coverage → commits. Supports `--dry-run` to preview, re-run to continue from where it left off, and context budget checkpointing.
+
+**`kn-debug`** — Structured debugging: classify → check known patterns → reproduce → root cause → fix → verify → capture learning. Integrates with Knowns search to find previously documented solutions.
+
+**`kn-extract` (enhanced)** — Now captures three categories: patterns, decisions (good/bad/surprise/tradeoff), and failures. Promotes critical learnings to `learnings/critical-patterns` which is read by `kn-init`. Use `--consolidate` to review and merge all existing learnings.
+
+**`kn-spec` (enhanced)** — Now includes Phase 0 Socratic exploring: assesses scope, classifies domain, identifies gray areas, asks one question at a time to lock decisions before writing the spec. Use `--skip-explore` for trivial features.
+
+**`kn-plan` (enhanced)** — Now includes pre-execution plan check before approval: AC coverage, scope sizing, dependency check, and risk assessment.
 
 ---
 
