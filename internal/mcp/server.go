@@ -3,11 +3,12 @@
 package mcp
 
 import (
+	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/howznguyen/knowns/internal/mcp/handlers"
 	"github.com/howznguyen/knowns/internal/storage"
-	mcpgo "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
 
@@ -23,7 +24,13 @@ type MCPServer struct {
 }
 
 // NewMCPServer creates and configures a new MCPServer with all registered tools.
-func NewMCPServer() *MCPServer {
+// projectHint is an optional project root path. Detection order:
+//  1. projectHint (from --project flag or KNOWNS_PROJECT env)
+//  2. Walk up from cwd looking for .knowns/
+//
+// If a project is found, it is automatically set so callers don't need to call
+// set_project first. set_project can still be used to switch projects at runtime.
+func NewMCPServer(projectHint string) *MCPServer {
 	s := &MCPServer{}
 
 	s.srv = server.NewMCPServer(
@@ -62,15 +69,52 @@ func NewMCPServer() *MCPServer {
 	handlers.RegisterTemplateTools(s.srv, getStore)
 	handlers.RegisterValidateTools(s.srv, getStore)
 
+	// Auto-detect project from hint or cwd.
+	s.autoDetectProject(setStore, projectHint)
+
 	return s
+}
+
+// autoDetectProject tries to find and set the project store automatically.
+// It checks the hint path first, then walks up from cwd.
+func (s *MCPServer) autoDetectProject(setStore func(*storage.Store, string), hint string) {
+	// 1. Try explicit hint path
+	if hint != "" {
+		knownsDir := filepath.Join(hint, ".knowns")
+		if info, err := os.Stat(knownsDir); err == nil && info.IsDir() {
+			store := storage.NewStore(knownsDir)
+			if _, err := store.Config.Load(); err == nil {
+				setStore(store, hint)
+				return
+			}
+		}
+	}
+
+	// 2. Walk up from cwd
+	cwd, err := os.Getwd()
+	if err != nil {
+		return
+	}
+
+	dir := cwd
+	for {
+		knownsDir := filepath.Join(dir, ".knowns")
+		if info, err := os.Stat(knownsDir); err == nil && info.IsDir() {
+			store := storage.NewStore(knownsDir)
+			if _, err := store.Config.Load(); err == nil {
+				setStore(store, dir)
+			}
+			return
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return // reached filesystem root
+		}
+		dir = parent
+	}
 }
 
 // Start begins serving MCP requests over stdio transport.
 func (s *MCPServer) Start() error {
 	return server.ServeStdio(s.srv)
-}
-
-// noStore returns a standard error result when no project has been set.
-func noStore() *mcpgo.CallToolResult {
-	return mcpgo.NewToolResultError("No project set. Call set_project first.")
 }

@@ -26,21 +26,21 @@ func RegisterTimeTools(s *server.MCPServer, getStore func() *storage.Store) {
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			store := getStore()
 			if store == nil {
-				return mcp.NewToolResultError("No project set. Call set_project first."), nil
+				return noProjectError()
 			}
 
 			taskID, err := req.RequireString("taskId")
 			if err != nil {
-				return mcp.NewToolResultError(err.Error()), nil
+				return errResult(err.Error())
 			}
 
 			task, err := store.Tasks.Get(taskID)
 			if err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Task not found: %s", err.Error())), nil
+				return errNotFound("Task", err)
 			}
 
 			if err := store.Time.Start(task.ID, task.Title); err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Failed to start timer: %s", err.Error())), nil
+				return errFailed("start timer", err)
 			}
 
 			// Notify server for real-time UI updates.
@@ -49,7 +49,7 @@ func RegisterTimeTools(s *server.MCPServer, getStore func() *storage.Store) {
 			result := map[string]any{
 				"success": true,
 				"taskId":  task.ID,
-				"message": fmt.Sprintf("Timer started for task '%s'", task.Title),
+				"message": fmt.Sprintf(MsgTimerStarted, task.Title),
 			}
 			out, _ := json.MarshalIndent(result, "", "  ")
 			return mcp.NewToolResultText(string(out)), nil
@@ -68,17 +68,17 @@ func RegisterTimeTools(s *server.MCPServer, getStore func() *storage.Store) {
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			store := getStore()
 			if store == nil {
-				return mcp.NewToolResultError("No project set. Call set_project first."), nil
+				return noProjectError()
 			}
 
 			taskID, err := req.RequireString("taskId")
 			if err != nil {
-				return mcp.NewToolResultError(err.Error()), nil
+				return errResult(err.Error())
 			}
 
 			entry, err := store.Time.Stop(taskID)
 			if err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Failed to stop timer: %s", err.Error())), nil
+				return errFailed("stop timer", err)
 			}
 
 			// Update task's timeSpent.
@@ -126,26 +126,26 @@ func RegisterTimeTools(s *server.MCPServer, getStore func() *storage.Store) {
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			store := getStore()
 			if store == nil {
-				return mcp.NewToolResultError("No project set. Call set_project first."), nil
+				return noProjectError()
 			}
 
 			taskID, err := req.RequireString("taskId")
 			if err != nil {
-				return mcp.NewToolResultError(err.Error()), nil
+				return errResult(err.Error())
 			}
 			durationStr, err := req.RequireString("duration")
 			if err != nil {
-				return mcp.NewToolResultError(err.Error()), nil
+				return errResult(err.Error())
 			}
 
 			durationSecs, err := models.ParseDuration(durationStr)
 			if err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Invalid duration %q: %s", durationStr, err.Error())), nil
+				return errResultf("Invalid duration %q: %s", durationStr, err.Error())
 			}
 
 			task, err := store.Tasks.Get(taskID)
 			if err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Task not found: %s", err.Error())), nil
+				return errNotFound("Task", err)
 			}
 
 			args := req.GetArguments()
@@ -171,7 +171,7 @@ func RegisterTimeTools(s *server.MCPServer, getStore func() *storage.Store) {
 			}
 
 			if err := store.Time.SaveEntry(taskID, entry); err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Failed to save time entry: %s", err.Error())), nil
+				return errFailed("save time entry", err)
 			}
 
 			// Update task's timeSpent.
@@ -212,7 +212,7 @@ func RegisterTimeTools(s *server.MCPServer, getStore func() *storage.Store) {
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			store := getStore()
 			if store == nil {
-				return mcp.NewToolResultError("No project set. Call set_project first."), nil
+				return noProjectError()
 			}
 
 			args := req.GetArguments()
@@ -234,7 +234,7 @@ func RegisterTimeTools(s *server.MCPServer, getStore func() *storage.Store) {
 
 			allEntries, err := store.Time.GetAllEntries()
 			if err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Failed to load time entries: %s", err.Error())), nil
+				return errFailed("load time entries", err)
 			}
 
 			tasks, _ := store.Tasks.List()

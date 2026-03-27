@@ -58,12 +58,12 @@ func RegisterTaskTools(s *server.MCPServer, getStore func() *storage.Store) {
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			store := getStore()
 			if store == nil {
-				return mcp.NewToolResultError("No project set. Call set_project first."), nil
+				return noProjectError()
 			}
 
 			title, err := req.RequireString("title")
 			if err != nil {
-				return mcp.NewToolResultError(err.Error()), nil
+				return errResult(err.Error())
 			}
 
 			args := req.GetArguments()
@@ -119,7 +119,7 @@ func RegisterTaskTools(s *server.MCPServer, getStore func() *storage.Store) {
 			}
 
 			if err := store.Tasks.Create(task); err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Failed to create task: %s", err.Error())), nil
+				return errFailed("create task", err)
 			}
 
 			// Record initial version.
@@ -150,17 +150,17 @@ func RegisterTaskTools(s *server.MCPServer, getStore func() *storage.Store) {
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			store := getStore()
 			if store == nil {
-				return mcp.NewToolResultError("No project set. Call set_project first."), nil
+				return noProjectError()
 			}
 
 			taskID, err := req.RequireString("taskId")
 			if err != nil {
-				return mcp.NewToolResultError(err.Error()), nil
+				return errResult(err.Error())
 			}
 
 			task, err := store.Tasks.Get(taskID)
 			if err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Task not found: %s", err.Error())), nil
+				return errNotFound("Task", err)
 			}
 
 			// Load time entries.
@@ -241,17 +241,17 @@ func RegisterTaskTools(s *server.MCPServer, getStore func() *storage.Store) {
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			store := getStore()
 			if store == nil {
-				return mcp.NewToolResultError("No project set. Call set_project first."), nil
+				return noProjectError()
 			}
 
 			taskID, err := req.RequireString("taskId")
 			if err != nil {
-				return mcp.NewToolResultError(err.Error()), nil
+				return errResult(err.Error())
 			}
 
 			task, err := store.Tasks.Get(taskID)
 			if err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Task not found: %s", err.Error())), nil
+				return errNotFound("Task", err)
 			}
 
 			// Snapshot old state for version tracking.
@@ -361,7 +361,7 @@ func RegisterTaskTools(s *server.MCPServer, getStore func() *storage.Store) {
 			task.UpdatedAt = time.Now().UTC()
 
 			if err := store.Tasks.Update(task); err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Failed to update task: %s", err.Error())), nil
+				return errFailed("update task", err)
 			}
 
 			// Record version if fields changed.
@@ -405,12 +405,12 @@ func RegisterTaskTools(s *server.MCPServer, getStore func() *storage.Store) {
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			store := getStore()
 			if store == nil {
-				return mcp.NewToolResultError("No project set. Call set_project first."), nil
+				return noProjectError()
 			}
 
 			tasks, err := store.Tasks.List()
 			if err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Failed to list tasks: %s", err.Error())), nil
+				return errFailed("list tasks", err)
 			}
 
 			args := req.GetArguments()
@@ -457,17 +457,17 @@ func RegisterTaskTools(s *server.MCPServer, getStore func() *storage.Store) {
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			store := getStore()
 			if store == nil {
-				return mcp.NewToolResultError("No project set. Call set_project first."), nil
+				return noProjectError()
 			}
 
 			taskID, err := req.RequireString("taskId")
 			if err != nil {
-				return mcp.NewToolResultError(err.Error()), nil
+				return errResult(err.Error())
 			}
 
 			history, err := store.Versions.GetHistory(taskID)
 			if err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Failed to get task history: %s", err.Error())), nil
+				return errFailed("get task history", err)
 			}
 
 			out, _ := json.MarshalIndent(history, "", "  ")
@@ -490,13 +490,13 @@ func RegisterTaskTools(s *server.MCPServer, getStore func() *storage.Store) {
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			store := getStore()
 			if store == nil {
-				return mcp.NewToolResultError("No project set. Call set_project first."), nil
+				return noProjectError()
 			}
 
 			args := req.GetArguments()
 			taskID, ok := stringArg(args, "taskId")
 			if !ok || taskID == "" {
-				return mcp.NewToolResultError("taskId is required"), nil
+				return errResult(ErrTaskIDReq)
 			}
 
 			// Default to dry-run for safety.
@@ -509,20 +509,20 @@ func RegisterTaskTools(s *server.MCPServer, getStore func() *storage.Store) {
 
 			task, err := store.Tasks.Get(taskID)
 			if err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Task not found: %s", err.Error())), nil
+				return errNotFound("Task", err)
 			}
 
 			if dryRun {
 				out, _ := json.MarshalIndent(map[string]any{
 					"dryRun":  true,
-					"message": fmt.Sprintf("Would delete task %s: %s", task.ID, task.Title),
+					"message": fmt.Sprintf(MsgWouldDeleteTask, task.ID, task.Title),
 					"task":    task,
 				}, "", "  ")
 				return mcp.NewToolResultText(string(out)), nil
 			}
 
 			if err := store.Tasks.Delete(taskID); err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Failed to delete task: %s", err.Error())), nil
+				return errFailed("delete task", err)
 			}
 
 			search.BestEffortRemoveTask(store, taskID)
@@ -532,7 +532,7 @@ func RegisterTaskTools(s *server.MCPServer, getStore func() *storage.Store) {
 
 			out, _ := json.MarshalIndent(map[string]any{
 				"deleted": true,
-				"message": fmt.Sprintf("Deleted task %s: %s", task.ID, task.Title),
+				"message": fmt.Sprintf(MsgDeletedTask, task.ID, task.Title),
 			}, "", "  ")
 			return mcp.NewToolResultText(string(out)), nil
 		},

@@ -21,12 +21,12 @@ func RegisterTemplateTools(s *server.MCPServer, getStore func() *storage.Store) 
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			store := getStore()
 			if store == nil {
-				return mcp.NewToolResultError("No project set. Call set_project first."), nil
+				return noProjectError()
 			}
 
 			templates, err := store.Templates.List()
 			if err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Failed to list templates: %s", err.Error())), nil
+				return errFailed("list templates", err)
 			}
 
 			if templates == nil {
@@ -50,17 +50,17 @@ func RegisterTemplateTools(s *server.MCPServer, getStore func() *storage.Store) 
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			store := getStore()
 			if store == nil {
-				return mcp.NewToolResultError("No project set. Call set_project first."), nil
+				return noProjectError()
 			}
 
 			name, err := req.RequireString("name")
 			if err != nil {
-				return mcp.NewToolResultError(err.Error()), nil
+				return errResult(err.Error())
 			}
 
 			tmpl, err := store.Templates.Get(name)
 			if err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Template not found: %s", err.Error())), nil
+				return errNotFound("Template", err)
 			}
 
 			out, _ := json.MarshalIndent(tmpl, "", "  ")
@@ -86,12 +86,12 @@ func RegisterTemplateTools(s *server.MCPServer, getStore func() *storage.Store) 
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			store := getStore()
 			if store == nil {
-				return mcp.NewToolResultError("No project set. Call set_project first."), nil
+				return noProjectError()
 			}
 
 			name, err := req.RequireString("name")
 			if err != nil {
-				return mcp.NewToolResultError(err.Error()), nil
+				return errResult(err.Error())
 			}
 
 			args := req.GetArguments()
@@ -121,7 +121,7 @@ func RegisterTemplateTools(s *server.MCPServer, getStore func() *storage.Store) 
 
 			tmpl, err := store.Templates.Get(name)
 			if err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Template not found: %s", err.Error())), nil
+				return errNotFound("Template", err)
 			}
 
 			if dryRun {
@@ -139,7 +139,7 @@ func RegisterTemplateTools(s *server.MCPServer, getStore func() *storage.Store) 
 					"variables": variables,
 					"actions":   tmpl.Actions,
 					"files":     files,
-					"message":   "Dry run: no files were written. Set dryRun: false to generate files.",
+					"message":   MsgDryRunTemplate,
 				}
 				out, _ := json.MarshalIndent(result, "", "  ")
 				return mcp.NewToolResultText(string(out)), nil
@@ -151,7 +151,7 @@ func RegisterTemplateTools(s *server.MCPServer, getStore func() *storage.Store) 
 				"success":   false,
 				"template":  tmpl.Name,
 				"variables": variables,
-				"message":   "Template execution (non-dry-run) is not yet implemented in the Go MCP server. Use the TypeScript CLI for template generation.",
+				"message":   MsgTemplateNotImpl,
 			}
 			out, _ := json.MarshalIndent(result, "", "  ")
 			return mcp.NewToolResultText(string(out)), nil
@@ -176,19 +176,19 @@ func RegisterTemplateTools(s *server.MCPServer, getStore func() *storage.Store) 
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			store := getStore()
 			if store == nil {
-				return mcp.NewToolResultError("No project set. Call set_project first."), nil
+				return noProjectError()
 			}
 
 			name, err := req.RequireString("name")
 			if err != nil {
-				return mcp.NewToolResultError(err.Error()), nil
+				return errResult(err.Error())
 			}
 
 			args := req.GetArguments()
 			description, _ := stringArg(args, "description")
 
 			if err := store.Templates.Create(name, description); err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Failed to create template: %s", err.Error())), nil
+				return errFailed("create template", err)
 			}
 
 			// Load the created template to return its details.

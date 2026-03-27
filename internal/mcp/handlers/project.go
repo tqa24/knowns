@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 
@@ -108,7 +107,7 @@ func RegisterProjectTools(
 	// set_project
 	s.AddTool(
 		mcp.NewTool("set_project",
-			mcp.WithDescription("Set the active Knowns project. Must be called before any task, doc, or time operations."),
+			mcp.WithDescription("Set the active Knowns project. The project is auto-detected from cwd on server start, so this is only needed to switch projects at runtime."),
 			mcp.WithString("projectRoot",
 				mcp.Required(),
 				mcp.Description("Absolute path to the project root directory (must contain a .knowns/ folder)"),
@@ -117,12 +116,12 @@ func RegisterProjectTools(
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			projectRoot, err := req.RequireString("projectRoot")
 			if err != nil {
-				return mcp.NewToolResultError(err.Error()), nil
+				return errResult(err.Error())
 			}
 
 			knownsDir := filepath.Join(projectRoot, ".knowns")
 			if _, err := os.Stat(knownsDir); err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("No .knowns/ directory found at %s", projectRoot)), nil
+				return errResultf(ErrNoKnownsDir, projectRoot)
 			}
 
 			store := storage.NewStore(knownsDir)
@@ -130,7 +129,7 @@ func RegisterProjectTools(
 			// Validate by loading config.
 			proj, err := store.Config.Load()
 			if err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Failed to load project config: %s", err.Error())), nil
+				return errResultf(ErrLoadConfig, err.Error())
 			}
 
 			setStore(store, projectRoot)
@@ -158,7 +157,7 @@ func RegisterProjectTools(
 				result := map[string]any{
 					"projectRoot": nil,
 					"valid":       false,
-					"message":     "No project set. Call set_project first.",
+					"message":     ErrNoProject,
 				}
 				out, _ := json.MarshalIndent(result, "", "  ")
 				return mcp.NewToolResultText(string(out)), nil
