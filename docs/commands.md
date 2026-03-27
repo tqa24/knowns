@@ -695,12 +695,17 @@ knowns init my-project
 knowns init --force
 ```
 
-**Wizard prompts:**
+**Wizard prompts (each shown separately):**
 
-- Project name
-- Git tracking mode (`git-tracked` or `git-ignored`)
-- AI guidelines type (`CLI` or `MCP`)
-- AI agent files to sync (CLAUDE.md, AGENTS.md, etc.)
+1. Project name
+2. Git tracking mode (`git-tracked`, `git-ignored`, or `none`)
+3. AI platforms to integrate (multi-select)
+4. Enable Chat UI
+5. Auto-sync skills on update
+6. Enable semantic search
+7. Select embedding model (if semantic enabled)
+
+When using `--force`, all fields are pre-populated from existing `config.json`.
 
 **When MCP is selected:**
 
@@ -711,9 +716,10 @@ knowns init --force
 | Mode          | Description                                                 |
 | ------------- | ----------------------------------------------------------- |
 | `git-tracked` | All `.knowns/` files tracked in git (recommended for teams) |
-| `git-ignored` | Only docs/templates tracked, tasks/config ignored (personal use) |
+| `git-ignored` | `config.json`, docs, and templates tracked; tasks stay local |
+| `none`        | No `.gitignore` changes; you manage manually |
 
-When `git-ignored` is selected, Knowns automatically updates `.gitignore` to exclude task files while keeping docs and templates tracked.
+Both `git-tracked` and `git-ignored` allow `config.json` to be pushed, enabling `knowns sync` after cloning.
 
 ### `knowns config`
 
@@ -793,7 +799,7 @@ This command currently has no documented flags in the CLI help.
 
 ### `knowns sync`
 
-Sync skills and agent instruction files.
+Apply project configuration from `.knowns/config.json`. Recommended after cloning a repo with Knowns.
 
 ```bash
 knowns sync [options]
@@ -802,9 +808,25 @@ knowns sync [options]
 | Option           | Description                                                 |
 | ---------------- | ----------------------------------------------------------- |
 | `--force`        | Force resync (overwrite existing files)                     |
-| `--instructions` | Sync instruction files only                                 |
-| `--platform`     | Sync a specific platform (`claude`, `gemini`, `copilot`, `agents`) |
 | `--skills`       | Sync skills only                                            |
+| `--instructions` | Sync instruction files only                                 |
+| `--model`        | Download embedding model only                               |
+| `--platform`     | Sync a specific platform (`claude`, `gemini`, `copilot`, `agents`) |
+
+**What it does (in order):**
+
+1. Skills — copies built-in skills to platform directories
+2. Instructions — generates agent instruction files for configured platforms
+3. Git integration — applies `.gitignore` rules based on `gitTrackingMode`
+4. Model download — downloads configured embedding model if not installed
+5. Search index — rebuilds the semantic search index
+
+**After cloning a repo:**
+
+```bash
+git clone <repo>
+knowns sync        # sets up everything from config.json
+```
 
 **Supported instruction files:**
 
@@ -819,14 +841,20 @@ knowns sync [options]
 **Examples:**
 
 ```bash
-# Sync skills and instruction files
+# Full sync (skills + instructions + model + reindex)
 knowns sync
 
 # Sync only skills
 knowns sync --skills
 
+# Download model only
+knowns sync --model
+
 # Sync only instruction files for Claude
 knowns sync --instructions --platform claude
+
+# Force overwrite everything
+knowns sync --force
 ```
 
 ---

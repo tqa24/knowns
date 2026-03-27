@@ -51,6 +51,9 @@ import { OpenCodeModelManagerDialog } from "../OpenCodeModelManagerDialog";
 import { toast } from "../../ui/sonner";
 import type { ChatTodoItem } from "./helpers";
 import { ChatTodoPanel } from "./ChatTodoPanel";
+import { ContextUsageIndicator } from "./ContextUsageIndicator";
+import { useContextUsage } from "../../../hooks/useContextUsage";
+import type { ChatMessage } from "../../../models/chat";
 
 interface ChatInputProps {
   onSend: (message: string, files?: ChatComposerFile[]) => void;
@@ -99,6 +102,11 @@ interface ChatInputProps {
   activePermission?: OpenCodePendingPermission | null;
   restoreValue?: string | null;
   onRestoreValueConsumed?: () => void;
+  messages?: ChatMessage[];
+  sessionModelID?: string;
+  sessionModelName?: string;
+  sessionProviderID?: string;
+  providerResponse?: import("../../../api/client").OpenCodeProviderResponse | null;
 }
 
 export function ChatInput({
@@ -128,6 +136,11 @@ export function ChatInput({
   activePermission = null,
   restoreValue = null,
   onRestoreValueConsumed,
+  messages,
+  sessionModelID,
+  sessionModelName,
+  sessionProviderID,
+  providerResponse,
 }: ChatInputProps) {
   const MAX_TEXTAREA_HEIGHT = 240;
   const [value, setValue] = useState("");
@@ -143,6 +156,8 @@ export function ChatInput({
 
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
+
+  const contextUsage = useContextUsage(messages, sessionModelID, sessionProviderID, providerResponse);
   const [mentionResults, setMentionResults] = useState<{
     tasks: Task[];
     docs: Array<{ path: string; title: string }>;
@@ -449,12 +464,12 @@ export function ChatInput({
   };
 
   return (
-    <div className="shrink-0 bg-transparent px-4 pb-5 pt-3">
-      <div className="mx-auto max-w-4xl space-y-3 px-1 lg:px-5">
+    <div className={cn('shrink-0', 'bg-transparent', 'px-4', 'pb-5', 'pt-3')}>
+      <div className={cn('mx-auto', 'max-w-4xl', 'space-y-3', 'px-1', 'lg:px-5')}>
         <ChatTodoPanel todos={todos} variant="inline" />
         {!questionPending && !permissionPending && quickCommands.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+          <div className={cn('flex', 'flex-wrap', 'items-center', 'gap-2')}>
+            <span className={cn('text-[11px]', 'font-medium', 'uppercase', 'tracking-[0.14em]', 'text-muted-foreground')}>
               Quick commands
             </span>
             {quickCommands.map((command) => (
@@ -463,7 +478,7 @@ export function ChatInput({
                 type="button"
                 onClick={() => onSend(command)}
                 disabled={disabled || questionPending || permissionPending}
-                className="rounded-md border border-border/60 bg-background px-2.5 py-1 text-xs text-foreground transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                className={cn('rounded-md', 'border', 'border-border/60', 'bg-background', 'px-2.5', 'py-1', 'text-xs', 'text-foreground', 'transition-colors', 'hover:bg-accent', 'disabled:cursor-not-allowed', 'disabled:opacity-50')}
                 title={`Run ${command}`}
               >
                 {command}
@@ -472,7 +487,7 @@ export function ChatInput({
           </div>
         )}
         {activeQuestion && onSubmitQuestion && (
-          <div className="rounded-2xl border border-border/50 bg-[#fafaf8] dark:bg-muted/10 p-2 sm:p-3 shadow-sm">
+          <div className={cn('rounded-2xl', 'border', 'border-border/50', 'bg-[#fafaf8]', 'dark:bg-muted/10', 'p-2', 'sm:p-3', 'shadow-sm')}>
             <QuestionBlock
               block={activeQuestion.block}
               variant="prompt"
@@ -496,13 +511,13 @@ export function ChatInput({
           />
         )}
         {!composerLocked && (
-        <div className="relative overflow-visible rounded-2xl border border-border/50 bg-background shadow-sm">
+        <div className={cn('relative', 'overflow-visible', 'rounded-2xl', 'border', 'border-border/50', 'bg-background', 'shadow-sm')}>
             <>
             {visibleSlashItems.length > 0 && (
-              <div className="absolute bottom-full left-4 right-4 z-20 mb-2">
-                <div className="max-h-72 overflow-y-auto rounded-xl border border-border/60 bg-background/95 p-1 shadow-lg backdrop-blur supports-[backdrop-filter]:bg-background/85">
+              <div className={cn('absolute', 'bottom-full', 'left-4', 'right-4', 'z-20', 'mb-2')}>
+                <div className={cn('max-h-72', 'overflow-y-auto', 'rounded-xl', 'border', 'border-border/60', 'bg-background/95', 'p-1', 'shadow-lg', 'backdrop-blur', 'supports-[backdrop-filter]:bg-background/85')}>
                   {filteredWorkflowItems.length > 0 && (
-                    <div className="px-2 pb-1 pt-1 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                    <div className={cn('px-2', 'pb-1', 'pt-1', 'text-[10px]', 'font-medium', 'uppercase', 'tracking-[0.14em]', 'text-muted-foreground')}>
                       Workflow Shortcuts
                     </div>
                   )}
@@ -522,23 +537,23 @@ export function ChatInput({
                             : "hover:bg-accent/60",
                         )}
                       >
-                        <div className="min-w-0 flex-1">
+                        <div className={cn('min-w-0', 'flex-1')}>
                           <div className="font-medium">{skill.name}</div>
                           {skill.description && (
-                            <div className="truncate text-xs text-muted-foreground">{skill.description}</div>
+                            <div className={cn('truncate', 'text-xs', 'text-muted-foreground')}>{skill.description}</div>
                           )}
                         </div>
-                        <span className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+                        <span className={cn('text-[11px]', 'uppercase', 'tracking-[0.14em]', 'text-muted-foreground')}>
                           Insert
                         </span>
                       </button>
                     );
                   })}
                   {filteredWorkflowItems.length > 0 && filteredCommandItems.length > 0 && (
-                    <div className="mx-2 my-1 h-px bg-border/60" />
+                    <div className={cn('mx-2', 'my-1', 'h-px', 'bg-border/60')} />
                   )}
                   {filteredCommandItems.length > 0 && (
-                    <div className="px-2 pb-1 pt-1 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                    <div className={cn('px-2', 'pb-1', 'pt-1', 'text-[10px]', 'font-medium', 'uppercase', 'tracking-[0.14em]', 'text-muted-foreground')}>
                       Actions
                     </div>
                   )}
@@ -560,13 +575,13 @@ export function ChatInput({
                         )}
                         title={skill.template || skill.description || skill.name}
                       >
-                        <div className="min-w-0 flex-1">
+                        <div className={cn('min-w-0', 'flex-1')}>
                           <div className="font-medium">{skill.name}</div>
                           {skill.description && (
-                            <div className="truncate text-xs text-muted-foreground">{skill.description}</div>
+                            <div className={cn('truncate', 'text-xs', 'text-muted-foreground')}>{skill.description}</div>
                           )}
                         </div>
-                        <span className="rounded border border-border/60 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                        <span className={cn('rounded', 'border', 'border-border/60', 'px-1.5', 'py-0.5', 'text-[10px]', 'uppercase', 'tracking-[0.14em]', 'text-muted-foreground')}>
                           Command
                         </span>
                       </button>
@@ -578,24 +593,24 @@ export function ChatInput({
 
             {/* File attachments */}
             {files.length > 0 && (
-              <div className="px-4 pt-3 pb-0 flex flex-wrap gap-2">
+              <div className={cn('px-4', 'pt-3', 'pb-0', 'flex', 'flex-wrap', 'gap-2')}>
                 {files.map((file) => (
                   <div
                     key={file.id}
-                    className="group relative overflow-hidden rounded-lg border border-border/60 bg-muted/20"
+                    className={cn('group', 'relative', 'overflow-hidden', 'rounded-lg', 'border', 'border-border/60', 'bg-muted/20')}
                   >
-                    <img src={file.url} alt={file.filename} className="h-16 w-16 object-cover" />
+                    <img src={file.url} alt={file.filename} className={cn('h-16', 'w-16', 'object-cover')} />
                     <button
                       type="button"
                       onClick={() => setFiles((c) => c.filter((f) => f.id !== file.id))}
-                      className="absolute right-1 top-1 rounded-full bg-background/90 px-1.5 py-0.5 text-[10px] text-foreground opacity-0 shadow transition-opacity group-hover:opacity-100"
+                      className={cn('absolute', 'right-1', 'top-1', 'rounded-full', 'bg-background/90', 'px-1.5', 'py-0.5', 'text-[10px]', 'text-foreground', 'opacity-0', 'shadow', 'transition-opacity', 'group-hover:opacity-100')}
                     >
                       ✕
                     </button>
                   </div>
                 ))}
                 {!imageUploadSupported && (
-                  <div className="w-full rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-700 dark:text-amber-300">
+                  <div className={cn('w-full', 'rounded-lg', 'border', 'border-amber-500/30', 'bg-amber-500/10', 'px-3', 'py-1.5', 'text-xs', 'text-amber-700', 'dark:text-amber-300')}>
                     Current model does not support image input.
                   </div>
                 )}
@@ -603,7 +618,7 @@ export function ChatInput({
             )}
 
             {/* Textarea */}
-            <div className="relative px-4 pt-3 pb-2">
+            <div className={cn('relative', 'px-4', 'pt-3', 'pb-2')}>
               <textarea
                 ref={textareaRef}
                 value={value}
@@ -626,37 +641,37 @@ export function ChatInput({
             </div>
 
             {/* Toolbar */}
-			<div className="flex flex-wrap items-center gap-2 border-t border-border/40 px-3 py-2">
+			<div className={cn('flex', 'flex-wrap', 'items-center', 'gap-2', 'border-t', 'border-border/40', 'px-3', 'py-2')}>
               {/* Left: Task, Doc, Image */}
-				<div className="flex min-w-0 items-center gap-0.5">
+				<div className={cn('flex', 'min-w-0', 'items-center', 'gap-0.5')}>
                 <Popover open={referencePopupOpen} onOpenChange={(open) => {
                   if (!open) { setReferencePopupOpen(false); setSearchQuery(""); }
                   else { openSearchPopup(); }
                 }}>
                   <PopoverTrigger asChild>
                     <Button type="button" variant="ghost" size="sm" disabled={disabled || isStreaming}
-                      className="h-7 gap-1 rounded-lg px-2 text-xs text-muted-foreground hover:text-foreground"
+                      className={cn('h-7', 'gap-1', 'rounded-lg', 'px-2', 'text-xs', 'text-muted-foreground', 'hover:text-foreground')}
                       title="Reference a task or doc">
-                      <Tag className="h-3.5 w-3.5" />
-                      <span className="hidden sm:inline">Task</span>
+                      <Tag className={cn('h-3.5', 'w-3.5')} />
+                      <span className={cn('hidden', 'sm:inline')}>Task</span>
                       <span className="text-muted-foreground/50">/</span>
-                      <FileText className="h-3.5 w-3.5" />
-                      <span className="hidden sm:inline">Doc</span>
+                      <FileText className={cn('h-3.5', 'w-3.5')} />
+                      <span className={cn('hidden', 'sm:inline')}>Doc</span>
                     </Button>
                   </PopoverTrigger>
-					<PopoverContent side="top" align="start" className="w-[min(340px,calc(100vw-2rem))] rounded-xl border-border/60 p-0 shadow-xl" sideOffset={8}>
-                    <div className="max-h-[300px] overflow-y-auto">
-                      <div className="px-1 py-1">
+					<PopoverContent side="top" align="start" className={cn('w-[min(340px,calc(100vw-2rem))]', 'rounded-xl', 'border-border/60', 'p-0', 'shadow-xl')} sideOffset={8}>
+                    <div className={cn('max-h-[300px]', 'overflow-y-auto')}>
+                      <div className={cn('px-1', 'py-1')}>
                         {searchResults.tasks.length > 0 && (
                           <>
-                            <div className="px-2 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                            <div className={cn('px-2', 'py-1.5', 'text-[10px]', 'font-medium', 'uppercase', 'tracking-wider', 'text-muted-foreground')}>
                               Tasks
                             </div>
                             {searchResults.tasks.map((task) => (
                               <button key={task.id} type="button" onClick={() => insertMention("task", task.id, task.title)}
-                                className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-muted">
-                                <Tag className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                                <span className="truncate font-mono text-xs text-muted-foreground">@{task.id}</span>
+                                className={cn('flex', 'w-full', 'items-center', 'gap-2', 'rounded-lg', 'px-2', 'py-1.5', 'text-sm', 'hover:bg-muted')}>
+                                <Tag className={cn('h-3.5', 'w-3.5', 'shrink-0', 'text-muted-foreground')} />
+                                <span className={cn('truncate', 'font-mono', 'text-xs', 'text-muted-foreground')}>@{task.id}</span>
                                 <span className="truncate">{task.title}</span>
                               </button>
                             ))}
@@ -664,15 +679,15 @@ export function ChatInput({
                         )}
                         {searchResults.docs.length > 0 && (
                           <>
-                            <div className="px-2 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                            <div className={cn('px-2', 'py-1.5', 'text-[10px]', 'font-medium', 'uppercase', 'tracking-wider', 'text-muted-foreground')}>
                               Docs
                             </div>
                             {searchResults.docs.map((doc) => (
                               <button key={doc.path} type="button"
                                 onClick={() => insertMention("doc", doc.path.replace(/^docs\//, "").replace(/\.md$/, ""), doc.title)}
-                                className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-muted">
-                                <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                                <span className="truncate font-mono text-xs text-muted-foreground">
+                                className={cn('flex', 'w-full', 'items-center', 'gap-2', 'rounded-lg', 'px-2', 'py-1.5', 'text-sm', 'hover:bg-muted')}>
+                                <FileText className={cn('h-3.5', 'w-3.5', 'shrink-0', 'text-muted-foreground')} />
+                                <span className={cn('truncate', 'font-mono', 'text-xs', 'text-muted-foreground')}>
                                   @doc/{doc.path.replace(/\.md$/, "").replace(/^docs\//, "")}
                                 </span>
                                 <span className="truncate">{doc.title}</span>
@@ -681,16 +696,16 @@ export function ChatInput({
                           </>
                         )}
                         {searchResults.tasks.length === 0 && searchResults.docs.length === 0 && (
-                          <div className="px-2 py-4 text-center text-xs text-muted-foreground">No tasks or docs found</div>
+                          <div className={cn('px-2', 'py-4', 'text-center', 'text-xs', 'text-muted-foreground')}>No tasks or docs found</div>
                         )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 border-t border-border/40 px-2 py-2">
+                    <div className={cn('flex', 'items-center', 'gap-2', 'border-t', 'border-border/40', 'px-2', 'py-2')}>
                       <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
                         placeholder="Search tasks & docs..." autoFocus
-                        className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground" />
-                      <button type="button" onClick={() => { setReferencePopupOpen(false); setSearchQuery(""); }} className="rounded p-0.5 hover:bg-muted">
-                        <X className="h-3.5 w-3.5 text-muted-foreground" />
+                        className={cn('flex-1', 'bg-transparent', 'text-sm', 'outline-none', 'placeholder:text-muted-foreground')} />
+                      <button type="button" onClick={() => { setReferencePopupOpen(false); setSearchQuery(""); }} className={cn('rounded', 'p-0.5', 'hover:bg-muted')}>
+                        <X className={cn('h-3.5', 'w-3.5', 'text-muted-foreground')} />
                       </button>
                     </div>
                   </PopoverContent>
@@ -699,24 +714,24 @@ export function ChatInput({
                 <Button type="button" variant="ghost" size="sm"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={disabled || isStreaming || !imageUploadSupported}
-                  className="h-7 w-7 rounded-lg p-0 text-muted-foreground hover:text-foreground"
+                  className={cn('h-7', 'w-7', 'rounded-lg', 'p-0', 'text-muted-foreground', 'hover:text-foreground')}
                   title={imageUploadSupported ? "Add image" : "Model does not support images"}>
-                  <Plus className="h-3.5 w-3.5" />
+                  <Plus className={cn('h-3.5', 'w-3.5')} />
                 </Button>
               <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleSelectFiles} />
               </div>
 
               {/* Middle: Model selector */}
-				<div className="flex min-w-0 flex-1 items-center gap-1 sm:ml-1 sm:flex-none">
+				<div className={cn('flex', 'min-w-0', 'flex-1', 'items-center', 'gap-1', 'sm:ml-1', 'sm:flex-none')}>
                 <Popover open={modelOpen} onOpenChange={setModelOpen}>
                   <PopoverTrigger asChild>
 					<Button variant="ghost" role="combobox" aria-expanded={modelOpen}
-					  className="h-7 min-w-0 max-w-[120px] flex-1 justify-between gap-1.5 rounded-lg px-2 text-xs font-medium text-muted-foreground hover:text-foreground sm:max-w-[200px] sm:flex-none">
+					  className={cn('h-7', 'min-w-0', 'max-w-[120px]', 'flex-1', 'justify-between', 'gap-1.5', 'rounded-lg', 'px-2', 'text-xs', 'font-medium', 'text-muted-foreground', 'hover:text-foreground', 'sm:max-w-[200px]', 'sm:flex-none')}>
                       <span className="truncate">{selectedModel ? selectedModel.modelName : autoModelLabel}</span>
-                      <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-50" />
+                      <ChevronsUpDown className={cn('h-3', 'w-3', 'shrink-0', 'opacity-50')} />
                     </Button>
                   </PopoverTrigger>
-					<PopoverContent className="w-[min(420px,calc(100vw-2rem))] rounded-2xl border-border/60 p-0 shadow-xl" align="start">
+					<PopoverContent className={cn('w-[min(420px,calc(100vw-2rem))]', 'rounded-2xl', 'border-border/60', 'p-0', 'shadow-xl')} align="start">
                     <Command>
                       <CommandInput placeholder="Search model..." value={modelQuery} onValueChange={setModelQuery} />
                       <CommandList>
@@ -724,7 +739,7 @@ export function ChatInput({
                         <CommandGroup heading="Selection">
                           <CommandItem value="auto" onSelect={() => { onModelChange(null); setModelOpen(false); setModelQuery(""); }}>
                             <Check className={cn("mr-2 h-4 w-4", !currentModel ? "opacity-100" : "opacity-0")} />
-                            <div className="flex min-w-0 flex-1 items-center gap-2">
+                            <div className={cn('flex', 'min-w-0', 'flex-1', 'items-center', 'gap-2')}>
                               <span className="truncate">{autoModelLabel}</span>
                               <Badge variant="outline" className="text-[10px]">Default</Badge>
                             </div>
@@ -738,7 +753,7 @@ export function ChatInput({
                                 disabled={!model.selectable}
                                 onSelect={() => { onModelChange(model.key, model.variants ? null : undefined); setModelOpen(false); setModelQuery(""); }}>
                                 <Check className={cn("mr-2 h-4 w-4", currentModel === model.key ? "opacity-100" : "opacity-0")} />
-                                <div className="flex min-w-0 flex-1 items-center gap-2">
+                                <div className={cn('flex', 'min-w-0', 'flex-1', 'items-center', 'gap-2')}>
                                   <span className="truncate">{model.modelName}</span>
                                   {model.apiDefault && <Badge variant="outline" className="text-[10px]">API Default</Badge>}
                                 </div>
@@ -755,12 +770,12 @@ export function ChatInput({
                   <Popover open={variantOpen} onOpenChange={setVariantOpen}>
                     <PopoverTrigger asChild>
 						<Button variant="ghost" role="combobox" aria-expanded={variantOpen}
-						  className="h-7 min-w-0 max-w-[84px] justify-between gap-1 rounded-lg px-2 text-xs font-medium text-muted-foreground hover:text-foreground sm:max-w-[90px]">
-                        <span className="truncate capitalize">{currentVariant || "Auto"}</span>
-                        <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-50" />
+						  className={cn('h-7', 'min-w-0', 'max-w-[84px]', 'justify-between', 'gap-1', 'rounded-lg', 'px-2', 'text-xs', 'font-medium', 'text-muted-foreground', 'hover:text-foreground', 'sm:max-w-[90px]')}>
+                        <span className={cn('truncate', 'capitalize')}>{currentVariant || "Auto"}</span>
+                        <ChevronsUpDown className={cn('h-3', 'w-3', 'shrink-0', 'opacity-50')} />
                       </Button>
                     </PopoverTrigger>
-					<PopoverContent className="w-[min(130px,calc(100vw-2rem))] rounded-xl border-border/60 p-1 shadow-xl" align="start">
+					<PopoverContent className={cn('w-[min(130px,calc(100vw-2rem))]', 'rounded-xl', 'border-border/60', 'p-1', 'shadow-xl')} align="start">
                       <div className="space-y-0.5">
 						<button type="button" onClick={() => { onModelChange(currentModel ?? null, null); if (currentModel) onSetDefaultVariant?.(currentModel, null); setVariantOpen(false); }}
                           className={cn("flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm hover:bg-muted", !currentVariant && "bg-muted font-medium")}>
@@ -785,27 +800,29 @@ export function ChatInput({
                   onUpdateModelPref={onUpdateModelPref}
                   onToggleProviderHidden={onToggleProviderHidden}
                   showProviderVisibility={Boolean(onToggleProviderHidden)}
-                  triggerIcon={<SlidersHorizontal className="h-3.5 w-3.5" />}
+                  triggerIcon={<SlidersHorizontal className={cn('h-3.5', 'w-3.5')} />}
                 />
+
+                <ContextUsageIndicator data={contextUsage} modelName={sessionModelName} messages={messages} />
               </div>
 
               {/* Right: Send / Stop */}
-				<div className="ml-auto flex shrink-0 items-center gap-2 self-end sm:self-auto">
+				<div className={cn('ml-auto', 'flex', 'shrink-0', 'items-center', 'gap-2', 'self-end', 'sm:self-auto')}>
                 {queueCount > 0 && (
-                  <div className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-blue-500 px-1.5 text-[11px] font-medium text-white">
+                  <div className={cn('flex', 'h-5', 'min-w-[20px]', 'items-center', 'justify-center', 'rounded-full', 'bg-blue-500', 'px-1.5', 'text-[11px]', 'font-medium', 'text-white')}>
                     {queueCount}
                   </div>
                 )}
                 {isStreaming ? (
                   <Button type="button" onClick={onStop} variant="secondary" size="sm"
-                    className="h-7 w-7 rounded-lg p-0 border border-border/50" title="Stop">
-                    <Square className="h-3.5 w-3.5" />
+                    className={cn('h-7', 'w-7', 'rounded-lg', 'p-0', 'border', 'border-border/50')} title="Stop">
+                    <Square className={cn('h-3.5', 'w-3.5')} />
                   </Button>
                 ) : (
                   <Button type="button" onClick={submit}
                     disabled={(!value.trim() && files.length === 0) || disabled || questionPending || permissionPending || (files.length > 0 && !imageUploadSupported)}
-                    size="sm" className="h-7 w-7 rounded-lg p-0 bg-foreground text-background hover:bg-foreground/90" title="Send">
-                    <Send className="h-3.5 w-3.5" />
+                    size="sm" className={cn('h-7', 'w-7', 'rounded-lg', 'p-0', 'bg-foreground', 'text-background', 'hover:bg-foreground/90')} title="Send">
+                    <Send className={cn('h-3.5', 'w-3.5')} />
                   </Button>
                 )}
               </div>

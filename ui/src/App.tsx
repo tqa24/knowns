@@ -38,8 +38,8 @@ export default function App() {
 			<UserProvider>
 				<UIPreferencesProvider>
 					<OpenCodeProvider>
-						<OpenCodeEventProvider>
-							<SSEProvider>
+						<SSEProvider>
+							<OpenCodeEventProvider>
 								<TimeTrackerProvider>
 									<ChatProvider>
 										<GlobalTaskProvider>
@@ -47,8 +47,8 @@ export default function App() {
 										</GlobalTaskProvider>
 									</ChatProvider>
 								</TimeTrackerProvider>
-							</SSEProvider>
-						</OpenCodeEventProvider>
+							</OpenCodeEventProvider>
+						</SSEProvider>
 					</OpenCodeProvider>
 				</UIPreferencesProvider>
 			</UserProvider>

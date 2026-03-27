@@ -802,6 +802,11 @@ export interface OpenCodeProviderResponse {
 			{
 				id: string;
 				name: string;
+				limit?: {
+					context?: number;
+					input?: number;
+					output?: number;
+				};
 				capabilities?: {
 					attachment?: boolean;
 					input?: {

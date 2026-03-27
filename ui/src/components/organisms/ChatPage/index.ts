@@ -9,3 +9,4 @@ export { OpenCodeUnavailableBanner } from "./OpenCodeUnavailableBanner";
 export { SubAgentDialog } from "./SubAgentDialog";
 export { AgentActivityDialog } from "./AgentActivityDialog";
 export { SessionAgentChip } from "./SessionAgentChip";
+export { ContextUsageIndicator } from "./ContextUsageIndicator";

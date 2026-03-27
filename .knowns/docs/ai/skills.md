@@ -1,13 +1,14 @@
 ---
 title: Skills System
+description: Skill definition, sharing, and sync across platforms
 createdAt: '2026-01-23T04:07:56.363Z'
-updatedAt: '2026-01-23T04:12:51.307Z'
-description: 'Skill definition, sharing, and sync across platforms'
+updatedAt: '2026-03-27T07:10:51.256Z'
 tags:
   - feature
   - ai
   - skills
 ---
+
 ## Overview
 
 Skills are instructions for AI workflows. Define once, sync to multiple platforms.
@@ -110,14 +111,21 @@ knowns skill status
 
 | Skill | Description |
 |-------|-------------|
-| `knowns-task` | Task workflow |
-| `knowns-doc` | Doc management |
-| `knowns-commit` | Git commits |
-| `knowns-init` | Session init |
-| `knowns-research` | Codebase research |
+| `kn-init` | Initialize session, read docs, load critical learnings |
+| `kn-spec` | Create spec with Socratic exploring phase |
+| `kn-plan` | Plan task with pre-execution validation |
+| `kn-research` | Research codebase before implementation |
+| `kn-implement` | Implement task, check ACs, track progress |
+| `kn-review` | Multi-perspective code review (P1/P2/P3) |
+| `kn-commit` | Conventional commit with verification |
+| `kn-extract` | Extract patterns, decisions, failures + consolidation |
+| `kn-doc` | Create and update documentation |
+| `kn-template` | Generate code from templates |
+| `kn-verify` | SDD verification and coverage reporting |
+| `kn-go` | Full pipeline from approved spec (no review gates) |
+| `kn-debug` | Structured debugging: triage → fix → learn |
 
 ---
-
 ## Custom Skills
 
 ```bash

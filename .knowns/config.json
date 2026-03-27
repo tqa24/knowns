@@ -1,0 +1,71 @@
+{
+  "name": "knowns-go",
+  "id": "knowns-go",
+  "createdAt": "2026-03-08T17:15:18.432Z",
+  "settings": {
+    "defaultAssignee": "howznguyen",
+    "defaultPriority": "medium",
+    "timeFormat": "24h",
+    "gitTrackingMode": "git-ignored",
+    "statuses": [
+      "todo",
+      "in-progress",
+      "in-review",
+      "done",
+      "blocked",
+      "on-hold",
+      "urgent"
+    ],
+    "statusColors": {
+      "blocked": "red",
+      "done": "green",
+      "in-progress": "blue",
+      "in-review": "purple",
+      "on-hold": "yellow",
+      "todo": "gray",
+      "urgent": "orange"
+    },
+    "visibleColumns": [
+      "todo",
+      "in-progress",
+      "blocked",
+      "done",
+      "in-review"
+    ],
+    "semanticSearch": {
+      "enabled": true,
+      "model": "multilingual-e5-small",
+      "huggingFaceId": "Xenova/multilingual-e5-small",
+      "dimensions": 384,
+      "maxTokens": 512
+    },
+    "serverPort": 6420,
+    "platforms": [
+      "claude-code",
+      "gemini",
+      "copilot",
+      "kiro",
+      "agents",
+      "opencode"
+    ],
+    "autoSyncOnUpdate": true,
+    "enableChatUI": true,
+    "opencodeModels": {
+      "version": 1,
+      "defaultModel": {
+        "providerID": "openai",
+        "modelID": "gpt-5.4"
+      },
+      "variantModels": {
+        "anthropic:claude-sonnet-4-5": "high",
+        "openai:gpt-5.4": "high"
+      },
+      "activeModels": [
+        "anthropic:claude-sonnet-4-5",
+        "minimax-coding-plan:MiniMax-M2.5",
+        "minimax-coding-plan:MiniMax-M2.5-highspeed",
+        "openai:gpt-5.4"
+      ]
+    }
+  }
+}

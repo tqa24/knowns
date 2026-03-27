@@ -29,12 +29,12 @@ func RegisterDocTools(s *server.MCPServer, getStore func() *storage.Store) {
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			store := getStore()
 			if store == nil {
-				return mcp.NewToolResultError("No project set. Call set_project first."), nil
+				return noProjectError()
 			}
 
 			docs, err := store.Docs.List()
 			if err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Failed to list docs: %s", err.Error())), nil
+				return errFailed("list docs", err)
 			}
 
 			args := req.GetArguments()
@@ -85,17 +85,17 @@ func RegisterDocTools(s *server.MCPServer, getStore func() *storage.Store) {
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			store := getStore()
 			if store == nil {
-				return mcp.NewToolResultError("No project set. Call set_project first."), nil
+				return noProjectError()
 			}
 
 			path, err := req.RequireString("path")
 			if err != nil {
-				return mcp.NewToolResultError(err.Error()), nil
+				return errResult(err.Error())
 			}
 
 			doc, err := store.Docs.Get(path)
 			if err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Doc not found: %s", err.Error())), nil
+				return errNotFound("Doc", err)
 			}
 
 			args := req.GetArguments()
@@ -152,7 +152,7 @@ func RegisterDocTools(s *server.MCPServer, getStore func() *storage.Store) {
 			if hasLine && lineParam != "" {
 				lineContent, lineLabel, err := extractLines(doc.Content, lineParam)
 				if err != nil {
-					return mcp.NewToolResultError(err.Error()), nil
+					return errResult(err.Error())
 				}
 				result := map[string]any{
 					"path":  doc.Path,
@@ -217,12 +217,12 @@ func RegisterDocTools(s *server.MCPServer, getStore func() *storage.Store) {
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			store := getStore()
 			if store == nil {
-				return mcp.NewToolResultError("No project set. Call set_project first."), nil
+				return noProjectError()
 			}
 
 			title, err := req.RequireString("title")
 			if err != nil {
-				return mcp.NewToolResultError(err.Error()), nil
+				return errResult(err.Error())
 			}
 
 			args := req.GetArguments()
@@ -256,7 +256,7 @@ func RegisterDocTools(s *server.MCPServer, getStore func() *storage.Store) {
 			}
 
 			if err := store.Docs.Create(doc); err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Failed to create doc: %s", err.Error())), nil
+				return errFailed("create doc", err)
 			}
 
 			search.BestEffortIndexDoc(store, doc.Path)
@@ -306,17 +306,17 @@ func RegisterDocTools(s *server.MCPServer, getStore func() *storage.Store) {
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			store := getStore()
 			if store == nil {
-				return mcp.NewToolResultError("No project set. Call set_project first."), nil
+				return noProjectError()
 			}
 
 			path, err := req.RequireString("path")
 			if err != nil {
-				return mcp.NewToolResultError(err.Error()), nil
+				return errResult(err.Error())
 			}
 
 			doc, err := store.Docs.Get(path)
 			if err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Doc not found: %s", err.Error())), nil
+				return errNotFound("Doc", err)
 			}
 
 			oldDoc := *doc // snapshot before changes
@@ -362,7 +362,7 @@ func RegisterDocTools(s *server.MCPServer, getStore func() *storage.Store) {
 			doc.UpdatedAt = time.Now().UTC()
 
 			if err := store.Docs.Update(doc); err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Failed to update doc: %s", err.Error())), nil
+				return errFailed("update doc", err)
 			}
 
 			search.BestEffortIndexDoc(store, doc.Path)
@@ -396,17 +396,17 @@ func RegisterDocTools(s *server.MCPServer, getStore func() *storage.Store) {
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			store := getStore()
 			if store == nil {
-				return mcp.NewToolResultError("No project set. Call set_project first."), nil
+				return noProjectError()
 			}
 
 			path, err := req.RequireString("path")
 			if err != nil {
-				return mcp.NewToolResultError(err.Error()), nil
+				return errResult(err.Error())
 			}
 
 			history, err := store.Versions.GetDocHistory(path)
 			if err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Failed to get doc history: %s", err.Error())), nil
+				return errFailed("get doc history", err)
 			}
 
 			out, _ := json.MarshalIndent(history, "", "  ")
@@ -429,13 +429,13 @@ func RegisterDocTools(s *server.MCPServer, getStore func() *storage.Store) {
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			store := getStore()
 			if store == nil {
-				return mcp.NewToolResultError("No project set. Call set_project first."), nil
+				return noProjectError()
 			}
 
 			args := req.GetArguments()
 			path, ok := stringArg(args, "path")
 			if !ok || path == "" {
-				return mcp.NewToolResultError("path is required"), nil
+				return errResult(ErrPathReq)
 			}
 
 			// Default to dry-run for safety.
@@ -448,13 +448,13 @@ func RegisterDocTools(s *server.MCPServer, getStore func() *storage.Store) {
 
 			doc, err := store.Docs.Get(path)
 			if err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Doc not found: %s", err.Error())), nil
+				return errNotFound("Doc", err)
 			}
 
 			if dryRun {
 				out, _ := json.MarshalIndent(map[string]any{
 					"dryRun":  true,
-					"message": fmt.Sprintf("Would delete doc: %s (%s)", doc.Path, doc.Title),
+					"message": fmt.Sprintf(MsgWouldDeleteDoc, doc.Path, doc.Title),
 					"doc":     map[string]string{"path": doc.Path, "title": doc.Title, "description": doc.Description},
 				}, "", "  ")
 				return mcp.NewToolResultText(string(out)), nil
@@ -471,7 +471,7 @@ func RegisterDocTools(s *server.MCPServer, getStore func() *storage.Store) {
 
 			out, _ := json.MarshalIndent(map[string]any{
 				"deleted": true,
-				"message": fmt.Sprintf("Deleted doc: %s (%s)", doc.Path, doc.Title),
+				"message": fmt.Sprintf(MsgDeletedDoc, doc.Path, doc.Title),
 			}, "", "  ")
 			return mcp.NewToolResultText(string(out)), nil
 		},

@@ -1,13 +1,14 @@
 ---
 title: Init Process
-createdAt: '2026-01-23T04:13:12.738Z'
-updatedAt: '2026-03-12T17:59:54.231Z'
 description: Detailed init wizard flow and configuration steps
+createdAt: '2026-01-23T04:13:12.738Z'
+updatedAt: '2026-03-27T07:11:30.211Z'
 tags:
   - feature
   - init
   - wizard
 ---
+
 ## Overview
 
 `knowns init` is an interactive wizard to set up Knowns in a project. Written in Go using the Cobra CLI framework, the init command guides users through project configuration and then executes post-wizard steps with progressive animation.
@@ -42,7 +43,9 @@ knowns init --force
 
 ## Wizard Flow
 
-The wizard uses the `huh` library to present three form groups sequentially. Groups can be conditionally hidden based on previous answers.
+The wizard uses the `huh` library to present form groups sequentially. Each group appears one at a time. Groups can be conditionally hidden based on previous answers.
+
+When running `knowns init --force`, all fields are pre-populated from existing `config.json` values so the user can just Enter through to keep current settings or change any option.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -51,20 +54,43 @@ The wizard uses the `huh` library to present three form groups sequentially. Gro
                          │
                          ▼
 ┌─────────────────────────────────────────────────────────┐
-│ Group 1: Project Setup                                  │
+│ Group 1: Project Name                                   │
 │ • Project name (text input)                             │
-│ • Git tracking mode (select, if in git repo)            │
 └─────────────────────────────────────────────────────────┘
                          │
                          ▼
 ┌─────────────────────────────────────────────────────────┐
-│ Group 2: Semantic Search                                │
+│ Group 1b: Git Tracking (if in git repo, not set by flag)│
+│ • Git tracking mode (select)                            │
+└─────────────────────────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────┐
+│ Group 2: AI Platforms                                   │
+│ • AI platforms to integrate (multi-select)              │
+└─────────────────────────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────┐
+│ Group 3: Chat UI                                        │
+│ • Enable Chat UI? (confirm)                             │
+└─────────────────────────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────┐
+│ Group 4: Auto-sync                                      │
+│ • Auto-sync skills on update? (confirm)                 │
+└─────────────────────────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────┐
+│ Group 5: Semantic Search                                │
 │ • Enable semantic search? (confirm)                     │
 └─────────────────────────────────────────────────────────┘
                          │
                          ▼
 ┌─────────────────────────────────────────────────────────┐
-│ Group 3: Model Selection (hidden if semantic disabled)  │
+│ Group 6: Model Selection (hidden if semantic disabled)  │
 │ • Select embedding model (select)                       │
 └─────────────────────────────────────────────────────────┘
                          │
@@ -87,8 +113,32 @@ The wizard uses the `huh` library to present three form groups sequentially. Gro
 └─────────────────────────────────────────────────────────┘
 ```
 
----
+### Pre-population on --force
 
+When `knowns init --force` is used, the wizard reads existing `config.json` and pre-populates:
+- Project name
+- Git tracking mode (selected option matches current setting)
+- AI platforms
+- Chat UI enabled/disabled
+- Auto-sync enabled/disabled
+- Semantic search enabled/disabled
+- Embedding model
+
+### Git Tracking: config.json always committed
+
+Both `git-tracked` and `git-ignored` modes allow `config.json` to be pushed to git. This enables `knowns sync` after cloning.
+
+`git-ignored` mode generates:
+```
+.knowns/*
+!.knowns/config.json
+!.knowns/docs/
+!.knowns/docs/**
+!.knowns/templates/
+!.knowns/templates/**
+```
+
+---
 ## Group 1: Project Setup
 
 ```

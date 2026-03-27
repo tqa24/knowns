@@ -9,7 +9,25 @@ graph LR
     A[Create] --> B[Take]
     B --> C[Plan]
     C --> D[Implement]
-    D --> E[Complete]
+    D --> E[Review]
+    E --> F[Complete]
+```
+
+### Workflow Modes
+
+**Manual flow** — step by step with review at each stage:
+```
+/kn-init → /kn-research → /kn-spec → /kn-plan --from → /kn-plan <id> → /kn-implement <id> → /kn-review → /kn-commit → /kn-extract
+```
+
+**Go mode** — full pipeline from approved spec, no review gates between tasks:
+```
+/kn-spec <name> → approve → /kn-go specs/<name>
+```
+
+**Debugging flow:**
+```
+/kn-debug → /kn-review → /kn-commit
 ```
 
 ### Task Status Flow

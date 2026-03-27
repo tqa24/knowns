@@ -24,7 +24,13 @@ Use --stdio to communicate over stdin/stdout (default for MCP clients).`,
 }
 
 func runMCP(cmd *cobra.Command, args []string) error {
-	s := mcp.NewMCPServer()
+	// Determine project root: --project flag > KNOWNS_PROJECT env > cwd walk-up
+	projectRoot, _ := cmd.Flags().GetString("project")
+	if projectRoot == "" {
+		projectRoot = os.Getenv("KNOWNS_PROJECT")
+	}
+
+	s := mcp.NewMCPServer(projectRoot)
 	return s.Start()
 }
 
@@ -105,6 +111,7 @@ func getMCPSettingsPath() string {
 
 func init() {
 	mcpCmd.Flags().Bool("stdio", false, "Use stdio transport (for MCP clients)")
+	mcpCmd.Flags().String("project", "", "Project root directory (auto-detected from cwd if not set)")
 
 	mcpCmd.AddCommand(mcpSetupCmd)
 

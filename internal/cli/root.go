@@ -127,10 +127,67 @@ func maybeAutoSync() {
 	_ = codegen.SyncSkillsForPlatforms(cwd, cfg.Settings.Platforms)
 }
 
+// maybeAutoSetup detects a cloned Knowns project with config.json but missing
+// local setup (e.g. embedding model not downloaded) and prompts the user to
+// complete setup. This runs on the first command after cloning.
+func maybeAutoSetup() {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return
+	}
+	root := filepath.Join(cwd, ".knowns")
+	if _, err := os.Stat(root); err != nil {
+		return // not a knowns project
+	}
+
+	store := storage.NewStore(root)
+	cfg, err := store.Config.Load()
+	if err != nil {
+		return
+	}
+
+	// Check if semantic search is configured but model is not installed
+	if cfg.Settings.SemanticSearch == nil || !cfg.Settings.SemanticSearch.Enabled {
+		return
+	}
+
+	modelID := cfg.Settings.SemanticSearch.Model
+	if modelID == "" {
+		return
+	}
+
+	// Find the model in supported list
+	var selected *embeddingModel
+	for i := range supportedModels {
+		if supportedModels[i].ID == modelID {
+			selected = &supportedModels[i]
+			break
+		}
+	}
+	if selected == nil {
+		return
+	}
+
+	if isModelInstalled(selected) {
+		return // already installed, nothing to do
+	}
+
+	// Model not installed — prompt user
+	fmt.Println()
+	fmt.Println(warnStyle.Render("⚠ This project uses semantic search but the embedding model is not installed locally."))
+	fmt.Printf("  Model: %s (%s, ~%dMB)\n", selected.Name, selected.ID, selected.SizeMB)
+	fmt.Println()
+	fmt.Printf("  Run: %s\n", StyleInfo.Render("knowns sync"))
+	fmt.Println()
+}
+
 // Execute runs the root command.
 func Execute() error {
 	// Auto-sync skills if version changed (best-effort, silent).
 	maybeAutoSync()
+
+	// Check if cloned project needs local setup (e.g. embedding model download).
+	maybeAutoSetup()
 
 	// Start update check in background while command runs
 	msgCh := make(chan string, 1)

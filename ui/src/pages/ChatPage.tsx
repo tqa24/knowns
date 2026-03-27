@@ -39,6 +39,7 @@ export default function ChatPage() {
 		autoModelLabel,
 		lastLoadedAt,
 		slashItems,
+		providerResponse,
 		previewTaskId,
 		setPreviewTaskId,
 		previewDocPath,
@@ -178,6 +179,11 @@ export default function ChatPage() {
 							activePermission={activePermission}
 							restoreValue={inputRestoreValue}
 							onRestoreValueConsumed={() => setInputRestoreValue(null)}
+							messages={activeSession.messages}
+							sessionModelID={activeSession.model?.modelID}
+							sessionModelName={activeSession.model?.modelID || activeSession.model?.key}
+							sessionProviderID={activeSession.model?.providerID}
+							providerResponse={providerResponse}
 						/>
 					</div>
 				) : (

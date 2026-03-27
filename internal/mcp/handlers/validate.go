@@ -33,7 +33,7 @@ func RegisterValidateTools(s *server.MCPServer, getStore func() *storage.Store) 
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			store := getStore()
 			if store == nil {
-				return mcp.NewToolResultError("No project set. Call set_project first."), nil
+				return noProjectError()
 			}
 
 			args := req.GetArguments()

@@ -42,12 +42,28 @@ mcp__knowns__list_tasks({ "status": "in-progress" })
 mcp__knowns__get_board({})
 ```
 
+## Step 3.5: Load Critical Learnings
+
+Check for accumulated critical learnings from past work:
+
+```json
+mcp__knowns__search({ "query": "critical patterns", "type": "doc", "tag": "critical" })
+```
+
+If `learnings/critical-patterns` exists:
+```json
+mcp__knowns__get_doc({ "path": "learnings/critical-patterns", "smart": true })
+```
+
+These are promoted learnings that cost the most to discover and save the most by knowing. Include a brief summary in the session context if any exist.
+
 ## Step 4: Summarize
 
 ```markdown
 ## Session Context
 - **Project**: [name]
 - **Key Docs**: README, ARCHITECTURE, CONVENTIONS
+- **Critical Learnings**: [count, or "none yet"]
 - **In-progress tasks**: [count]
 - **Current risks / gaps**: [missing docs, unclear conventions, broken search, etc.]
 - **Ready for**: tasks, docs, questions

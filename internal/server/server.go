@@ -60,6 +60,7 @@ type Server struct {
 	opencodeProxy   *httputil.ReverseProxy // Shared proxy singleton — reused across requests
 	opencodeProxyMu sync.RWMutex
 	shutdownCh      chan struct{} // Signals graceful shutdown from /api/shutdown endpoint
+	cancelSSEFwd    context.CancelFunc     // Cancels the OpenCode SSE forwarder goroutine
 }
 
 type openCodeConfigResolution struct {
@@ -244,6 +245,13 @@ func NewServer(store *storage.Store, projectRoot string, port int, opts Options)
 	}
 
 	s.router = s.buildRouter()
+
+	// Start OpenCode SSE forwarder — multiplexes OpenCode events into the
+	// Knowns SSE stream so each browser tab needs only one SSE connection.
+	ctx, cancel := context.WithCancel(context.Background())
+	s.cancelSSEFwd = cancel
+	s.startOpenCodeSSEForwarder(ctx)
+
 	return s
 }
 
@@ -299,6 +307,9 @@ func (s *Server) Start() error {
 
 	// 6. Cleanup port file + OpenCode.
 	s.cleanupPortFile()
+	if s.cancelSSEFwd != nil {
+		s.cancelSSEFwd()
+	}
 	s.cleanupOpenCodeServer()
 
 	log.Printf("[server] Shutdown complete")
@@ -312,6 +323,64 @@ func (s *Server) cleanupOpenCodeServer() {
 			log.Printf("[server] Failed to stop OpenCode daemon: %v", err)
 		}
 	}
+}
+
+// startOpenCodeSSEForwarder subscribes to the OpenCode global SSE stream and
+// re-broadcasts every event through the Knowns SSEBroker as "opencode:event".
+// This eliminates the need for each browser tab to open its own EventSource to
+// OpenCode, reducing per-tab SSE connections from 2 to 1 and avoiding HTTP/1.1
+// connection exhaustion when multiple tabs are open.
+func (s *Server) startOpenCodeSSEForwarder(ctx context.Context) {
+	cfg, configured := s.openCodeConfig()
+	if !configured {
+		return
+	}
+
+	go func() {
+		client := opencode.NewClient(cfg)
+		backoff := time.Second
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
+			if !client.IsServerAvailable() {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(backoff):
+					if backoff < 30*time.Second {
+						backoff *= 2
+					}
+					continue
+				}
+			}
+
+			backoff = time.Second
+			log.Printf("[sse-fwd] Connected to OpenCode global event stream")
+
+			err := client.StreamGlobalEvents(ctx, func(event map[string]any) {
+				s.sse.Broadcast(routes.SSEEvent{
+					Type: "opencode:event",
+					Data: event,
+				})
+			})
+
+			if ctx.Err() != nil {
+				return
+			}
+			log.Printf("[sse-fwd] OpenCode event stream disconnected: %v, reconnecting...", err)
+
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(backoff):
+			}
+		}
+	}()
 }
 
 // writePortFile saves the active port to .knowns/.server-port so CLI commands
@@ -474,6 +543,16 @@ func (s *Server) proxyOpenCode(w http.ResponseWriter, r *http.Request) {
 		r2.URL.Path = "/"
 	}
 	r2.URL.RawQuery = r.URL.RawQuery
+
+	// Auto-inject directory for session listing so OpenCode only returns
+	// sessions belonging to this project (avoids cross-project leakage).
+	if r2.URL.Path == "/session" && r.Method == "GET" && s.projectRoot != "" {
+		q := r2.URL.Query()
+		if q.Get("directory") == "" {
+			q.Set("directory", s.projectRoot)
+			r2.URL.RawQuery = q.Encode()
+		}
+	}
 
 	proxy.ServeHTTP(w, r2)
 }

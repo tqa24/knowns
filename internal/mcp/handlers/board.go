@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
 	"github.com/howznguyen/knowns/internal/models"
 	"github.com/howznguyen/knowns/internal/storage"
@@ -21,12 +20,12 @@ func RegisterBoardTools(s *server.MCPServer, getStore func() *storage.Store) {
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			store := getStore()
 			if store == nil {
-				return mcp.NewToolResultError("No project set. Call set_project first."), nil
+				return noProjectError()
 			}
 
 			tasks, err := store.Tasks.List()
 			if err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Failed to list tasks: %s", err.Error())), nil
+				return errFailed("list tasks", err)
 			}
 
 			// Determine column order from project config.

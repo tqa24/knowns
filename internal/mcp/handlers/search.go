@@ -52,12 +52,12 @@ func RegisterSearchTools(s *server.MCPServer, getStore func() *storage.Store) {
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			store := getStore()
 			if store == nil {
-				return mcp.NewToolResultError("No project set. Call set_project first."), nil
+				return noProjectError()
 			}
 
 			query, err := req.RequireString("query")
 			if err != nil {
-				return mcp.NewToolResultError(err.Error()), nil
+				return errResult(err.Error())
 			}
 
 			args := req.GetArguments()
@@ -103,7 +103,7 @@ func RegisterSearchTools(s *server.MCPServer, getStore func() *storage.Store) {
 			engine := search.NewEngine(store, embedder, vecStore)
 			results, err := engine.Search(opts)
 			if err != nil {
-				return mcp.NewToolResultError(err.Error()), nil
+				return errResult(err.Error())
 			}
 
 			if results == nil {
@@ -123,7 +123,7 @@ func RegisterSearchTools(s *server.MCPServer, getStore func() *storage.Store) {
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			store := getStore()
 			if store == nil {
-				return mcp.NewToolResultError("No project set. Call set_project first."), nil
+				return noProjectError()
 			}
 
 			// Initialize semantic search.
@@ -162,7 +162,7 @@ func RegisterSearchTools(s *server.MCPServer, getStore func() *storage.Store) {
 
 			engine := search.NewEngine(store, embedder, vecStore)
 			if err := engine.Reindex(nil); err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Reindex failed: %v", err)), nil
+				return errFailed("reindex", err)
 			}
 			chunkCount := vecStore.Count()
 
