@@ -14,7 +14,7 @@ Run the entire SDD pipeline from an approved spec: generate tasks → plan each 
 ## When to Use
 
 - User has an approved spec and wants to execute everything in one shot
-- User says "làm hết luôn", "run all", "go mode", or similar
+- User says "run all", "go mode", "execute everything", or similar
 - The spec is already approved (tag: `spec`, `approved`)
 
 ## When NOT to Use
@@ -41,8 +41,8 @@ mcp__knowns__get_doc({ "path": "specs/<name>", "smart": true })
 ```
 
 **Check:**
-- Tags include `approved` — if not, STOP: "Spec chưa approved. Chạy `/kn-spec <name>` trước."
-- Has Acceptance Criteria — if empty, STOP: "Spec thiếu AC."
+- Tags include `approved` — if not, STOP: "Spec not approved. Run `/kn-spec <name>` first."
+- Has Acceptance Criteria — if empty, STOP: "Spec has no ACs."
 - No unresolved open questions marked as blocking
 
 ```json
@@ -76,7 +76,7 @@ mcp__knowns__update_task({
 })
 ```
 
-**Report:** "Tạo X tasks từ spec. Bắt đầu implement..."
+**Report:** "Created X tasks from spec. Starting implementation..."
 
 ---
 
@@ -139,7 +139,7 @@ mcp__knowns__validate({ "entity": "<id>" })
 If errors → fix before moving to next task.
 
 **Progress report between tasks:**
-> "✓ Task X/Y done: [title]. Tiếp tục..."
+> "✓ Task X/Y done: [title]. Continuing..."
 
 ---
 
@@ -192,7 +192,7 @@ feat(<scope>): implement <spec-name>
 
 **This is the ONE gate in go mode — ask user before committing:**
 
-> Pipeline hoàn tất. X tasks done, SDD verified.
+> Pipeline complete. X tasks done, SDD verified.
 > 
 > Ready to commit:
 > ```
@@ -209,7 +209,7 @@ If context exceeds ~60% during implementation:
 1. Finish the current task
 2. Commit completed work so far
 3. Report progress and remaining tasks
-4. Suggest: "Chạy `/kn-go specs/<name>` lại để tiếp tục tasks còn lại."
+4. Suggest: "Run `/kn-go specs/<name>` again to continue remaining tasks."
 
 The skill will detect already-done tasks and skip them on re-run.
 

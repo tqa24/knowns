@@ -102,7 +102,7 @@ After all gray areas resolved, summarize locked decisions:
 > - D2: [summary]
 > - D3: [summary]
 >
-> Viết spec dựa trên các decisions này...
+> Writing spec based on these locked decisions...
 
 ---
 
@@ -264,23 +264,23 @@ After spec is approved:
 ```
 ✓ Spec approved: @doc/specs/<name>
 
-Bước tiếp theo — chọn 1:
+Next step — choose one:
 
-1. Làm từng task (review từng bước):
+1. Task by task (review each step):
    /kn-plan --from @doc/specs/<name>
 
-2. Chạy hết luôn (auto pipeline, không review giữa chừng):
+2. Run all at once (auto pipeline, no review gates):
    /kn-go specs/<name>
 ```
 
 **Option 1 (`kn-plan --from`):**
 - Parse requirements → preview tasks → user approve → create tasks
-- Sau đó `/kn-plan <id>` + `/kn-implement <id>` từng task
+- Then `/kn-plan <id>` + `/kn-implement <id>` for each task
 
 **Option 2 (`kn-go`):**
 - Generate tasks → plan → implement all → verify → commit
-- Chỉ dừng 1 lần ở cuối để confirm commit
-- Tự động skip tasks đã done nếu re-run
+- Only stops once at the end for commit confirmation
+- Auto-skips done tasks on re-run
 
 ---
 
