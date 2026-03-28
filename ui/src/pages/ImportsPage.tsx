@@ -250,12 +250,16 @@ export default function ImportsPage() {
 	}, []);
 
 	// Handle add import
-	const handleAddImport = async () => {
+	const handleAddImport = async (overrideDryRun?: boolean) => {
 		if (!addSource.trim()) return;
+
+		const dryRun = overrideDryRun ?? addDryRun;
 
 		setAdding(true);
 		setAddError(null);
-		setAddResult(null);
+		if (dryRun) {
+			setAddResult(null);
+		}
 
 		try {
 			const result = await importApi.add({
@@ -264,12 +268,12 @@ export default function ImportsPage() {
 				type: addType || undefined,
 				ref: addRef || undefined,
 				link: addLink,
-				dryRun: addDryRun,
+				dryRun,
 			});
 
 			setAddResult(result);
 
-			if (!addDryRun) {
+			if (!dryRun) {
 				// Reload list
 				loadImports();
 				// Select the new import
@@ -818,18 +822,6 @@ export default function ImportsPage() {
 													})()}
 												</div>
 											)}
-											{addResult.dryRun && (
-												<Button
-													onClick={() => {
-														setAddDryRun(false);
-														handleAddImport();
-													}}
-													className="mt-3"
-													size="sm"
-												>
-													Import Now
-												</Button>
-											)}
 										</div>
 									</div>
 								</div>
@@ -842,18 +834,26 @@ export default function ImportsPage() {
 							</Button>
 							{(!addResult || addResult.dryRun) && (
 								<Button
-									onClick={handleAddImport}
+									onClick={() => {
+										if (addResult && addResult.dryRun) {
+											// Preview done → import for real
+											setAddDryRun(false);
+											handleAddImport(false);
+										} else {
+											handleAddImport();
+										}
+									}}
 									disabled={adding || !addSource.trim()}
 								>
 									{adding ? (
 										<>
 											<Loader2 className="w-4 h-4 mr-2 animate-spin" />
-											{addDryRun ? "Checking..." : "Importing..."}
+											{addResult && addResult.dryRun ? "Importing..." : "Checking..."}
 										</>
-									) : addDryRun ? (
-										"Preview"
+									) : addResult && addResult.dryRun ? (
+										"Import Now"
 									) : (
-										"Import"
+										"Preview"
 									)}
 								</Button>
 							)}

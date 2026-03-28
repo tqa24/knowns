@@ -20,6 +20,11 @@ var (
 	colorGray    = lipgloss.Color("8")
 )
 
+// ─── Brand color ─────────────────────────────────────────────────────
+
+// KnownsBrand is the primary Knowns navy blue used for progress bars and accents.
+const KnownsBrand = "#1e3a5f"
+
 // ─── Semantic styles ─────────────────────────────────────────────────
 
 var (

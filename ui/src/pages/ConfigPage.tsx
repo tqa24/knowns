@@ -176,11 +176,14 @@ export default function ConfigPage() {
 	};
 
 	// Handle add import
-	const handleAddImport = async () => {
+	const handleAddImport = async (overrideDryRun?: boolean) => {
 		if (!addSource.trim()) return;
+		const dryRun = overrideDryRun ?? addDryRun;
 		setAdding(true);
 		setAddError(null);
-		setAddResult(null);
+		if (dryRun) {
+			setAddResult(null);
+		}
 		try {
 			const result = await importApi.add({
 				source: addSource,
@@ -188,10 +191,10 @@ export default function ConfigPage() {
 				type: addType || undefined,
 				ref: addRef || undefined,
 				link: addLink,
-				dryRun: addDryRun,
+				dryRun,
 			});
 			setAddResult(result);
-			if (!addDryRun) {
+			if (!dryRun) {
 				loadImports();
 				setShowAddModal(false);
 				resetAddForm();
@@ -872,22 +875,36 @@ export default function ConfigPage() {
 											{addResult.summary.added} added, {addResult.summary.updated} updated, {addResult.summary.skipped} skipped
 										</div>
 									)}
-									{addResult.dryRun && (
-										<Button onClick={() => { setAddDryRun(false); handleAddImport(); }} className="mt-3" size="sm">
-											Import Now
-										</Button>
-									)}
 								</div>
 							)}
 						</div>
 
 						<div className="p-6 border-t flex justify-end gap-3">
 							<Button variant="secondary" onClick={() => { resetAddForm(); setShowAddModal(false); }} disabled={adding}>
-								Cancel
+								{addResult && !addResult.dryRun ? "Close" : "Cancel"}
 							</Button>
 							{(!addResult || addResult.dryRun) && (
-								<Button onClick={handleAddImport} disabled={adding || !addSource.trim()}>
-									{adding ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : addDryRun ? "Preview" : "Import"}
+								<Button
+									onClick={() => {
+										if (addResult && addResult.dryRun) {
+											setAddDryRun(false);
+											handleAddImport(false);
+										} else {
+											handleAddImport();
+										}
+									}}
+									disabled={adding || !addSource.trim()}
+								>
+									{adding ? (
+										<>
+											<Loader2 className="w-4 h-4 mr-2 animate-spin" />
+											{addResult && addResult.dryRun ? "Importing..." : "Checking..."}
+										</>
+									) : addResult && addResult.dryRun ? (
+										"Import Now"
+									) : (
+										"Preview"
+									)}
 								</Button>
 							)}
 						</div>

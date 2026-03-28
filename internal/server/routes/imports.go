@@ -35,14 +35,16 @@ func (ir *ImportRoutes) Register(r chi.Router) {
 
 // ImportEntry describes a single registered import.
 type ImportEntry struct {
-	Name      string   `json:"name"`
-	Source    string   `json:"source,omitempty"`
-	Type     string   `json:"type,omitempty"`
-	Link     bool     `json:"link"`
-	AutoSync bool     `json:"autoSync"`
-	LastSync string   `json:"lastSync,omitempty"`
-	FileCount int     `json:"fileCount"`
-	Files    []string `json:"files,omitempty"`
+	Name       string   `json:"name"`
+	Source     string   `json:"source,omitempty"`
+	Type       string   `json:"type,omitempty"`
+	Ref        string   `json:"ref,omitempty"`
+	Link       bool     `json:"link"`
+	AutoSync   bool     `json:"autoSync"`
+	LastSync   string   `json:"lastSync,omitempty"`
+	ImportedAt string   `json:"importedAt,omitempty"`
+	FileCount  int      `json:"fileCount"`
+	Files      []string `json:"files,omitempty"`
 }
 
 // importsDir returns the path to .knowns/imports/.
@@ -78,7 +80,9 @@ func (ir *ImportRoutes) buildEntry(name string, includeFiles bool) ImportEntry {
 		if meta.Type != "" {
 			entry.Type = meta.Type
 		}
+		entry.Ref = meta.Ref
 		entry.LastSync = meta.LastSync
+		entry.ImportedAt = meta.ImportedAt
 	}
 
 	files := collectFiles(importDir)
@@ -183,10 +187,11 @@ type importChange struct {
 
 // importMeta is persisted as _import.json inside each import directory.
 type importMeta struct {
-	Source   string `json:"source"`
-	Type     string `json:"type"`
-	Ref      string `json:"ref,omitempty"`
-	LastSync string `json:"lastSync,omitempty"`
+	Source     string `json:"source"`
+	Type       string `json:"type"`
+	Ref        string `json:"ref,omitempty"`
+	LastSync   string `json:"lastSync,omitempty"`
+	ImportedAt string `json:"importedAt,omitempty"`
 }
 
 const importMetaFile = "_import.json"
@@ -225,6 +230,75 @@ func readImportMeta(importDir string) (importMeta, bool) {
 	return meta, true
 }
 
+// injectGitToken injects a git token into an HTTPS clone URL.
+// Priority: KNOWNS_GIT_TOKEN env > git.token config > KNOWNS_GITHUB_TOKEN env > github.token config.
+func (ir *ImportRoutes) injectGitToken(source string) string {
+	token := os.Getenv("KNOWNS_GIT_TOKEN")
+	if token == "" {
+		if v, err := ir.store.Config.Get("git.token"); err == nil {
+			if s, ok := v.(string); ok && s != "" {
+				token = s
+			}
+		}
+	}
+	// Fallback to GitHub-specific for backward compatibility.
+	if token == "" {
+		token = os.Getenv("KNOWNS_GITHUB_TOKEN")
+	}
+	if token == "" {
+		if v, err := ir.store.Config.Get("github.token"); err == nil {
+			if s, ok := v.(string); ok && s != "" {
+				token = s
+			}
+		}
+	}
+	if token != "" {
+		return injectTokenInURL(source, token)
+	}
+	return source
+}
+
+// injectTokenInURL rewrites https://host/... to https://user:token@host/...
+// Uses the appropriate token username based on the git host.
+func injectTokenInURL(source, token string) string {
+	for _, prefix := range []string{"https://", "http://"} {
+		if strings.HasPrefix(source, prefix) {
+			rest := strings.TrimPrefix(source, prefix)
+			if strings.Contains(strings.SplitN(rest, "/", 2)[0], "@") {
+				return source
+			}
+			user := tokenUsernameForHost(rest)
+			return prefix + user + ":" + token + "@" + rest
+		}
+	}
+	return source
+}
+
+// tokenUsernameForHost returns the appropriate token username for a git host.
+func tokenUsernameForHost(hostAndPath string) string {
+	host := strings.ToLower(strings.SplitN(hostAndPath, "/", 2)[0])
+	host = strings.SplitN(host, ":", 2)[0] // strip port
+	switch {
+	case strings.Contains(host, "gitlab"):
+		return "oauth2"
+	case strings.Contains(host, "bitbucket"):
+		return "x-token-auth"
+	default:
+		// GitHub and most other git servers accept this.
+		return "x-access-token"
+	}
+}
+
+// isAuthError checks if a git stderr message indicates an authentication failure.
+func isAuthError(stderr string) bool {
+	s := strings.ToLower(stderr)
+	return strings.Contains(s, "authentication failed") ||
+		strings.Contains(s, "could not read username") ||
+		strings.Contains(s, "terminal prompts disabled") ||
+		strings.Contains(s, "403") ||
+		strings.Contains(s, "401")
+}
+
 // gitCloneImport clones a git repo, copies .knowns/docs/ and .knowns/templates/
 // into .knowns/imports/{name}/, and returns the list of changes.
 func (ir *ImportRoutes) gitCloneImport(source, name, ref string, dryRun bool) ([]importChange, []string, error) {
@@ -235,17 +309,25 @@ func (ir *ImportRoutes) gitCloneImport(source, name, ref string, dryRun bool) ([
 	defer os.RemoveAll(tmpDir)
 
 	// Shallow clone.
+	cloneURL := ir.injectGitToken(source)
 	args := []string{"clone", "--depth", "1"}
 	if ref != "" {
 		args = append(args, "--branch", ref)
 	}
-	args = append(args, source, tmpDir)
+	args = append(args, cloneURL, tmpDir)
 
 	cmd := exec.Command("git", args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	if err := cmd.Run(); err != nil {
-		return nil, nil, fmt.Errorf("git clone failed: %s", strings.TrimSpace(stderr.String()))
+		errMsg := strings.TrimSpace(stderr.String())
+		if isAuthError(errMsg) {
+			return nil, nil, fmt.Errorf("authentication failed for %s. "+
+				"Set KNOWNS_GIT_TOKEN env var, run 'knowns config set git.token <token>', "+
+				"or use an SSH URL (e.g. git@host:owner/repo.git) instead", source)
+		}
+		return nil, nil, fmt.Errorf("git clone failed: %s", errMsg)
 	}
 
 	// Check for .knowns/ directory.
@@ -320,11 +402,19 @@ func (ir *ImportRoutes) gitCloneImport(source, name, ref string, dryRun bool) ([
 		if err := os.MkdirAll(destBase, 0755); err != nil {
 			return nil, nil, err
 		}
+		now := time.Now().UTC().Format(time.RFC3339)
+		// Read existing meta to preserve importedAt if this is a re-sync.
+		existingMeta, _ := readImportMeta(destBase)
+		importedAt := existingMeta.ImportedAt
+		if importedAt == "" {
+			importedAt = now
+		}
 		if err := writeImportMeta(destBase, importMeta{
-			Source:   source,
-			Type:     "git",
-			Ref:      ref,
-			LastSync: time.Now().UTC().Format(time.RFC3339),
+			Source:     source,
+			Type:       "git",
+			Ref:        ref,
+			LastSync:   now,
+			ImportedAt: importedAt,
 		}); err != nil {
 			warnings = append(warnings, "could not write import metadata: "+err.Error())
 		}
@@ -428,10 +518,12 @@ func (ir *ImportRoutes) add(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Persist metadata.
+	now := time.Now().UTC().Format(time.RFC3339)
 	_ = writeImportMeta(destDir, importMeta{
-		Source:   req.Source,
-		Type:     importType,
-		LastSync: time.Now().UTC().Format(time.RFC3339),
+		Source:     req.Source,
+		Type:       importType,
+		LastSync:   now,
+		ImportedAt: now,
 	})
 
 	respondJSON(w, http.StatusCreated, importResultJSON(name, req.Source, importType, req.DryRun, []importChange{}, nil))
@@ -491,19 +583,114 @@ func (ir *ImportRoutes) syncOne(w http.ResponseWriter, r *http.Request) {
 }
 
 // syncAll synchronises all registered imports.
-// This is a stub – full sync logic is complex and matches the TS pattern.
 //
 // POST /api/imports/sync-all
 func (ir *ImportRoutes) syncAll(w http.ResponseWriter, r *http.Request) {
-	ir.sse.Broadcast(SSEEvent{Type: "imports:sync-all", Data: map[string]interface{}{}})
+	entries, err := os.ReadDir(ir.importsDir())
+	if os.IsNotExist(err) {
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"success": true,
+			"dryRun":  false,
+			"results": []interface{}{},
+			"summary": map[string]interface{}{"total": 0, "successful": 0, "failed": 0},
+		})
+		return
+	}
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "read imports: "+err.Error())
+		return
+	}
+
+	type syncResult struct {
+		Name    string                 `json:"name"`
+		Source  string                 `json:"source"`
+		Type    string                 `json:"type"`
+		Success bool                   `json:"success"`
+		Error   string                 `json:"error,omitempty"`
+		Summary map[string]interface{} `json:"summary,omitempty"`
+	}
+
+	var results []syncResult
+	successful, failed := 0, 0
+
+	for _, e := range entries {
+		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		name := e.Name()
+		importDir := filepath.Join(ir.importsDir(), name)
+		meta, ok := readImportMeta(importDir)
+		if !ok || !isGitURL(meta.Source) {
+			// Not a git import — nothing to sync, count as success.
+			results = append(results, syncResult{
+				Name:    name,
+				Source:  meta.Source,
+				Type:    meta.Type,
+				Success: true,
+			})
+			successful++
+			continue
+		}
+
+		changes, warnings, syncErr := ir.gitCloneImport(meta.Source, name, meta.Ref, false)
+		if syncErr != nil {
+			results = append(results, syncResult{
+				Name:    name,
+				Source:  meta.Source,
+				Type:    "git",
+				Success: false,
+				Error:   syncErr.Error(),
+			})
+			failed++
+			continue
+		}
+
+		added, updated, skipped := 0, 0, 0
+		for _, c := range changes {
+			switch c.Action {
+			case "add":
+				added++
+			case "update":
+				updated++
+			case "skip":
+				skipped++
+			}
+		}
+
+		sr := syncResult{
+			Name:    name,
+			Source:  meta.Source,
+			Type:    "git",
+			Success: true,
+			Summary: map[string]interface{}{
+				"added":   added,
+				"updated": updated,
+				"skipped": skipped,
+			},
+		}
+		if len(warnings) > 0 {
+			sr.Summary["warnings"] = warnings
+		}
+		results = append(results, sr)
+		successful++
+
+		ir.sse.Broadcast(SSEEvent{Type: "imports:synced", Data: map[string]string{"name": name}})
+	}
+
+	if results == nil {
+		results = []syncResult{}
+	}
+
+	total := successful + failed
+	ir.sse.Broadcast(SSEEvent{Type: "imports:sync-all", Data: map[string]interface{}{"total": total}})
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"dryRun":  false,
-		"results": []interface{}{},
+		"results": results,
 		"summary": map[string]interface{}{
-			"total":      0,
-			"successful": 0,
-			"failed":     0,
+			"total":      total,
+			"successful": successful,
+			"failed":     failed,
 		},
 	})
 }

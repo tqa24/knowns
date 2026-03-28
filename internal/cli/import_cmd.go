@@ -1,12 +1,18 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
 )
 
@@ -47,15 +53,53 @@ func runImportAdd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("create import directory: %w", err)
 	}
 
-	// Write a simple manifest file
+	// Write metadata in the same format as the server.
+	now := time.Now().UTC().Format(time.RFC3339)
+	importType := "local"
+	if strings.HasPrefix(source, "http://") || strings.HasPrefix(source, "https://") || strings.HasPrefix(source, "git@") || strings.HasSuffix(source, ".git") {
+		importType = "git"
+	} else if strings.HasPrefix(source, "@") || (!strings.Contains(source, "/") && !strings.Contains(source, "\\") && !strings.HasPrefix(source, ".")) {
+		importType = "npm"
+	}
+	meta := cliImportMeta{
+		Source:     source,
+		Type:       importType,
+		LastSync:   now,
+		ImportedAt: now,
+	}
 	manifestPath := filepath.Join(importsDir, "_import.json")
-	manifest := fmt.Sprintf(`{"source": %q, "name": %q}`, source, name)
-	if err := os.WriteFile(manifestPath, []byte(manifest+"\n"), 0644); err != nil {
+	data, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal import metadata: %w", err)
+	}
+	if err := os.WriteFile(manifestPath, data, 0644); err != nil {
 		return fmt.Errorf("write import manifest: %w", err)
 	}
 
 	fmt.Println(RenderSuccess(fmt.Sprintf("Added import: %s (from %s)", name, source)))
-	fmt.Println("Run 'knowns import sync' to fetch the package contents.")
+
+	// Auto-sync git imports immediately.
+	if importType == "git" {
+		added, updated, skipped, syncErr := runImportWithSpinner(
+			fmt.Sprintf("Syncing %s", name),
+			func() (int, int, int, error) {
+				return cliGitSync(source, "", importsDir, name)
+			},
+		)
+		if syncErr != nil {
+			fmt.Println("You can retry with: knowns import sync")
+			return nil
+		}
+		// Update lastSync.
+		meta.LastSync = time.Now().UTC().Format(time.RFC3339)
+		if newData, err := json.MarshalIndent(meta, "", "  "); err == nil {
+			_ = os.WriteFile(manifestPath, newData, 0644)
+		}
+		_ = added
+		_ = updated
+		_ = skipped
+	}
+
 	return nil
 }
 
@@ -166,12 +210,47 @@ func runImportSync(cmd *cobra.Command, args []string) error {
 
 	synced := 0
 	for _, e := range entries {
-		if !e.IsDir() {
+		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
-		fmt.Printf("Syncing %s...\n", e.Name())
-		// Sync implementation would go here (npm install, git clone, etc.)
-		// For now we just acknowledge
+		name := e.Name()
+		importDir := filepath.Join(importsDir, name)
+
+		// Read metadata.
+		metaPath := filepath.Join(importDir, "_import.json")
+		metaData, readErr := os.ReadFile(metaPath)
+		if readErr != nil {
+			fmt.Printf("  %s %s: skipped (no metadata)\n", StyleDim.Render("•"), name)
+			continue
+		}
+		var meta cliImportMeta
+		if jsonErr := json.Unmarshal(metaData, &meta); jsonErr != nil {
+			fmt.Printf("  %s %s: skipped (invalid metadata)\n", StyleDim.Render("•"), name)
+			continue
+		}
+
+		if meta.Type != "git" || !isGitURLCli(meta.Source) {
+			fmt.Printf("  %s %s: skipped (not a git import)\n", StyleDim.Render("•"), name)
+			synced++
+			continue
+		}
+
+		_, _, _, syncErr := runImportWithSpinner(
+			fmt.Sprintf("Syncing %s from %s", name, meta.Source),
+			func() (int, int, int, error) {
+				return cliGitSync(meta.Source, meta.Ref, importDir, name)
+			},
+		)
+		if syncErr != nil {
+			continue
+		}
+
+		// Update lastSync.
+		meta.LastSync = time.Now().UTC().Format(time.RFC3339)
+		if newData, err := json.MarshalIndent(meta, "", "  "); err == nil {
+			_ = os.WriteFile(metaPath, newData, 0644)
+		}
+
 		synced++
 	}
 
@@ -179,29 +258,305 @@ func runImportSync(cmd *cobra.Command, args []string) error {
 		fmt.Println("No imports to sync.")
 	} else {
 		fmt.Printf("Synced %d import(s).\n", synced)
-		fmt.Println("(Note: actual network sync not yet implemented in this build.)")
 	}
 	return nil
 }
 
+// isGitURLCli returns true if source looks like a git repository URL.
+func isGitURLCli(source string) bool {
+	s := strings.ToLower(source)
+	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://") || strings.HasPrefix(s, "git@") || strings.HasSuffix(s, ".git")
+}
+
+// cliInjectGitToken injects a git token into HTTPS clone URLs.
+// Priority: KNOWNS_GIT_TOKEN env > git.token config > KNOWNS_GITHUB_TOKEN env > github.token config.
+func cliInjectGitToken(source string) string {
+	token := os.Getenv("KNOWNS_GIT_TOKEN")
+	if token == "" {
+		if store, err := getStoreErr(); err == nil {
+			if v, err := store.Config.Get("git.token"); err == nil {
+				if s, ok := v.(string); ok && s != "" {
+					token = s
+				}
+			}
+		}
+	}
+	// Fallback to GitHub-specific for backward compatibility.
+	if token == "" {
+		token = os.Getenv("KNOWNS_GITHUB_TOKEN")
+	}
+	if token == "" {
+		if store, err := getStoreErr(); err == nil {
+			if v, err := store.Config.Get("github.token"); err == nil {
+				if s, ok := v.(string); ok && s != "" {
+					token = s
+				}
+			}
+		}
+	}
+	if token == "" {
+		return source
+	}
+	for _, prefix := range []string{"https://", "http://"} {
+		if strings.HasPrefix(source, prefix) {
+			rest := strings.TrimPrefix(source, prefix)
+			if strings.Contains(strings.SplitN(rest, "/", 2)[0], "@") {
+				return source
+			}
+			user := cliTokenUsernameForHost(rest)
+			return prefix + user + ":" + token + "@" + rest
+		}
+	}
+	return source
+}
+
+// cliTokenUsernameForHost returns the appropriate token username for a git host.
+func cliTokenUsernameForHost(hostAndPath string) string {
+	host := strings.ToLower(strings.SplitN(hostAndPath, "/", 2)[0])
+	host = strings.SplitN(host, ":", 2)[0]
+	switch {
+	case strings.Contains(host, "gitlab"):
+		return "oauth2"
+	case strings.Contains(host, "bitbucket"):
+		return "x-token-auth"
+	default:
+		return "x-access-token"
+	}
+}
+
+// cliGitSync clones a git repo and copies .knowns/docs and .knowns/templates into importDir.
+func cliGitSync(source, ref, importDir, name string) (added, updated, skipped int, err error) {
+	tmpDir, err := os.MkdirTemp("", "knowns-import-*")
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Shallow clone.
+	cloneURL := cliInjectGitToken(source)
+	gitArgs := []string{"clone", "--depth", "1"}
+	if ref != "" {
+		gitArgs = append(gitArgs, "--branch", ref)
+	}
+	gitArgs = append(gitArgs, cloneURL, tmpDir)
+
+	gitCmd := exec.Command("git", gitArgs...)
+	var stderr bytes.Buffer
+	gitCmd.Stderr = &stderr
+	gitCmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	if err := gitCmd.Run(); err != nil {
+		errMsg := strings.TrimSpace(stderr.String())
+		if cliIsAuthError(errMsg) {
+			return 0, 0, 0, fmt.Errorf("authentication failed for %s\n\n"+
+				"Options:\n"+
+				"  1. Use SSH URL:      git@host:owner/repo.git\n"+
+				"  2. Set token:        export KNOWNS_GIT_TOKEN=<your-token>\n"+
+				"  3. Set config token: knowns config set git.token <your-token>", source)
+		}
+		return 0, 0, 0, fmt.Errorf("git clone failed: %s", errMsg)
+	}
+
+	// Check for .knowns/ directory.
+	knownsDir := filepath.Join(tmpDir, ".knowns")
+	if _, err := os.Stat(knownsDir); os.IsNotExist(err) {
+		return 0, 0, 0, fmt.Errorf("no .knowns directory found in %s", source)
+	}
+
+	for _, sub := range []string{"docs", "templates"} {
+		srcDir := filepath.Join(knownsDir, sub)
+		if _, err := os.Stat(srcDir); os.IsNotExist(err) {
+			continue
+		}
+
+		_ = filepath.Walk(srcDir, func(path string, info os.FileInfo, walkErr error) error {
+			if walkErr != nil || info.IsDir() {
+				return nil
+			}
+			relPath, _ := filepath.Rel(knownsDir, path)
+			relPath = filepath.ToSlash(relPath)
+			// Nest docs under {name}/ prefix.
+			if sub == "docs" {
+				subRel := strings.TrimPrefix(relPath, "docs/")
+				relPath = "docs/" + name + "/" + subRel
+			}
+			destPath := filepath.Join(importDir, relPath)
+
+			srcData, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return nil
+			}
+
+			if destData, readErr := os.ReadFile(destPath); readErr == nil {
+				if bytes.Equal(srcData, destData) {
+					skipped++
+					return nil
+				}
+				updated++
+			} else {
+				added++
+			}
+
+			_ = os.MkdirAll(filepath.Dir(destPath), 0755)
+			_ = cliCopyFile(path, destPath)
+			return nil
+		})
+	}
+
+	return added, updated, skipped, nil
+}
+
+// cliIsAuthError checks if a git stderr message indicates an authentication failure.
+func cliIsAuthError(stderr string) bool {
+	s := strings.ToLower(stderr)
+	return strings.Contains(s, "authentication failed") ||
+		strings.Contains(s, "could not read username") ||
+		strings.Contains(s, "terminal prompts disabled") ||
+		strings.Contains(s, "403") ||
+		strings.Contains(s, "401")
+}
+
+// cliCopyFile copies src to dst.
+func cliCopyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	_, err = io.Copy(out, in)
+	return err
+}
+
+// ─── bubbletea spinner model for import operations ───────────────────
+
+type importSyncResult struct {
+	added   int
+	updated int
+	skipped int
+}
+
+type importSyncDoneMsg struct {
+	result importSyncResult
+	err    error
+}
+
+type importSpinnerModel struct {
+	spinner  spinner.Model
+	label    string
+	done     bool
+	err      error
+	result   importSyncResult
+	syncFunc func() (int, int, int, error)
+}
+
+func newImportSpinnerModel(label string, syncFunc func() (int, int, int, error)) *importSpinnerModel {
+	sp := spinner.New(
+		spinner.WithSpinner(spinner.Dot),
+		spinner.WithStyle(StyleDim),
+	)
+	return &importSpinnerModel{
+		spinner:  sp,
+		label:    label,
+		syncFunc: syncFunc,
+	}
+}
+
+func (m *importSpinnerModel) Init() tea.Cmd {
+	return tea.Batch(
+		m.spinner.Tick,
+		func() tea.Msg {
+			added, updated, skipped, err := m.syncFunc()
+			return importSyncDoneMsg{
+				result: importSyncResult{added: added, updated: updated, skipped: skipped},
+				err:    err,
+			}
+		},
+	)
+}
+
+func (m *importSpinnerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyPressMsg:
+		if msg.String() == "ctrl+c" {
+			m.done = true
+			m.err = fmt.Errorf("cancelled")
+			return m, tea.Quit
+		}
+	case importSyncDoneMsg:
+		m.done = true
+		m.err = msg.err
+		m.result = msg.result
+		return m, tea.Quit
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+	}
+	return m, nil
+}
+
+func (m *importSpinnerModel) View() tea.View {
+	if m.done {
+		if m.err != nil {
+			return tea.NewView(fmt.Sprintf("  %s %s: %s\n",
+				StyleWarning.Render("✗"), m.label, StyleWarning.Render(m.err.Error())))
+		}
+		return tea.NewView(fmt.Sprintf("  %s %s: %d added, %d updated, %d skipped\n",
+			StyleSuccess.Render("✓"), m.label,
+			m.result.added, m.result.updated, m.result.skipped))
+	}
+	return tea.NewView(fmt.Sprintf("  %s %s\n", m.spinner.View(), m.label))
+}
+
+// runImportWithSpinner runs a sync function with a bubbletea spinner UI.
+func runImportWithSpinner(label string, syncFunc func() (int, int, int, error)) (int, int, int, error) {
+	m := newImportSpinnerModel(label, syncFunc)
+	p := tea.NewProgram(m)
+	finalModel, err := p.Run()
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	fm := finalModel.(*importSpinnerModel)
+	return fm.result.added, fm.result.updated, fm.result.skipped, fm.err
+}
+
+// cliImportMeta matches the server's importMeta format for _import.json.
+type cliImportMeta struct {
+	Source     string `json:"source"`
+	Type       string `json:"type"`
+	Ref        string `json:"ref,omitempty"`
+	LastSync   string `json:"lastSync,omitempty"`
+	ImportedAt string `json:"importedAt,omitempty"`
+}
+
 // importNameFromSource derives a safe directory name from an import source.
 func importNameFromSource(source string) string {
-	// Strip leading ./ or ../
-	name := strings.TrimPrefix(source, "./")
-	name = strings.TrimPrefix(name, "../")
+	// Strip trailing slashes and .git suffix.
+	s := strings.TrimRight(source, "/")
+	s = strings.TrimSuffix(s, ".git")
 
-	// For npm scoped packages like @scope/package → scope__package
-	name = strings.TrimPrefix(name, "@")
-	name = strings.ReplaceAll(name, "/", "__")
-	name = strings.ReplaceAll(name, "\\", "__")
+	// Handle SSH URLs like git@github.com:owner/repo
+	if idx := strings.LastIndex(s, ":"); idx >= 0 && !strings.Contains(s, "://") {
+		s = s[idx+1:]
+	}
 
-	// Remove unsafe characters
+	// Take the last path segment.
+	if idx := strings.LastIndex(s, "/"); idx >= 0 {
+		s = s[idx+1:]
+	}
+
+	// For npm scoped packages: @scope/package → package (already handled by last segment)
+	s = strings.TrimPrefix(s, "@")
+
+	// Remove unsafe characters.
 	var b strings.Builder
-	for _, r := range name {
+	for _, r := range s {
 		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' || r == '.' {
 			b.WriteRune(r)
-		} else {
-			b.WriteRune('_')
 		}
 	}
 	result := b.String()

@@ -15,6 +15,7 @@ import (
 
 	"charm.land/bubbles/v2/progress"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/howznguyen/knowns/internal/models"
 	"github.com/howznguyen/knowns/internal/search"
@@ -659,7 +660,7 @@ func runReindex() error {
 		state := &reindexState{phase: "tasks", total: total}
 
 		bar := progress.New(
-			progress.WithDefaultBlend(),
+			progress.WithColors(lipgloss.Color(KnownsBrand)),
 			progress.WithWidth(40),
 			progress.WithoutPercentage(),
 		)

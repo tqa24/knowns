@@ -2,6 +2,7 @@ package routes
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/howznguyen/knowns/internal/storage"
@@ -97,8 +98,15 @@ func (tr *TimeRoutes) stop(w http.ResponseWriter, r *http.Request) {
 		}
 		var stopped []string
 		for _, a := range state.Active {
-			if _, err := tr.store.Time.Stop(a.TaskID); err == nil {
+			entry, err := tr.store.Time.Stop(a.TaskID)
+			if err == nil {
 				stopped = append(stopped, a.TaskID)
+				// Update task's timeSpent
+				if task, taskErr := tr.store.Tasks.Get(a.TaskID); taskErr == nil {
+					task.TimeSpent += entry.Duration
+					task.UpdatedAt = time.Now().UTC()
+					_ = tr.store.Tasks.Update(task)
+				}
 			}
 		}
 		newState, _ := tr.store.Time.GetState()
@@ -118,6 +126,12 @@ func (tr *TimeRoutes) stop(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		respondError(w, http.StatusNotFound, err.Error())
 		return
+	}
+	// Update task's timeSpent
+	if task, taskErr := tr.store.Tasks.Get(req.TaskID); taskErr == nil {
+		task.TimeSpent += entry.Duration
+		task.UpdatedAt = time.Now().UTC()
+		_ = tr.store.Tasks.Update(task)
 	}
 	state, _ := tr.store.Time.GetState()
 	tr.sse.Broadcast(SSEEvent{Type: "time:updated", Data: state})

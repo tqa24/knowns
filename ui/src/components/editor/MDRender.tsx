@@ -157,7 +157,14 @@ const MDRender = forwardRef<MDRenderRef, MDRenderProps>(
           );
         },
 
-        pre: CopyablePre,
+        pre: ({ children, node, ...props }: { children?: ReactNode; node?: any }) => {
+          // Mermaid blocks have their own controls — skip CopyablePre wrapper
+          const codeNode = node?.children?.[0];
+          if (codeNode?.type === "element" && codeNode?.properties?.className?.some?.((c: string) => c === "language-mermaid")) {
+            return <>{children}</>;
+          }
+          return <CopyablePre {...props}>{children}</CopyablePre>;
+        },
 
         input: ({ type, checked, disabled, ...props }: { type?: string; checked?: boolean; disabled?: boolean }) => {
           if (type === "checkbox") {
