@@ -155,13 +155,12 @@ func hasPlatform(platforms []string, id string) bool {
 
 // initConfig holds all wizard answers.
 type initConfig struct {
-	Name             string
-	GitTrackingMode  string
-	EnableSemantic   bool
-	SemanticModel    string
-	Platforms        []string // excludes "opencode"; use EnableChatUI for that
-	EnableChatUI     bool     // whether to include "opencode" platform
-	AutoSyncOnUpdate bool
+	Name            string
+	GitTrackingMode string
+	EnableSemantic  bool
+	SemanticModel   string
+	Platforms       []string // excludes "opencode"; use EnableChatUI for that
+	EnableChatUI    bool     // whether to include "opencode" platform
 }
 
 // Aliases for centralized styles (see styles.go)
@@ -214,7 +213,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if interactive && len(args) == 0 {
 		// Load any existing config to pre-populate wizard defaults.
 		var existingPlatforms []string
-		var existingAutoSync *bool
 		var existingEnableChatUI *bool
 		var existingName string
 		var existingGitTrackingMode string
@@ -222,7 +220,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 		var existingSemanticModel string
 		if existingCfg, err := storage.NewStore(root).Config.Load(); err == nil {
 			existingPlatforms = existingCfg.Settings.Platforms
-			existingAutoSync = existingCfg.Settings.AutoSyncOnUpdate
 			existingEnableChatUI = existingCfg.Settings.EnableChatUI
 			existingName = existingCfg.Name
 			existingGitTrackingMode = existingCfg.Settings.GitTrackingMode
@@ -234,7 +231,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 
 		// Run full wizard with huh
-		wizardCfg, err := runWizard(cwd, gitTracked, gitIgnored, existingPlatforms, existingAutoSync, existingEnableChatUI, existingName, existingGitTrackingMode, existingSemanticEnabled, existingSemanticModel)
+		wizardCfg, err := runWizard(cwd, gitTracked, gitIgnored, existingPlatforms, existingEnableChatUI, existingName, existingGitTrackingMode, existingSemanticEnabled, existingSemanticModel)
 		if err != nil {
 			if err == huh.ErrUserAborted {
 				fmt.Println(warnStyle.Render("Setup cancelled."))
@@ -256,12 +253,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 			gitMode = "git-ignored"
 		}
 		cfg = initConfig{
-			Name:             name,
-			GitTrackingMode:  gitMode,
-			EnableSemantic:   isTTY(),
-			SemanticModel:    "gte-small",
-			Platforms:        []string{"claude-code", "agents"},
-			AutoSyncOnUpdate: true,
+			Name:            name,
+			GitTrackingMode: gitMode,
+			EnableSemantic:  isTTY(),
+			SemanticModel:   "gte-small",
+			Platforms:       []string{"claude-code", "agents"},
 		}
 	}
 
@@ -300,8 +296,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 				if len(cfg.Platforms) > 0 {
 					project.Settings.Platforms = cfg.Platforms
 				}
-				autoSync := cfg.AutoSyncOnUpdate
-				project.Settings.AutoSyncOnUpdate = &autoSync
 				enableChatUI := cfg.EnableChatUI
 				project.Settings.EnableChatUI = &enableChatUI
 				return store.Config.Save(project)
@@ -394,7 +388,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	return maybeOpenBrowser(cwd, openFlag, noOpen)
 }
 
-func runWizard(cwd string, gitTracked, gitIgnored bool, existingPlatforms []string, existingAutoSync *bool, existingEnableChatUI *bool, existingName string, existingGitTrackingMode string, existingSemanticEnabled *bool, existingSemanticModel string) (*initConfig, error) {
+func runWizard(cwd string, gitTracked, gitIgnored bool, existingPlatforms []string, existingEnableChatUI *bool, existingName string, existingGitTrackingMode string, existingSemanticEnabled *bool, existingSemanticModel string) (*initConfig, error) {
 	defaultName := filepath.Base(cwd)
 	if existingName != "" {
 		defaultName = existingName
@@ -516,20 +510,7 @@ func runWizard(cwd string, gitTracked, gitIgnored bool, existingPlatforms []stri
 			Value(&cfg.EnableChatUI),
 	)
 
-	// --- Group 4: Auto-sync ---
-	cfg.AutoSyncOnUpdate = true // default
-	if existingAutoSync != nil {
-		cfg.AutoSyncOnUpdate = *existingAutoSync
-	}
-	group4 := huh.NewGroup(
-		huh.NewConfirm().
-			Title("Auto-sync skills on update?").
-			Description("When a new Knowns version is installed, automatically re-sync\n" +
-				"skills and prompts to all selected platforms on the next command.").
-			Value(&cfg.AutoSyncOnUpdate),
-	)
-
-	// --- Group 5: Semantic search ---
+	// --- Group 4: Semantic search ---
 	cfg.EnableSemantic = true
 	cfg.SemanticModel = "gte-small"
 	if existingSemanticEnabled != nil {
@@ -564,7 +545,7 @@ func runWizard(cwd string, gitTracked, gitIgnored bool, existingPlatforms []stri
 	if gitGroup != nil {
 		groups = append(groups, gitGroup)
 	}
-	groups = append(groups, group2, group3, group4, group5, group6)
+	groups = append(groups, group2, group3, group5, group6)
 
 	form := huh.NewForm(groups...).
 		WithTheme(huh.ThemeCatppuccin())
@@ -720,7 +701,6 @@ func createKiroMCPConfigQuiet(projectRoot string) error {
 
 	return os.WriteFile(configPath, append(data, '\n'), 0644)
 }
-
 
 // createInstructionFilesForPlatforms generates only instruction files for the
 // given platform IDs. If platforms is empty all files are generated.

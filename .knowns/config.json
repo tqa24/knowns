@@ -48,7 +48,6 @@
       "agents",
       "opencode"
     ],
-    "autoSyncOnUpdate": true,
     "enableChatUI": true,
     "opencodeModels": {
       "version": 1,

@@ -98,33 +98,20 @@ func customHelpFunc(cmd *cobra.Command, args []string) {
 	fmt.Printf("%s\n", StyleDim.Render("Use \"knowns [command] --help\" for more information about a command."))
 }
 
-// maybeAutoSync silently re-syncs skills when AutoSyncOnUpdate is enabled and
-// the embedded skill version differs from the current CLI version.
-// Errors are intentionally swallowed — this is a best-effort background operation.
-func maybeAutoSync() {
+// maybeWarnSkillsOutOfSync prints a one-line warning if embedded skills differ
+// from the on-disk copies. This nudges the user to run `knowns sync` after upgrading.
+func maybeWarnSkillsOutOfSync() {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return
 	}
 	root := filepath.Join(cwd, ".knowns")
 	if _, err := os.Stat(root); err != nil {
-		return // not a knowns project
-	}
-
-	store := storage.NewStore(root)
-	cfg, err := store.Config.Load()
-	if err != nil || cfg.Settings.AutoSyncOnUpdate == nil || !*cfg.Settings.AutoSyncOnUpdate {
 		return
 	}
-
-	// Read synced version from .claude/skills/.version or .agent/skills/.version
-	syncedVersion := codegen.ReadSyncedSkillVersion(cwd)
-	if syncedVersion == "" || syncedVersion == util.Version {
-		return
+	if codegen.SkillsOutOfSync(cwd) {
+		fmt.Fprintf(os.Stderr, "%s\n", StyleWarning.Render("⚠ Skills are out of sync. Run 'knowns sync' to update."))
 	}
-
-	// Version mismatch — re-sync silently
-	_ = codegen.SyncSkillsForPlatforms(cwd, cfg.Settings.Platforms)
 }
 
 // maybeAutoSetup detects a cloned Knowns project with config.json but missing
@@ -183,8 +170,8 @@ func maybeAutoSetup() {
 
 // Execute runs the root command.
 func Execute() error {
-	// Auto-sync skills if version changed (best-effort, silent).
-	maybeAutoSync()
+	// Warn if skills are out of sync after a CLI upgrade.
+	maybeWarnSkillsOutOfSync()
 
 	// Check if cloned project needs local setup (e.g. embedding model download).
 	maybeAutoSetup()

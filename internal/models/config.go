@@ -41,10 +41,6 @@ type ProjectSettings struct {
 	// If empty, all platforms are treated as enabled (backwards-compatible default).
 	Platforms []string `json:"platforms,omitempty"`
 
-	// AutoSyncOnUpdate enables automatic skill/prompt sync when CLI version changes.
-	// When true, skills are re-synced silently on the first command after an upgrade.
-	AutoSyncOnUpdate *bool `json:"autoSyncOnUpdate,omitempty"`
-
 	// EnableChatUI controls whether the Chat UI (powered by OpenCode web) is
 	// shown in the browser. When nil/unset the UI defaults to showing it.
 	EnableChatUI *bool `json:"enableChatUI,omitempty"`

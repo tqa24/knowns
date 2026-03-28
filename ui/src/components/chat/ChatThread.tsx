@@ -271,14 +271,17 @@ export function ChatThread({
 		bottomRef.current?.scrollIntoView();
 	}, [session.id]);
 
-	// Smooth scroll only for new messages in the active session.
-	useEffect(() => {
+	// Scroll to bottom before paint when new messages arrive in the active session.
+	useLayoutEffect(() => {
 		if (didSwitchSessionRef.current) {
 			didSwitchSessionRef.current = false;
 			return;
 		}
 		if (!shouldAutoScrollRef.current) return;
-		bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+		const container = scrollContainerRef.current;
+		if (container) {
+			container.scrollTop = container.scrollHeight;
+		}
 	}, [session.messages.length, session.status]);
 
 	// Observe whether bottom is visible to show/hide scroll button

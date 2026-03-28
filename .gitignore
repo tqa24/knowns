@@ -11,6 +11,9 @@ npm/knowns-*/knowns.exe
 # OS
 .DS_Store
 
+# Skills sync metadata
+**/.version
+
 # UI
 ui/node_modules/
 ui/dist/

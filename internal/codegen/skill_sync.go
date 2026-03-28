@@ -1,46 +1,62 @@
 package codegen
 
 import (
-	"encoding/json"
+	"bytes"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
-	"time"
 
 	instructionskills "github.com/howznguyen/knowns/internal/instructions/skills"
-	"github.com/howznguyen/knowns/internal/util"
 )
 
-type skillVersionFile struct {
-	CLIVersion string `json:"cliVersion"`
-	SyncedAt   string `json:"syncedAt"`
-}
-
-// ReadSyncedSkillVersion reads the CLI version stored in the skills version file.
-// It checks .claude/skills/.version first, then .agent/skills/.version.
-// Returns empty string if neither file is found or readable.
-func ReadSyncedSkillVersion(projectRoot string) string {
+// SkillsOutOfSync returns true if any embedded skill SKILL.md differs from the
+// on-disk version in the first platform directory that exists. This is a fast
+// content-based check — no version files needed.
+func SkillsOutOfSync(projectRoot string) bool {
 	candidates := []string{
-		filepath.Join(projectRoot, ".claude", "skills", ".version"),
-		filepath.Join(projectRoot, ".agent", "skills", ".version"),
-		filepath.Join(projectRoot, ".kiro", "skills", ".version"),
+		filepath.Join(projectRoot, ".claude", "skills"),
+		filepath.Join(projectRoot, ".agent", "skills"),
+		filepath.Join(projectRoot, ".kiro", "skills"),
 	}
-	for _, p := range candidates {
-		data, err := os.ReadFile(p)
+
+	// Find first existing platform dir
+	var targetDir string
+	for _, c := range candidates {
+		if info, err := os.Stat(c); err == nil && info.IsDir() {
+			targetDir = c
+			break
+		}
+	}
+	if targetDir == "" {
+		return false // no skills synced yet — not "out of sync"
+	}
+
+	skillDirs, err := listSkillDirs()
+	if err != nil || len(skillDirs) == 0 {
+		return false
+	}
+
+	for _, skillDir := range skillDirs {
+		embeddedPath := filepath.ToSlash(filepath.Join(skillDir, "SKILL.md"))
+		embeddedData, err := fs.ReadFile(instructionskills.Files, embeddedPath)
 		if err != nil {
 			continue
 		}
-		var vf skillVersionFile
-		if err := json.Unmarshal(data, &vf); err != nil {
-			continue
+
+		diskPath := filepath.Join(targetDir, skillDir, "SKILL.md")
+		diskData, err := os.ReadFile(diskPath)
+		if err != nil {
+			return true // file missing on disk → out of sync
 		}
-		if vf.CLIVersion != "" {
-			return vf.CLIVersion
+
+		if !bytes.Equal(embeddedData, diskData) {
+			return true
 		}
 	}
-	return ""
+
+	return false
 }
 
 // BuiltInSkillCount returns the number of embedded built-in skills.
@@ -118,9 +134,6 @@ func SyncSkillsForPlatforms(projectRoot string, platforms []string) error {
 				return fmt.Errorf("copy skill %s to %s: %w", skillDir, targetDir, err)
 			}
 		}
-		if err := writeSkillVersionFile(filepath.Join(targetDir, ".version")); err != nil {
-			return fmt.Errorf("write version file for %s: %w", targetDir, err)
-		}
 	}
 	return nil
 }
@@ -153,9 +166,6 @@ func SyncSkills(projectRoot string) error {
 			}
 		}
 
-		if err := writeSkillVersionFile(filepath.Join(targetDir, ".version")); err != nil {
-			return fmt.Errorf("write version file for %s: %w", targetDir, err)
-		}
 	}
 
 	return nil
@@ -178,18 +188,6 @@ func listSkillDirs() ([]string, error) {
 	}
 
 	return skillDirs, nil
-}
-
-func writeSkillVersionFile(path string) error {
-	data, err := json.MarshalIndent(skillVersionFile{
-		CLIVersion: util.Version,
-		SyncedAt:   time.Now().UTC().Format(time.RFC3339),
-	}, "", "  ")
-	if err != nil {
-		return err
-	}
-	data = append(data, '\n')
-	return os.WriteFile(path, data, 0644)
 }
 
 func copyEmbeddedDir(src, dst string) error {

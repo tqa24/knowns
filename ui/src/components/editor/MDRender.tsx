@@ -3,7 +3,6 @@ import {
   useImperativeHandle,
   useRef,
   useMemo,
-  useState,
   lazy,
   Suspense,
   type ReactNode,
@@ -11,7 +10,7 @@ import {
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import hljs from "highlight.js";
-import { ClipboardCheck, Check, Loader2 } from "lucide-react";
+import { Check } from "lucide-react";
 import { useTheme } from "../../App";
 import { cn } from "../../lib/utils";
 
@@ -19,21 +18,11 @@ import { transformMentions, toDocPath, getInlineMention } from "./mentionUtils";
 import { TaskMentionBadge } from "./TaskMentionBadge";
 import { DocMentionBadge } from "./DocMentionBadge";
 import { MarkdownErrorBoundary } from "./MarkdownErrorBoundary";
-import { extractTextFromChildren, slugifyHeading, parseHeadingMeta } from "./headingUtils";
+import { parseHeadingMeta } from "./headingUtils";
+import { CopyablePre, CopyableTable, StableHeading, MermaidLoading } from "./mdComponents";
 
 // Lazy load MermaidBlock for better performance
 const MermaidBlock = lazy(() => import("./MermaidBlock"));
-
-function MermaidLoading() {
-  return (
-    <div className="my-4 p-4 rounded-lg border bg-muted/30 animate-pulse">
-      <div className="h-32 flex items-center justify-center text-muted-foreground gap-2">
-        <Loader2 className="w-4 h-4 animate-spin" />
-        Loading diagram...
-      </div>
-    </div>
-  );
-}
 
 export interface MDRenderRef {
   getElement: () => HTMLElement | null;
@@ -63,76 +52,48 @@ const MDRender = forwardRef<MDRenderRef, MDRenderProps>(
     }));
 
     const headingMeta = useMemo(() => parseHeadingMeta(markdown || ""), [markdown]);
-    let headingRenderIndex = 0;
 
-    const Heading = ({ level, children, ...props }: { level: number; children?: ReactNode }) => {
-      const Tag = `h${level}` as const;
-      if (!showHeadingAnchors) {
-        return <Tag {...props}>{children}</Tag>;
-      }
+    // Stable refs for callbacks and mutable state so components identity never changes
+    const headingRenderIndexRef = useRef(0);
+    const headingMetaRef = useRef(headingMeta);
+    headingMetaRef.current = headingMeta;
+    const showHeadingAnchorsRef = useRef(showHeadingAnchors);
+    showHeadingAnchorsRef.current = showHeadingAnchors;
+    const onHeadingAnchorClickRef = useRef(onHeadingAnchorClick);
+    onHeadingAnchorClickRef.current = onHeadingAnchorClick;
+    const onDocLinkClickRef = useRef(onDocLinkClick);
+    onDocLinkClickRef.current = onDocLinkClick;
+    const onTaskLinkClickRef = useRef(onTaskLinkClick);
+    onTaskLinkClickRef.current = onTaskLinkClick;
 
-      const text = extractTextFromChildren(children);
-      const meta = headingMeta[headingRenderIndex];
-      headingRenderIndex += 1;
-
-      const number = meta?.number ?? "";
-      const id = meta?.id ?? slugifyHeading(text);
-
-      const headingClassName =
-        level <= 3
-          ? "group relative scroll-mt-4 flex items-baseline gap-2"
-          : "group relative scroll-mt-4 flex items-baseline gap-1.5";
-
-      return (
-        <Tag id={id} className={headingClassName} {...props}>
-          {number && (
-            <span className="inline-block text-[0.72em] font-semibold text-muted-foreground/50 select-none leading-none translate-y-[1px]">
-              {number}
-            </span>
-          )}
-          <span className="min-w-0">{children}</span>
-          <a
-            href={`#${id}`}
-            className="ml-1 text-muted-foreground/0 group-hover:text-muted-foreground/50 hover:!text-foreground transition-colors no-underline leading-none"
-            aria-label={`Link to section ${number}${text ? ` ${text}` : ""}`}
-            onClick={(e) => {
-              if (onHeadingAnchorClick) {
-                e.preventDefault();
-                onHeadingAnchorClick(id);
-              }
-            }}
-          >
-            #
-          </a>
-        </Tag>
-      );
-    };
+    // Reset heading counter before each render of ReactMarkdown
+    headingRenderIndexRef.current = 0;
 
     const components = useMemo(
       () => ({
         h2: ({ children, ...props }: { children?: ReactNode }) => (
-          <Heading level={2} {...props}>{children}</Heading>
+          <StableHeading level={2} headingMetaRef={headingMetaRef} headingRenderIndexRef={headingRenderIndexRef} showHeadingAnchorsRef={showHeadingAnchorsRef} onHeadingAnchorClickRef={onHeadingAnchorClickRef} {...props}>{children}</StableHeading>
         ),
         h3: ({ children, ...props }: { children?: ReactNode }) => (
-          <Heading level={3} {...props}>{children}</Heading>
+          <StableHeading level={3} headingMetaRef={headingMetaRef} headingRenderIndexRef={headingRenderIndexRef} showHeadingAnchorsRef={showHeadingAnchorsRef} onHeadingAnchorClickRef={onHeadingAnchorClickRef} {...props}>{children}</StableHeading>
         ),
         h4: ({ children, ...props }: { children?: ReactNode }) => (
-          <Heading level={4} {...props}>{children}</Heading>
+          <StableHeading level={4} headingMetaRef={headingMetaRef} headingRenderIndexRef={headingRenderIndexRef} showHeadingAnchorsRef={showHeadingAnchorsRef} onHeadingAnchorClickRef={onHeadingAnchorClickRef} {...props}>{children}</StableHeading>
         ),
 
         a: ({ href, children }: { href?: string; children?: ReactNode }) => {
           const text = String(children);
 
           if (text.startsWith("@@task-")) {
-            return <TaskMentionBadge taskId={text.slice(2)} onTaskLinkClick={onTaskLinkClick} />;
+            return <TaskMentionBadge taskId={text.slice(2)} onTaskLinkClick={onTaskLinkClickRef.current} />;
           }
 
           if (text.startsWith("@@doc/")) {
-            return <DocMentionBadge docPath={text.slice(6)} onDocLinkClick={onDocLinkClick} />;
+            return <DocMentionBadge docPath={text.slice(6)} onDocLinkClick={onDocLinkClickRef.current} />;
           }
 
           if (href && (href.startsWith("@doc/") || href.startsWith("@docs/") || href.startsWith(".knowns/docs/") || href.startsWith("/.knowns/docs/"))) {
-            return <DocMentionBadge docPath={toDocPath(href)} onDocLinkClick={onDocLinkClick} />;
+            return <DocMentionBadge docPath={toDocPath(href)} onDocLinkClick={onDocLinkClickRef.current} />;
           }
 
           return <a href={href} className="text-primary hover:underline">{children}</a>;
@@ -156,10 +117,10 @@ const MDRender = forwardRef<MDRenderRef, MDRenderProps>(
           if (isInline) {
             const inlineMention = getInlineMention(codeContent);
             if (inlineMention?.type === "task") {
-              return <TaskMentionBadge taskId={inlineMention.taskId} onTaskLinkClick={onTaskLinkClick} />;
+              return <TaskMentionBadge taskId={inlineMention.taskId} onTaskLinkClick={onTaskLinkClickRef.current} />;
             }
             if (inlineMention?.type === "doc") {
-              return <DocMentionBadge docPath={inlineMention.docPath} onDocLinkClick={onDocLinkClick} />;
+              return <DocMentionBadge docPath={inlineMention.docPath} onDocLinkClick={onDocLinkClickRef.current} />;
             }
             return (
               <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm whitespace-break-spaces break-words [overflow-wrap:anywhere]" {...props}>
@@ -196,34 +157,7 @@ const MDRender = forwardRef<MDRenderRef, MDRenderProps>(
           );
         },
 
-        pre: ({ children, ...props }: { children?: ReactNode }) => {
-          const [copied, setCopied] = useState(false);
-          const preRef = useRef<HTMLPreElement>(null);
-
-          const handleCopy = () => {
-            const text = preRef.current?.textContent || "";
-            navigator.clipboard.writeText(text).then(() => {
-              setCopied(true);
-              setTimeout(() => setCopied(false), 2000);
-            });
-          };
-
-          return (
-            <div className="group relative">
-              <button
-                type="button"
-                onClick={handleCopy}
-                className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-md bg-muted hover:bg-muted/80 border border-border text-muted-foreground hover:text-foreground"
-                title="Copy code"
-              >
-                {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <ClipboardCheck className="w-3.5 h-3.5" />}
-              </button>
-              <pre ref={preRef} className="p-4 rounded-lg overflow-x-auto text-sm hljs-pre" {...props}>
-                {children}
-              </pre>
-            </div>
-          );
-        },
+        pre: CopyablePre,
 
         input: ({ type, checked, disabled, ...props }: { type?: string; checked?: boolean; disabled?: boolean }) => {
           if (type === "checkbox") {
@@ -261,44 +195,7 @@ const MDRender = forwardRef<MDRenderRef, MDRenderProps>(
           );
         },
 
-        table: ({ children, ...props }: { children?: ReactNode }) => {
-          const [copied, setCopied] = useState(false);
-          const tableRef = useRef<HTMLTableElement>(null);
-
-          const handleCopyTable = () => {
-            if (!tableRef.current) return;
-            const rows = tableRef.current.querySelectorAll("tr");
-            const markdownRows: string[] = [];
-            rows.forEach((row, rowIndex) => {
-              const cells = row.querySelectorAll("th, td");
-              const cellTexts = Array.from(cells).map((cell) => cell.textContent?.trim() || "");
-              markdownRows.push(`| ${cellTexts.join(" | ")} |`);
-              if (rowIndex === 0) {
-                markdownRows.push(`| ${cellTexts.map(() => "---").join(" | ")} |`);
-              }
-            });
-            navigator.clipboard.writeText(markdownRows.join("\n")).then(() => {
-              setCopied(true);
-              setTimeout(() => setCopied(false), 2000);
-            });
-          };
-
-          return (
-            <div className="table-wrapper group relative my-4 overflow-x-auto rounded-lg border border-border">
-              <button
-                type="button"
-                onClick={handleCopyTable}
-                className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-md bg-muted hover:bg-muted/80 border border-border text-muted-foreground hover:text-foreground"
-                title="Copy as Markdown"
-              >
-                {copied ? <Check className="w-4 h-4 text-green-500" /> : <ClipboardCheck className="w-4 h-4" />}
-              </button>
-              <table ref={tableRef} className="w-full border-collapse text-sm" {...props}>
-                {children}
-              </table>
-            </div>
-          );
-        },
+        table: CopyableTable,
 
         thead: ({ children, ...props }: { children?: ReactNode }) => (
           <thead className="bg-muted" {...props}>{children}</thead>
@@ -316,7 +213,8 @@ const MDRender = forwardRef<MDRenderRef, MDRenderProps>(
           <td className="px-4 py-3 border-b border-border/30" {...props}>{children}</td>
         ),
       }),
-      [Heading, onDocLinkClick, onTaskLinkClick, isDark]
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- all changing values accessed via stable refs
+      []
     );
 
     if (!markdown) return null;
