@@ -114,7 +114,11 @@ func (s *IndexService) RemoveDoc(docPath string) error {
 }
 
 func (s *IndexService) embedAndStoreTask(task *models.Task) error {
-	result := ChunkTask(task)
+	maxTokens := 512
+	if cfg, ok := EmbeddingModels[s.vecStore.Model()]; ok {
+		maxTokens = cfg.MaxTokens
+	}
+	result := ChunkTask(task, maxTokens, s.embedder.GetTokenizer())
 	return s.embedAndStore(result.Chunks)
 }
 
@@ -123,13 +127,13 @@ func (s *IndexService) embedAndStoreDoc(doc *models.Doc) error {
 	if cfg, ok := EmbeddingModels[s.vecStore.Model()]; ok {
 		maxTokens = cfg.MaxTokens
 	}
-	result := ChunkDocument(doc.Content, doc.Path, doc.Title, doc.Description, maxTokens)
+	result := ChunkDocument(doc.Content, doc.Path, doc.Title, doc.Description, maxTokens, s.embedder.GetTokenizer())
 	return s.embedAndStore(result.Chunks)
 }
 
 func (s *IndexService) embedAndStore(chunks []Chunk) error {
 	for i := range chunks {
-		vec, err := s.embedder.Embed(chunks[i].Content)
+		vec, err := s.embedder.EmbedDocument(chunks[i].Content)
 		if err != nil {
 			return fmt.Errorf("embed chunk %s: %w", chunks[i].ID, err)
 		}

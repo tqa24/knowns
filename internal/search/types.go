@@ -9,6 +9,10 @@ const (
 	ModeHybrid   SearchMode = "hybrid"
 )
 
+// ChunkVersion is incremented when chunking/embedding logic changes,
+// triggering auto-reindex on next search initialization.
+const ChunkVersion = 2
+
 // ChunkType indicates whether a chunk came from a doc or a task.
 type ChunkType string
 
@@ -26,11 +30,11 @@ type Chunk struct {
 	Embedding  []float32 `json:"-"` // populated after embedding
 
 	// Doc fields (populated when Type == ChunkTypeDoc).
-	DocPath       string `json:"docPath,omitempty"`
-	Section       string `json:"section,omitempty"`
-	HeadingLevel  int    `json:"headingLevel,omitempty"`
-	ParentSection string `json:"parentSection,omitempty"`
-	Position      int    `json:"position,omitempty"`
+	DocPath      string `json:"docPath,omitempty"`
+	Section      string `json:"section,omitempty"`
+	HeadingLevel int    `json:"headingLevel,omitempty"`
+	HeaderPath   string `json:"headerPath,omitempty"` // full hierarchy path e.g. "API/Endpoints/GET /users"
+	Position     int    `json:"position,omitempty"`
 
 	// Task fields (populated when Type == ChunkTypeTask).
 	TaskID   string   `json:"taskId,omitempty"`
@@ -72,6 +76,8 @@ type EmbeddingModelConfig struct {
 	Dimensions    int
 	MaxTokens     int
 	HuggingFaceID string
+	QueryPrefix   string // prefix prepended to queries before embedding
+	DocPrefix     string // prefix prepended to documents before embedding
 }
 
 // Known embedding model configurations.
@@ -99,23 +105,31 @@ var EmbeddingModels = map[string]EmbeddingModelConfig{
 		Dimensions:    384,
 		MaxTokens:     512,
 		HuggingFaceID: "Xenova/bge-small-en-v1.5",
+		QueryPrefix:   "Represent this sentence: ",
+		DocPrefix:     "Represent this sentence: ",
 	},
 	"bge-base-en-v1.5": {
 		Name:          "bge-base-en-v1.5",
 		Dimensions:    768,
 		MaxTokens:     512,
 		HuggingFaceID: "Xenova/bge-base-en-v1.5",
+		QueryPrefix:   "Represent this sentence: ",
+		DocPrefix:     "Represent this sentence: ",
 	},
 	"nomic-embed-text-v1.5": {
 		Name:          "nomic-embed-text-v1.5",
 		Dimensions:    768,
 		MaxTokens:     8192,
 		HuggingFaceID: "Xenova/nomic-embed-text-v1.5",
+		QueryPrefix:   "search_query: ",
+		DocPrefix:     "search_document: ",
 	},
 	"multilingual-e5-small": {
 		Name:          "multilingual-e5-small",
 		Dimensions:    384,
 		MaxTokens:     512,
 		HuggingFaceID: "Xenova/multilingual-e5-small",
+		QueryPrefix:   "query: ",
+		DocPrefix:     "passage: ",
 	},
 }

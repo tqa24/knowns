@@ -59,7 +59,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	projectRoot := filepath.Dir(store.Root)
 	configPlatforms := cfg.Settings.Platforms
 
-	fmt.Printf("Syncing project %s from config.json...\n\n", StyleBold.Render(cfg.Name))
+	fmt.Printf("%s\n\n", RenderInfo(fmt.Sprintf("Syncing project %s from config.json...", StyleBold.Render(cfg.Name))))
 
 	// 1. Skills
 	if syncSkills {
@@ -81,7 +81,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	// 3. Git integration
 	if !specificFlag {
 		if cfg.Settings.GitTrackingMode != "" {
-			fmt.Printf("Applying git tracking mode: %s\n", StyleBold.Render(cfg.Settings.GitTrackingMode))
+			fmt.Println(RenderField("Git tracking mode", StyleBold.Render(cfg.Settings.GitTrackingMode)))
 			if err := writeKnownsGitignore(projectRoot, cfg.Settings.GitTrackingMode); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: git integration failed: %v\n", err)
 			} else {
@@ -146,7 +146,7 @@ func runSyncModel(store *storage.Store, force bool) error {
 		return nil
 	}
 
-	fmt.Printf("Downloading embedding model: %s (~%dMB)...\n", StyleBold.Render(selected.Name), selected.SizeMB)
+	fmt.Printf("%s\n", RenderInfo(fmt.Sprintf("Downloading embedding model: %s (~%dMB)...", StyleBold.Render(selected.Name), selected.SizeMB)))
 
 	steps, alreadyInstalled, err := buildSemanticDownloadSteps(modelID)
 	if err != nil {
@@ -178,7 +178,7 @@ func runSyncSkillsForPlatforms(projectRoot string, force bool, platforms []strin
 		return nil
 	}
 
-	fmt.Printf("Syncing %s skill(s)...\n", StyleBold.Render(fmt.Sprintf("%d", count)))
+	fmt.Printf("%s\n", RenderInfo(fmt.Sprintf("Syncing %s skill(s)...", StyleBold.Render(fmt.Sprintf("%d", count)))))
 
 	if err := codegen.SyncSkillsForPlatforms(projectRoot, platforms); err != nil {
 		return err

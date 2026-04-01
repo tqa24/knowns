@@ -220,8 +220,8 @@ func runDocView(cmd *cobra.Command, path string) error {
 			if plain {
 				fmt.Print(renderSmartDocSummary(doc))
 			} else {
-				fmt.Printf("Document too large for smart mode (size: %s chars, ~%s tokens).\n", formatWithCommas(utf8.RuneCountInString(doc.Content)), formatWithCommas(approxTokens))
-				fmt.Println("Use --toc to view the table of contents, or --section to view a specific section.")
+				fmt.Println(RenderWarning(fmt.Sprintf("Document too large for smart mode (size: %s chars, ~%s tokens).", formatWithCommas(utf8.RuneCountInString(doc.Content)), formatWithCommas(approxTokens))))
+				fmt.Println(RenderHint("Use " + RenderCmd("--toc") + " to view the table of contents, or " + RenderCmd("--section") + " to view a specific section."))
 			}
 			return nil
 		}
@@ -403,16 +403,16 @@ var docDeleteCmd = &cobra.Command{
 		}
 
 		if dryRun {
-			fmt.Printf("Would delete doc: %s (%s)\n", doc.Path, doc.Title)
+			fmt.Println(RenderDim(fmt.Sprintf("Would delete doc: %s (%s)", doc.Path, doc.Title)))
 			return nil
 		}
 
 		if !force {
-			fmt.Printf("Delete doc %s (%s)? This cannot be undone. (y/n): ", doc.Path, doc.Title)
+			fmt.Printf("%s %s (%s)? %s: ", StyleWarning.Render("Delete doc"), StyleBold.Render(doc.Path), doc.Title, StyleDim.Render("This cannot be undone. (y/n)"))
 			var answer string
 			fmt.Scanln(&answer)
 			if answer != "y" && answer != "yes" {
-				fmt.Println("Aborted.")
+				fmt.Println(StyleDim.Render("Aborted."))
 				return nil
 			}
 		}
@@ -448,7 +448,7 @@ var docHistoryCmd = &cobra.Command{
 		}
 
 		if len(history.Versions) == 0 {
-			fmt.Printf("No version history for doc %s\n", args[0])
+			fmt.Println(StyleDim.Render(fmt.Sprintf("No version history for doc %s", args[0])))
 			return nil
 		}
 

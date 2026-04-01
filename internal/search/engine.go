@@ -213,7 +213,7 @@ func (e *Engine) keywordSearchDocs(query string, words []string, opts SearchOpti
 // ─── semantic search ─────────────────────────────────────────────────
 
 func (e *Engine) semanticSearch(query string, opts SearchOptions) ([]models.SearchResult, error) {
-	queryVec, err := e.embedder.Embed(query)
+	queryVec, err := e.embedder.EmbedQuery(query)
 	if err != nil {
 		return nil, err
 	}

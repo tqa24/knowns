@@ -105,7 +105,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		if plain {
 			fmt.Println("No results found.")
 		} else {
-			fmt.Printf("No results for %q\n", query)
+			fmt.Println(RenderWarning(fmt.Sprintf("No results for %q", query)))
 		}
 		return nil
 	}
@@ -256,7 +256,7 @@ func runStatusCheck() error {
 
 	fmt.Println()
 	fmt.Println(StyleBold.Render("Semantic Search Status"))
-	fmt.Println(strings.Repeat("─", 40))
+	fmt.Println(RenderSeparator(40))
 
 	// ONNX Runtime.
 	if onnxAvail {
@@ -270,12 +270,12 @@ func runStatusCheck() error {
 	// Model.
 	if cfg != nil && cfg.Settings.SemanticSearch != nil {
 		ss := cfg.Settings.SemanticSearch
-		fmt.Printf("  Model: %s\n", ss.Model)
-		fmt.Printf("  Enabled: %v\n", ss.Enabled)
-		fmt.Printf("  Dimensions: %d\n", ss.Dimensions)
-		fmt.Printf("  Max Tokens: %d\n", ss.MaxTokens)
+		fmt.Println(RenderField("Model", ss.Model))
+		fmt.Println(RenderField("Enabled", fmt.Sprintf("%v", ss.Enabled)))
+		fmt.Println(RenderField("Dimensions", fmt.Sprintf("%d", ss.Dimensions)))
+		fmt.Println(RenderField("Max Tokens", fmt.Sprintf("%d", ss.MaxTokens)))
 	} else {
-		fmt.Println("  Model: not configured")
+		fmt.Println(RenderField("Model", StyleDim.Render("not configured")))
 		fmt.Println(searchDimStyle.Render("    Set up: knowns search --setup"))
 	}
 
@@ -284,10 +284,10 @@ func runStatusCheck() error {
 	vs := search.NewSQLiteVectorStore(searchDir, "", 0)
 	count, model, indexedAt := vs.Stats()
 	if count > 0 {
-		fmt.Printf("  Index: %d chunks (model: %s)\n", count, model)
-		fmt.Printf("  Indexed at: %s\n", indexedAt.Format(time.RFC3339))
+		fmt.Println(RenderField("Index", fmt.Sprintf("%d chunks (model: %s)", count, model)))
+		fmt.Println(RenderField("Indexed at", indexedAt.Format(time.RFC3339)))
 	} else {
-		fmt.Println("  Index: empty")
+		fmt.Println(RenderField("Index", StyleDim.Render("empty")))
 		fmt.Println(searchDimStyle.Render("    Build: knowns search --reindex"))
 	}
 
@@ -319,8 +319,8 @@ func runSetup() error {
 	if !onnxAvail {
 		fmt.Println(searchWarnStyle.Render("ONNX Runtime not found."))
 		fmt.Println()
-		fmt.Println("Install ONNX Runtime first:")
-		fmt.Println("  knowns search --install-runtime")
+		fmt.Println(RenderHint("Install ONNX Runtime first:"))
+		fmt.Println(RenderHint("  " + RenderCmd("knowns search --install-runtime")))
 		fmt.Println()
 		return nil
 	}
@@ -329,8 +329,8 @@ func runSetup() error {
 	if cfg.Settings.SemanticSearch == nil || cfg.Settings.SemanticSearch.Model == "" {
 		fmt.Println(searchWarnStyle.Render("No embedding model configured."))
 		fmt.Println()
-		fmt.Println("Set a model first:")
-		fmt.Println("  knowns model set gte-small")
+		fmt.Println(RenderHint("Set a model first:"))
+		fmt.Println(RenderHint("  " + RenderCmd("knowns model set gte-small")))
 		fmt.Println()
 		return nil
 	}
@@ -341,14 +341,14 @@ func runSetup() error {
 		_ = store.Config.Set("settings.semanticSearch.enabled", true)
 		fmt.Println(searchSuccessStyle.Render("Semantic search enabled."))
 	} else {
-		fmt.Println("Semantic search is already enabled.")
+		fmt.Println(StyleDim.Render("Semantic search is already enabled."))
 	}
 
 	fmt.Println()
-	fmt.Println("Next steps:")
-	fmt.Println("  1. Build the index: knowns search --reindex")
-	fmt.Println("  2. Search: knowns search \"your query\"")
-	fmt.Println()
+	fmt.Println(RenderNextSteps(
+		RenderCmd("knowns search --reindex"),
+		RenderCmd("knowns search \"your query\""),
+	))
 
 	return nil
 }
@@ -374,7 +374,7 @@ func runInstallRuntime() error {
 		return err
 	}
 
-	fmt.Printf("Downloading ONNX Runtime for %s/%s...\n\n", runtime.GOOS, runtime.GOARCH)
+	fmt.Printf("%s\n\n", RenderInfo(fmt.Sprintf("Downloading ONNX Runtime for %s/%s...", runtime.GOOS, runtime.GOARCH)))
 
 	// Download to temp file.
 	tmpFile, err := os.CreateTemp("", "onnxruntime-*"+onnxArchiveSuffix(url))
@@ -406,7 +406,7 @@ func runInstallRuntime() error {
 	fmt.Println(searchSuccessStyle.Render("ONNX Runtime installed successfully."))
 	fmt.Println(searchDimStyle.Render(fmt.Sprintf("  Path: %s", destPath)))
 	fmt.Println()
-	fmt.Println("Next: knowns search --setup")
+	fmt.Println(RenderHint("Next: " + RenderCmd("knowns search --setup")))
 	return nil
 }
 
@@ -609,7 +609,7 @@ func runReindex() error {
 	total := taskCount + docCount
 
 	if total == 0 {
-		fmt.Println("No tasks or docs to index.")
+		fmt.Println(RenderWarning("No tasks or docs to index."))
 		return nil
 	}
 
@@ -654,7 +654,7 @@ func runReindex() error {
 	if embedder != nil && vecStore != nil {
 		defer embedder.Close()
 
-		fmt.Printf("Rebuilding semantic search index (%d tasks, %d docs)...\n\n", taskCount, docCount)
+		fmt.Printf("%s\n\n", RenderInfo(fmt.Sprintf("Rebuilding semantic search index (%d tasks, %d docs)...", taskCount, docCount)))
 
 		startTime := time.Now()
 		state := &reindexState{phase: "tasks", total: total}
@@ -714,13 +714,13 @@ func runReindex() error {
 	} else {
 		fmt.Println(searchDimStyle.Render("Semantic search is not configured."))
 		fmt.Println()
-		fmt.Println(searchDimStyle.Render("Set up with:"))
-		fmt.Println(searchDimStyle.Render("  knowns model download gte-small"))
-		fmt.Println(searchDimStyle.Render("  knowns search --reindex"))
-		fmt.Println()
+		fmt.Println(RenderNextSteps(
+			RenderCmd("knowns model download gte-small"),
+			RenderCmd("knowns search --reindex"),
+		))
 	}
 	fmt.Println(searchDimStyle.Render("Keyword search does not require indexing (scans tasks/docs on each query)."))
-	fmt.Printf("Found %d tasks and %d docs available for keyword search.\n", taskCount, docCount)
+	fmt.Println(RenderInfo(fmt.Sprintf("Found %d tasks and %d docs available for keyword search.", taskCount, docCount)))
 	return nil
 }
 

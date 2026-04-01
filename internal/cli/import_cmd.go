@@ -87,7 +87,7 @@ func runImportAdd(cmd *cobra.Command, args []string) error {
 			},
 		)
 		if syncErr != nil {
-			fmt.Println("You can retry with: knowns import sync")
+			fmt.Println(RenderHint("You can retry with: " + RenderCmd("knowns import sync")))
 			return nil
 		}
 		// Update lastSync.
@@ -150,7 +150,7 @@ func runImportList(cmd *cobra.Command, args []string) error {
 	importsDir := filepath.Join(store.Root, "imports")
 	entries, err := os.ReadDir(importsDir)
 	if os.IsNotExist(err) {
-		fmt.Println("No imports found.")
+		fmt.Println(StyleDim.Render("No imports found."))
 		return nil
 	}
 	if err != nil {
@@ -167,7 +167,7 @@ func runImportList(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(imports) == 0 {
-		fmt.Println("No imports found.")
+		fmt.Println(StyleDim.Render("No imports found."))
 		return nil
 	}
 
@@ -201,7 +201,7 @@ func runImportSync(cmd *cobra.Command, args []string) error {
 	importsDir := filepath.Join(store.Root, "imports")
 	entries, err := os.ReadDir(importsDir)
 	if os.IsNotExist(err) {
-		fmt.Println("No imports to sync.")
+		fmt.Println(StyleDim.Render("No imports to sync."))
 		return nil
 	}
 	if err != nil {
@@ -255,9 +255,9 @@ func runImportSync(cmd *cobra.Command, args []string) error {
 	}
 
 	if synced == 0 {
-		fmt.Println("No imports to sync.")
+		fmt.Println(StyleDim.Render("No imports to sync."))
 	} else {
-		fmt.Printf("Synced %d import(s).\n", synced)
+		fmt.Println(RenderSuccess(fmt.Sprintf("Synced %d import(s).", synced)))
 	}
 	return nil
 }
@@ -583,7 +583,7 @@ func runImportStatus(cmd *cobra.Command, args []string) error {
 	importsDir := filepath.Join(store.Root, "imports")
 	entries, err := os.ReadDir(importsDir)
 	if os.IsNotExist(err) {
-		fmt.Println("No imports configured.")
+		fmt.Println(StyleDim.Render("No imports configured."))
 		return nil
 	}
 	if err != nil {
@@ -600,7 +600,7 @@ func runImportStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(imports) == 0 {
-		fmt.Println("No imports configured.")
+		fmt.Println(StyleDim.Render("No imports configured."))
 		return nil
 	}
 

@@ -52,11 +52,11 @@ type indexEntry struct {
 	TokenCount int       `json:"tokenCount,omitempty"`
 
 	// Doc fields.
-	DocPath       string `json:"docPath,omitempty"`
-	Section       string `json:"section,omitempty"`
-	HeadingLevel  int    `json:"headingLevel,omitempty"`
-	ParentSection string `json:"parentSection,omitempty"`
-	Position      int    `json:"position,omitempty"`
+	DocPath      string `json:"docPath,omitempty"`
+	Section      string `json:"section,omitempty"`
+	HeadingLevel int    `json:"headingLevel,omitempty"`
+	HeaderPath   string `json:"headerPath,omitempty"`
+	Position     int    `json:"position,omitempty"`
 
 	// Task fields.
 	TaskID   string   `json:"taskId,omitempty"`
@@ -216,7 +216,7 @@ func (s *FileVectorStore) AddChunks(chunks []Chunk) {
 			DocPath:       c.DocPath,
 			Section:       c.Section,
 			HeadingLevel:  c.HeadingLevel,
-			ParentSection: c.ParentSection,
+			HeaderPath: c.HeaderPath,
 			Position:      c.Position,
 			TaskID:        c.TaskID,
 			Field:         c.Field,
@@ -312,7 +312,7 @@ func (s *FileVectorStore) Search(queryVec []float32, opts VectorSearchOpts) []Sc
 				DocPath:       entry.DocPath,
 				Section:       entry.Section,
 				HeadingLevel:  entry.HeadingLevel,
-				ParentSection: entry.ParentSection,
+				HeaderPath:   entry.HeaderPath,
 				Position:      entry.Position,
 				TaskID:        entry.TaskID,
 				Field:         entry.Field,

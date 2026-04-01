@@ -325,6 +325,15 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// OpenCode install check (before config steps)
+	if cfg.EnableChatUI {
+		fmt.Println()
+		if err := maybeInstallOpenCode(force); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: OpenCode setup issue: %v\n", err)
+		}
+		fmt.Println()
+	}
+
 	steps = append(steps,
 		initStep{
 			label: "Syncing skills",
@@ -571,6 +580,22 @@ func findEmbeddingModel(id string) *embeddingModelInfo {
 	return nil
 }
 
+// mcpCommand returns the command and args for starting the Knowns MCP server.
+// If the "knowns" binary is found in PATH, it uses it directly for faster startup.
+// Otherwise it falls back to "npx -y knowns" which downloads on demand.
+func mcpCommand() (command string, args []string) {
+	if _, err := exec.LookPath("knowns"); err == nil {
+		return "knowns", []string{"mcp", "--stdio"}
+	}
+	return "npx", []string{"-y", "knowns", "mcp", "--stdio"}
+}
+
+// mcpCommandFlat returns the MCP command as a single slice (for OpenCode config format).
+func mcpCommandFlat() []string {
+	cmd, args := mcpCommand()
+	return append([]string{cmd}, args...)
+}
+
 // createMCPJsonFileQuiet creates .mcp.json without printing (for step runner).
 func createMCPJsonFileQuiet(projectRoot string, force bool) error {
 	mcpPath := filepath.Join(projectRoot, ".mcp.json")
@@ -578,11 +603,12 @@ func createMCPJsonFileQuiet(projectRoot string, force bool) error {
 		return nil
 	}
 
+	cmd, args := mcpCommand()
 	mcpConfig := map[string]interface{}{
 		"mcpServers": map[string]interface{}{
 			"knowns": map[string]interface{}{
-				"command": "npx",
-				"args":    []string{"-y", "knowns", "mcp", "--stdio"},
+				"command": cmd,
+				"args":    args,
 			},
 		},
 	}
@@ -619,7 +645,7 @@ func createOpenCodeConfigQuiet(projectRoot string) error {
 
 	mcp["knowns"] = map[string]any{
 		"type":    "local",
-		"command": []string{"npx", "-y", "knowns", "mcp", "--stdio"},
+		"command": mcpCommandFlat(),
 		"enabled": true,
 	}
 
@@ -685,9 +711,10 @@ func createKiroMCPConfigQuiet(projectRoot string) error {
 		servers = make(map[string]any)
 	}
 
+	cmd, args := mcpCommand()
 	servers["knowns"] = map[string]any{
-		"command":     "npx",
-		"args":        []string{"-y", "knowns", "mcp", "--stdio"},
+		"command":     cmd,
+		"args":        args,
 		"disabled":    false,
 		"autoApprove": []string{"*"},
 	}
@@ -741,11 +768,12 @@ func createMCPJsonFile(projectRoot string, force bool) {
 		return
 	}
 
+	cmd, args := mcpCommand()
 	mcpConfig := map[string]interface{}{
 		"mcpServers": map[string]interface{}{
 			"knowns": map[string]interface{}{
-				"command": "npx",
-				"args":    []string{"-y", "knowns", "mcp", "--stdio"},
+				"command": cmd,
+				"args":    args,
 			},
 		},
 	}

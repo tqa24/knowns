@@ -14,16 +14,18 @@ import (
 
 // Embedder produces embedding vectors from text using an ONNX model.
 type Embedder struct {
-	tokenizer  Tokenizer
-	session    *ort.DynamicAdvancedSession
-	dimensions int
-	maxTokens  int
-	mu         sync.Mutex
+	tokenizer   Tokenizer
+	session     *ort.DynamicAdvancedSession
+	dimensions  int
+	maxTokens   int
+	modelConfig EmbeddingModelConfig
+	mu          sync.Mutex
 }
 
 // EmbedderConfig specifies how to create an Embedder.
 type EmbedderConfig struct {
 	ModelDir   string
+	ModelName  string // key into EmbeddingModels for prefix lookup
 	Dimensions int
 	MaxTokens  int
 	LibPath    string
@@ -78,11 +80,15 @@ func NewEmbedder(cfg EmbedderConfig) (*Embedder, error) {
 		return nil, fmt.Errorf("create session: %w", err)
 	}
 
+	// Resolve model config for prefix support.
+	modelCfg := EmbeddingModels[cfg.ModelName] // zero value if not found (no prefixes)
+
 	return &Embedder{
-		tokenizer:  tokenizer,
-		session:    session,
-		dimensions: cfg.Dimensions,
-		maxTokens:  cfg.MaxTokens,
+		tokenizer:   tokenizer,
+		session:     session,
+		dimensions:  cfg.Dimensions,
+		maxTokens:   cfg.MaxTokens,
+		modelConfig: modelCfg,
 	}, nil
 }
 
@@ -142,4 +148,24 @@ func (e *Embedder) Close() {
 
 func (e *Embedder) Dimensions() int {
 	return e.dimensions
+}
+
+// EmbedQuery embeds text with the model's query prefix prepended.
+func (e *Embedder) EmbedQuery(text string) ([]float32, error) {
+	return e.Embed(e.modelConfig.QueryPrefix + text)
+}
+
+// EmbedDocument embeds text with the model's document prefix prepended.
+func (e *Embedder) EmbedDocument(text string) ([]float32, error) {
+	return e.Embed(e.modelConfig.DocPrefix + text)
+}
+
+// ModelConfig returns the embedding model configuration.
+func (e *Embedder) ModelConfig() EmbeddingModelConfig {
+	return e.modelConfig
+}
+
+// Tokenizer returns the underlying tokenizer, or nil if not available.
+func (e *Embedder) GetTokenizer() Tokenizer {
+	return e.tokenizer
 }

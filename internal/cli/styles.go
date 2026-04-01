@@ -155,3 +155,51 @@ func RenderTableHeader(columns ...string) string {
 	}
 	return strings.Join(styled, "")
 }
+
+// ─── Additional render helpers ───────────────────────────────────────
+
+// RenderWarning renders a yellow warning message.
+func RenderWarning(msg string) string {
+	return StyleWarning.Render("⚠ " + msg)
+}
+
+// RenderInfo renders a cyan info message.
+func RenderInfo(msg string) string {
+	return StyleInfo.Render("ℹ " + msg)
+}
+
+// RenderHint renders a dim hint/instruction message.
+func RenderHint(msg string) string {
+	return StyleDim.Render("  " + msg)
+}
+
+// RenderCmd renders a command suggestion in cyan.
+func RenderCmd(cmd string) string {
+	return StyleInfo.Render(cmd)
+}
+
+// RenderDim renders text in dim gray.
+func RenderDim(msg string) string {
+	return StyleDim.Render(msg)
+}
+
+// RenderCount renders a label with a styled count, e.g. "Models (3)".
+func RenderCount(label string, count int) string {
+	return fmt.Sprintf("%s %s", StyleBold.Render(label), StyleDim.Render(fmt.Sprintf("(%d)", count)))
+}
+
+// RenderField renders a styled "  key: value" line for detail views.
+func RenderField(key, value string) string {
+	return fmt.Sprintf("  %s %s", StyleDim.Render(key+":"), value)
+}
+
+// RenderNextSteps renders a "Next steps:" section with numbered items.
+func RenderNextSteps(steps ...string) string {
+	var b strings.Builder
+	b.WriteString(StyleBold.Render("Next steps:"))
+	b.WriteString("\n")
+	for i, s := range steps {
+		b.WriteString(fmt.Sprintf("  %s %s\n", StyleDim.Render(fmt.Sprintf("%d.", i+1)), s))
+	}
+	return b.String()
+}

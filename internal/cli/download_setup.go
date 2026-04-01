@@ -435,7 +435,7 @@ func runSemanticSetup(modelID string, force ...bool) error {
 	}
 
 	fmt.Println()
-	fmt.Printf("  Setting up semantic search (%d downloads)...\n\n", len(steps))
+	fmt.Printf("  %s\n\n", RenderInfo(fmt.Sprintf("Setting up semantic search (%d downloads)...", len(steps))))
 
 	// Drain any pending terminal escape responses from prior bubbletea/huh
 	// programs to prevent ^[[?2026;2$y leak in output.
@@ -487,7 +487,7 @@ func ensureONNXRuntime() error {
 	}
 
 	fmt.Println()
-	fmt.Println("  Installing ONNX Runtime...")
+	fmt.Println(RenderInfo("Installing ONNX Runtime..."))
 	fmt.Println()
 
 	drainStdin()

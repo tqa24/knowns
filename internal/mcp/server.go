@@ -3,24 +3,30 @@
 package mcp
 
 import (
+	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/howznguyen/knowns/internal/mcp/handlers"
 	"github.com/howznguyen/knowns/internal/storage"
 	"github.com/mark3labs/mcp-go/server"
 )
 
+// mcpLog writes to stderr so it doesn't interfere with stdio JSON-RPC transport.
+var mcpLog = log.New(os.Stderr, "[knowns-mcp] ", log.LstdFlags)
+
 const version = "0.1.0"
 
 // MCPServer wraps the mcp-go server and holds a reference to the active Store.
 // The store is nil until set_project is called.
 type MCPServer struct {
-	srv    *server.MCPServer
-	mu     sync.RWMutex
-	store  *storage.Store
-	root   string
+	srv   *server.MCPServer
+	mu    sync.RWMutex
+	store *storage.Store
+	root  string
 }
 
 // NewMCPServer creates and configures a new MCPServer with all registered tools.
@@ -115,6 +121,26 @@ func (s *MCPServer) autoDetectProject(setStore func(*storage.Store, string), hin
 }
 
 // Start begins serving MCP requests over stdio transport.
+// It logs lifecycle events to stderr for diagnostics and uses the mcp-go
+// error logger so transport-level issues are visible to users.
 func (s *MCPServer) Start() error {
-	return server.ServeStdio(s.srv)
+	s.mu.RLock()
+	project := s.root
+	s.mu.RUnlock()
+
+	mcpLog.Printf("starting (version=%s, project=%q, pid=%d)", version, project, os.Getpid())
+	startedAt := time.Now()
+
+	err := server.ServeStdio(
+		s.srv,
+		server.WithErrorLogger(mcpLog),
+	)
+
+	elapsed := time.Since(startedAt).Round(time.Millisecond)
+	if err != nil {
+		mcpLog.Printf("exited with error after %s: %v", elapsed, err)
+		return fmt.Errorf("mcp server: %w", err)
+	}
+	mcpLog.Printf("stopped cleanly after %s", elapsed)
+	return nil
 }
