@@ -39,7 +39,7 @@
       "dimensions": 384,
       "maxTokens": 512
     },
-    "serverPort": 6420,
+    "serverPort": 3333,
     "platforms": [
       "claude-code",
       "gemini",

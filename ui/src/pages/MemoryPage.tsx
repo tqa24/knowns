@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { memoryApi, type MemoryEntry } from "@/ui/api/client";
 import { Brain, ChevronUp, ChevronDown, Trash2, Plus, Loader2, X } from "lucide-react";
 import { cn } from "@/ui/lib/utils";
+import MDRender from "@/ui/components/editor/MDRender";
 
 const layerColors: Record<string, { bg: string; text: string; border: string }> = {
 	working: {
@@ -279,9 +280,7 @@ export default function MemoryPage() {
 						</div>
 						<h2 className="text-xl font-semibold mb-3">{selected.title || "Untitled"}</h2>
 						{selected.content && (
-							<div className="prose prose-sm dark:prose-invert max-w-none">
-								<pre className="whitespace-pre-wrap text-sm font-sans">{selected.content}</pre>
-							</div>
+							<MDRender markdown={selected.content} className="prose prose-sm dark:prose-invert max-w-none" />
 						)}
 						{selected.tags && selected.tags.length > 0 && (
 							<div className="flex gap-1.5 mt-4 pt-4 border-t border-border">

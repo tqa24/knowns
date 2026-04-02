@@ -78,7 +78,7 @@ func NewMCPServer(projectHint string) *MCPServer {
 
 	// Working memory is session-scoped (in-memory only).
 	workingMemory := handlers.NewWorkingMemoryStore()
-	handlers.RegisterWorkingMemoryTools(s.srv, func() *handlers.WorkingMemoryStore {
+	handlers.RegisterWorkingMemoryTools(s.srv, getStore, func() *handlers.WorkingMemoryStore {
 		return workingMemory
 	})
 

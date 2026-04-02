@@ -117,6 +117,12 @@ func RegisterTaskTools(s *server.MCPServer, getStore func() *storage.Store) {
 			if v, ok := intArg(args, "order"); ok {
 				task.Order = &v
 			}
+			if v, ok := stringArg(args, "plan"); ok {
+				task.ImplementationPlan = v
+			}
+			if v, ok := stringArg(args, "notes"); ok {
+				task.ImplementationNotes = v
+			}
 
 			if err := store.Tasks.Create(task); err != nil {
 				return errFailed("create task", err)
