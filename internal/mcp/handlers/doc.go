@@ -344,7 +344,9 @@ func RegisterDocTools(s *server.MCPServer, getStore func() *storage.Store) {
 			if hasSection && sectionTarget != "" && hasContent {
 				// Replace a specific section.
 				doc.Content = replaceSection(doc.Content, sectionTarget, newContent)
-			} else if hasContent {
+			} else if hasContent && newContent != "" {
+				// Only update content if explicitly provided with non-empty value.
+				// Empty content update is ignored to preserve existing content.
 				doc.Content = newContent
 			}
 

@@ -3,10 +3,12 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/howznguyen/knowns/internal/models"
+	"github.com/howznguyen/knowns/internal/storage"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -75,12 +77,14 @@ func (w *WorkingMemoryStore) Clear() int {
 }
 
 // RegisterWorkingMemoryTools registers session-scoped working memory tools.
-func RegisterWorkingMemoryTools(s *server.MCPServer, getWM func() *WorkingMemoryStore) {
+// getStore returns the storage store for persistent working memory.
+// getWM returns the in-memory store (used for session-scoped caching).
+func RegisterWorkingMemoryTools(s *server.MCPServer, getStore func() *storage.Store, getWM func() *WorkingMemoryStore) {
 
 	// ── add_working_memory ──────────────────────────────────────────────
 	s.AddTool(
 		mcp.NewTool("add_working_memory",
-			mcp.WithDescription("Add a working memory entry (session-scoped, ephemeral)."),
+			mcp.WithDescription("Add a working memory entry (persistent, survives restarts)."),
 			mcp.WithString("content",
 				mcp.Required(),
 				mcp.Description("Memory content"),
@@ -97,6 +101,10 @@ func RegisterWorkingMemoryTools(s *server.MCPServer, getWM func() *WorkingMemory
 			),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			store := getStore()
+			if store == nil {
+				return noProjectError()
+			}
 			wm := getWM()
 
 			content, err := req.RequireString("content")
@@ -111,6 +119,7 @@ func RegisterWorkingMemoryTools(s *server.MCPServer, getWM func() *WorkingMemory
 
 			entry := &models.MemoryEntry{
 				Title:    title,
+				Layer:    models.MemoryLayerWorking,
 				Category: category,
 				Content:  content,
 				Tags:     tags,
@@ -119,6 +128,12 @@ func RegisterWorkingMemoryTools(s *server.MCPServer, getWM func() *WorkingMemory
 				entry.Tags = []string{}
 			}
 
+			// Save to persistent storage.
+			if err := store.Memory.Create(entry); err != nil {
+				return errFailed("create working memory", err)
+			}
+
+			// Also add to in-memory cache.
 			wm.Add(entry)
 
 			out, _ := json.MarshalIndent(entry, "", "  ")
@@ -136,15 +151,18 @@ func RegisterWorkingMemoryTools(s *server.MCPServer, getWM func() *WorkingMemory
 			),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			wm := getWM()
+			store := getStore()
+			if store == nil {
+				return noProjectError()
+			}
 
 			id, err := req.RequireString("id")
 			if err != nil {
 				return errResult("id is required")
 			}
 
-			entry, ok := wm.Get(id)
-			if !ok {
+			entry, err := store.Memory.Get(id)
+			if err != nil {
 				return errResult("working memory entry not found: " + id)
 			}
 
@@ -156,11 +174,21 @@ func RegisterWorkingMemoryTools(s *server.MCPServer, getWM func() *WorkingMemory
 	// ── list_working_memories ───────────────────────────────────────────
 	s.AddTool(
 		mcp.NewTool("list_working_memories",
-			mcp.WithDescription("List all working memory entries (session-scoped)."),
+			mcp.WithDescription("List all working memory entries."),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			wm := getWM()
-			entries := wm.List()
+			store := getStore()
+			if store == nil {
+				return noProjectError()
+			}
+
+			entries, err := store.Memory.List(models.MemoryLayerWorking)
+			if err != nil {
+				return errFailed("list working memories", err)
+			}
+			if entries == nil {
+				entries = []*models.MemoryEntry{}
+			}
 
 			out, _ := json.MarshalIndent(entries, "", "  ")
 			return mcp.NewToolResultText(string(out)), nil
@@ -177,6 +205,10 @@ func RegisterWorkingMemoryTools(s *server.MCPServer, getWM func() *WorkingMemory
 			),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			store := getStore()
+			if store == nil {
+				return noProjectError()
+			}
 			wm := getWM()
 
 			id, err := req.RequireString("id")
@@ -184,9 +216,12 @@ func RegisterWorkingMemoryTools(s *server.MCPServer, getWM func() *WorkingMemory
 				return errResult("id is required")
 			}
 
-			if !wm.Delete(id) {
+			if err := store.Memory.Delete(id); err != nil {
 				return errResult("working memory entry not found: " + id)
 			}
+
+			// Also remove from in-memory cache.
+			wm.Delete(id)
 
 			result := map[string]any{
 				"deleted": true,
@@ -200,15 +235,26 @@ func RegisterWorkingMemoryTools(s *server.MCPServer, getWM func() *WorkingMemory
 	// ── clear_working_memory ────────────────────────────────────────────
 	s.AddTool(
 		mcp.NewTool("clear_working_memory",
-			mcp.WithDescription("Clear all working memory entries for this session."),
+			mcp.WithDescription("Clear all working memory entries."),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			store := getStore()
+			if store == nil {
+				return noProjectError()
+			}
 			wm := getWM()
-			count := wm.Clear()
+
+			count, err := store.Memory.Clean()
+			if err != nil {
+				return errFailed("clear working memories", err)
+			}
+
+			// Also clear in-memory cache.
+			wm.Clear()
 
 			result := map[string]any{
 				"cleared": count,
-				"message": "All working memory entries cleared.",
+				"message": fmt.Sprintf("Cleared %d working memory entries.", count),
 			}
 			out, _ := json.MarshalIndent(result, "", "  ")
 			return mcp.NewToolResultText(string(out)), nil
