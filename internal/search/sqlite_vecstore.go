@@ -96,6 +96,18 @@ func (s *SQLiteVectorStore) createSchema() error {
 		}
 	}
 
+	// Auto-migrate: if chunks table has parent_section instead of header_path,
+	// drop and recreate. The index is rebuilt on reindex anyway.
+	var hasHeaderPath int
+	row = s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('chunks') WHERE name='header_path'`)
+	if err := row.Scan(&hasHeaderPath); err == nil && hasHeaderPath == 0 {
+		var hasParentSection int
+		row2 := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('chunks') WHERE name='parent_section'`)
+		if err := row2.Scan(&hasParentSection); err == nil && hasParentSection > 0 {
+			s.db.Exec("DROP TABLE IF EXISTS chunks")
+		}
+	}
+
 	schema := `
 CREATE TABLE IF NOT EXISTS metadata (
     key   TEXT PRIMARY KEY,
@@ -112,7 +124,7 @@ CREATE TABLE IF NOT EXISTS chunks (
     doc_path        TEXT,
     section         TEXT,
     heading_level   INTEGER,
-    parent_section  TEXT,
+    header_path  TEXT,
     position        INTEGER,
 
     task_id         TEXT,
@@ -120,6 +132,11 @@ CREATE TABLE IF NOT EXISTS chunks (
     status          TEXT,
     priority        TEXT,
     labels          TEXT
+);
+
+CREATE TABLE IF NOT EXISTS content_hashes (
+    source_id TEXT PRIMARY KEY,
+    hash      TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_chunks_type ON chunks(type);
@@ -133,7 +150,7 @@ CREATE INDEX IF NOT EXISTS idx_chunks_task_id ON chunks(task_id);
 func (s *SQLiteVectorStore) loadIntoMemory() error {
 	rows, err := s.db.Query(`
 		SELECT id, type, token_count, embedding,
-		       doc_path, section, heading_level, parent_section, position,
+		       doc_path, section, heading_level, header_path, position,
 		       task_id, field, status, priority, labels
 		FROM chunks
 	`)
@@ -163,7 +180,7 @@ func (s *SQLiteVectorStore) loadIntoMemory() error {
 		entry.DocPath = docPath.String
 		entry.Section = section.String
 		entry.HeadingLevel = int(headingLevel.Int64)
-		entry.ParentSection = parentSection.String
+		entry.HeaderPath = parentSection.String
 		entry.Position = int(position.Int64)
 		entry.TaskID = taskID.String
 		entry.Field = field.String
@@ -212,7 +229,7 @@ func (s *SQLiteVectorStore) Save() error {
 	// Insert all chunks.
 	stmt, err := tx.Prepare(`
 		INSERT INTO chunks (id, type, token_count, embedding,
-		    doc_path, section, heading_level, parent_section, position,
+		    doc_path, section, heading_level, header_path, position,
 		    task_id, field, status, priority, labels)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`)
@@ -243,7 +260,7 @@ func (s *SQLiteVectorStore) Save() error {
 		if _, err := stmt.Exec(
 			entry.ID, entry.Type, entry.TokenCount, embBlob,
 			nullStr(entry.DocPath), nullStr(entry.Section),
-			nullInt(entry.HeadingLevel), nullStr(entry.ParentSection),
+			nullInt(entry.HeadingLevel), nullStr(entry.HeaderPath),
 			nullInt(entry.Position),
 			nullStr(entry.TaskID), nullStr(entry.Field),
 			nullStr(entry.Status), nullStr(entry.Priority),
@@ -256,10 +273,11 @@ func (s *SQLiteVectorStore) Save() error {
 	// Update metadata.
 	now := time.Now()
 	meta := map[string]string{
-		"model":      s.model,
-		"dimensions": fmt.Sprintf("%d", s.dimensions),
-		"indexedAt":  now.Format(time.RFC3339),
-		"chunkCount": fmt.Sprintf("%d", len(s.index)),
+		"model":        s.model,
+		"dimensions":   fmt.Sprintf("%d", s.dimensions),
+		"indexedAt":    now.Format(time.RFC3339),
+		"chunkCount":   fmt.Sprintf("%d", len(s.index)),
+		"chunkVersion": fmt.Sprintf("%d", ChunkVersion),
 	}
 	for k, v := range meta {
 		if _, err := tx.Exec(
@@ -283,6 +301,7 @@ func (s *SQLiteVectorStore) Clear() error {
 	if s.db != nil {
 		s.db.Exec("DELETE FROM chunks")
 		s.db.Exec("DELETE FROM metadata")
+		s.db.Exec("DELETE FROM content_hashes")
 	}
 	return nil
 }
@@ -308,7 +327,7 @@ func (s *SQLiteVectorStore) AddChunks(chunks []Chunk) {
 			DocPath:       c.DocPath,
 			Section:       c.Section,
 			HeadingLevel:  c.HeadingLevel,
-			ParentSection: c.ParentSection,
+			HeaderPath: c.HeaderPath,
 			Position:      c.Position,
 			TaskID:        c.TaskID,
 			Field:         c.Field,
@@ -401,7 +420,7 @@ func (s *SQLiteVectorStore) Search(queryVec []float32, opts VectorSearchOpts) []
 				DocPath:       entry.DocPath,
 				Section:       entry.Section,
 				HeadingLevel:  entry.HeadingLevel,
-				ParentSection: entry.ParentSection,
+				HeaderPath: entry.HeaderPath,
 				Position:      entry.Position,
 				TaskID:        entry.TaskID,
 				Field:         entry.Field,
@@ -422,7 +441,8 @@ func (s *SQLiteVectorStore) Count() int {
 	return len(s.index)
 }
 
-// NeedsRebuild returns true if the stored model differs from the current one.
+// NeedsRebuild returns true if the stored model differs from the current one
+// or if the chunk version has changed.
 func (s *SQLiteVectorStore) NeedsRebuild(model string) bool {
 	if s.db == nil {
 		return true
@@ -432,7 +452,15 @@ func (s *SQLiteVectorStore) NeedsRebuild(model string) bool {
 	if err != nil {
 		return true
 	}
-	return storedModel != model
+	if storedModel != model {
+		return true
+	}
+	var storedVersion string
+	err = s.db.QueryRow("SELECT value FROM metadata WHERE key = 'chunkVersion'").Scan(&storedVersion)
+	if err != nil {
+		return true // no version stored → needs rebuild
+	}
+	return storedVersion != fmt.Sprintf("%d", ChunkVersion)
 }
 
 // Stats returns basic statistics about the vector store.
@@ -496,6 +524,55 @@ func (s *SQLiteVectorStore) Close() error {
 // Model returns the embedding model name.
 func (s *SQLiteVectorStore) Model() string { return s.model }
 
+// GetContentHash returns the stored hash for a source ID, or empty if not found.
+func (s *SQLiteVectorStore) GetContentHash(sourceID string) string {
+	if s.db == nil {
+		return ""
+	}
+	var hash string
+	err := s.db.QueryRow("SELECT hash FROM content_hashes WHERE source_id = ?", sourceID).Scan(&hash)
+	if err != nil {
+		return ""
+	}
+	return hash
+}
+
+// SetContentHash stores a content hash for a source ID.
+func (s *SQLiteVectorStore) SetContentHash(sourceID, hash string) {
+	if s.db == nil {
+		return
+	}
+	s.db.Exec("INSERT OR REPLACE INTO content_hashes (source_id, hash) VALUES (?, ?)", sourceID, hash)
+}
+
+// DeleteContentHash removes the hash for a source ID.
+func (s *SQLiteVectorStore) DeleteContentHash(sourceID string) {
+	if s.db == nil {
+		return
+	}
+	s.db.Exec("DELETE FROM content_hashes WHERE source_id = ?", sourceID)
+}
+
+// ListContentHashes returns all stored source_id → hash pairs.
+func (s *SQLiteVectorStore) ListContentHashes() map[string]string {
+	if s.db == nil {
+		return nil
+	}
+	rows, err := s.db.Query("SELECT source_id, hash FROM content_hashes")
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	result := make(map[string]string)
+	for rows.Next() {
+		var id, hash string
+		if err := rows.Scan(&id, &hash); err == nil {
+			result[id] = hash
+		}
+	}
+	return result
+}
+
 // migrateFromFile checks for old FileVectorStore files and migrates to SQLite.
 // Must be called before opening the database (no lock held by caller pattern — but
 // we are called from Load which holds the write lock).
@@ -535,7 +612,7 @@ CREATE TABLE IF NOT EXISTS chunks (
     id TEXT PRIMARY KEY, type TEXT NOT NULL, content TEXT NOT NULL,
     token_count INTEGER DEFAULT 0, embedding BLOB,
     doc_path TEXT, section TEXT, heading_level INTEGER,
-    parent_section TEXT, position INTEGER,
+    header_path TEXT, position INTEGER,
     task_id TEXT, field TEXT, status TEXT, priority TEXT, labels TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_chunks_type ON chunks(type);
@@ -553,7 +630,7 @@ CREATE INDEX IF NOT EXISTS idx_chunks_task_id ON chunks(task_id);
 
 	stmt, err := tx.Prepare(`
 		INSERT INTO chunks (id, type, content, token_count, embedding,
-		    doc_path, section, heading_level, parent_section, position,
+		    doc_path, section, heading_level, header_path, position,
 		    task_id, field, status, priority, labels)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`)
@@ -585,7 +662,7 @@ CREATE INDEX IF NOT EXISTS idx_chunks_task_id ON chunks(task_id);
 		stmt.Exec(
 			entry.ID, entry.Type, "", entry.TokenCount, embBlob,
 			nullStr(entry.DocPath), nullStr(entry.Section),
-			nullInt(entry.HeadingLevel), nullStr(entry.ParentSection),
+			nullInt(entry.HeadingLevel), nullStr(entry.HeaderPath),
 			nullInt(entry.Position),
 			nullStr(entry.TaskID), nullStr(entry.Field),
 			nullStr(entry.Status), nullStr(entry.Priority),

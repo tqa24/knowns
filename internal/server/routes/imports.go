@@ -187,11 +187,12 @@ type importChange struct {
 
 // importMeta is persisted as _import.json inside each import directory.
 type importMeta struct {
-	Source     string `json:"source"`
-	Type       string `json:"type"`
-	Ref        string `json:"ref,omitempty"`
-	LastSync   string `json:"lastSync,omitempty"`
-	ImportedAt string `json:"importedAt,omitempty"`
+	Source         string `json:"source"`
+	Type           string `json:"type"`
+	Ref            string `json:"ref,omitempty"`
+	LastSync       string `json:"lastSync,omitempty"`
+	ImportedAt     string `json:"importedAt,omitempty"`
+	LastCommitHash string `json:"lastCommitHash,omitempty"`
 }
 
 const importMetaFile = "_import.json"
@@ -299,12 +300,40 @@ func isAuthError(stderr string) bool {
 		strings.Contains(s, "401")
 }
 
+// gitLsRemoteHead returns the commit hash for the remote HEAD (or a specific ref).
+// Returns empty string on any error.
+func (ir *ImportRoutes) gitLsRemoteHead(source, ref string) string {
+	url := ir.injectGitToken(source)
+	target := "HEAD"
+	if ref != "" {
+		target = ref
+	}
+	cmd := exec.Command("git", "ls-remote", url, target)
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	line := strings.TrimSpace(string(out))
+	if idx := strings.IndexByte(line, '\t'); idx > 0 {
+		return line[:idx]
+	}
+	return ""
+}
+
 // gitCloneImport clones a git repo, copies .knowns/docs/ and .knowns/templates/
 // into .knowns/imports/{name}/, and returns the list of changes.
-func (ir *ImportRoutes) gitCloneImport(source, name, ref string, dryRun bool) ([]importChange, []string, error) {
+// If cachedHash matches the remote HEAD, returns nil changes and upToDate=true.
+func (ir *ImportRoutes) gitCloneImport(source, name, ref, cachedHash string, dryRun bool) ([]importChange, []string, string, bool, error) {
+	// Check remote commit hash before cloning.
+	remoteHash := ir.gitLsRemoteHead(source, ref)
+	if remoteHash != "" && remoteHash == cachedHash && !dryRun {
+		return []importChange{}, nil, remoteHash, true, nil
+	}
+
 	tmpDir, err := os.MkdirTemp("", "knowns-import-*")
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, remoteHash, false, err
 	}
 	defer os.RemoveAll(tmpDir)
 
@@ -323,17 +352,17 @@ func (ir *ImportRoutes) gitCloneImport(source, name, ref string, dryRun bool) ([
 	if err := cmd.Run(); err != nil {
 		errMsg := strings.TrimSpace(stderr.String())
 		if isAuthError(errMsg) {
-			return nil, nil, fmt.Errorf("authentication failed for %s. "+
+			return nil, nil, "", false, fmt.Errorf("authentication failed for %s. "+
 				"Set KNOWNS_GIT_TOKEN env var, run 'knowns config set git.token <token>', "+
 				"or use an SSH URL (e.g. git@host:owner/repo.git) instead", source)
 		}
-		return nil, nil, fmt.Errorf("git clone failed: %s", errMsg)
+		return nil, nil, "", false, fmt.Errorf("git clone failed: %s", errMsg)
 	}
 
 	// Check for .knowns/ directory.
 	knownsDir := filepath.Join(tmpDir, ".knowns")
 	if _, err := os.Stat(knownsDir); os.IsNotExist(err) {
-		return nil, []string{"no .knowns directory found in " + source}, nil
+		return nil, []string{"no .knowns directory found in " + source}, remoteHash, false, nil
 	}
 
 	// Collect files from docs/ and templates/ subdirectories.
@@ -389,7 +418,7 @@ func (ir *ImportRoutes) gitCloneImport(source, name, ref string, dryRun bool) ([
 			return nil
 		})
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, "", false, err
 		}
 	}
 
@@ -400,7 +429,7 @@ func (ir *ImportRoutes) gitCloneImport(source, name, ref string, dryRun bool) ([
 	// Write metadata if not dry-run.
 	if !dryRun {
 		if err := os.MkdirAll(destBase, 0755); err != nil {
-			return nil, nil, err
+			return nil, nil, "", false, err
 		}
 		now := time.Now().UTC().Format(time.RFC3339)
 		// Read existing meta to preserve importedAt if this is a re-sync.
@@ -410,17 +439,18 @@ func (ir *ImportRoutes) gitCloneImport(source, name, ref string, dryRun bool) ([
 			importedAt = now
 		}
 		if err := writeImportMeta(destBase, importMeta{
-			Source:     source,
-			Type:       "git",
-			Ref:        ref,
-			LastSync:   now,
-			ImportedAt: importedAt,
+			Source:         source,
+			Type:           "git",
+			Ref:            ref,
+			LastSync:       now,
+			ImportedAt:     importedAt,
+			LastCommitHash: remoteHash,
 		}); err != nil {
 			warnings = append(warnings, "could not write import metadata: "+err.Error())
 		}
 	}
 
-	return changes, warnings, nil
+	return changes, warnings, remoteHash, false, nil
 }
 
 // copyFile copies src to dst.
@@ -496,7 +526,7 @@ func (ir *ImportRoutes) add(w http.ResponseWriter, r *http.Request) {
 
 	// Git URL: clone and copy .knowns/docs + templates.
 	if isGitURL(req.Source) {
-		changes, warnings, err := ir.gitCloneImport(req.Source, name, req.Ref, req.DryRun)
+		changes, warnings, _, _, err := ir.gitCloneImport(req.Source, name, req.Ref, "", req.DryRun)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -572,9 +602,19 @@ func (ir *ImportRoutes) syncOne(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	changes, warnings, err := ir.gitCloneImport(meta.Source, name, meta.Ref, false)
+	changes, warnings, _, upToDate, err := ir.gitCloneImport(meta.Source, name, meta.Ref, meta.LastCommitHash, false)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "sync failed: "+err.Error())
+		return
+	}
+
+	if upToDate {
+		ir.sse.Broadcast(SSEEvent{Type: "imports:synced", Data: map[string]string{"name": name}})
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"success":  true,
+			"upToDate": true,
+			"import":   map[string]string{"name": name, "source": meta.Source, "type": "git"},
+		})
 		return
 	}
 
@@ -632,7 +672,7 @@ func (ir *ImportRoutes) syncAll(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		changes, warnings, syncErr := ir.gitCloneImport(meta.Source, name, meta.Ref, false)
+		changes, warnings, _, upToDate, syncErr := ir.gitCloneImport(meta.Source, name, meta.Ref, meta.LastCommitHash, false)
 		if syncErr != nil {
 			results = append(results, syncResult{
 				Name:    name,
@@ -642,6 +682,20 @@ func (ir *ImportRoutes) syncAll(w http.ResponseWriter, r *http.Request) {
 				Error:   syncErr.Error(),
 			})
 			failed++
+			continue
+		}
+
+		if upToDate {
+			results = append(results, syncResult{
+				Name:    name,
+				Source:  meta.Source,
+				Type:    "git",
+				Success: true,
+				Summary: map[string]interface{}{
+					"upToDate": true,
+				},
+			})
+			successful++
 			continue
 		}
 

@@ -92,9 +92,9 @@ func runMCPSetup(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("write MCP settings: %w", err)
 	}
 
-	fmt.Printf("MCP setup complete.\n")
-	fmt.Printf("Settings file: %s\n", settingsPath)
-	fmt.Println("Knowns MCP server has been configured for Claude Code.")
+	fmt.Println(RenderSuccess("MCP setup complete."))
+	fmt.Println(RenderField("Settings file", settingsPath))
+	fmt.Println(RenderHint("Knowns MCP server has been configured for Claude Code."))
 	return nil
 }
 

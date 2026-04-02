@@ -15,7 +15,6 @@ import (
 
 	"charm.land/bubbles/v2/progress"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 
 	"github.com/howznguyen/knowns/internal/models"
 	"github.com/howznguyen/knowns/internal/search"
@@ -105,7 +104,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		if plain {
 			fmt.Println("No results found.")
 		} else {
-			fmt.Printf("No results for %q\n", query)
+			fmt.Println(RenderWarning(fmt.Sprintf("No results for %q", query)))
 		}
 		return nil
 	}
@@ -256,7 +255,7 @@ func runStatusCheck() error {
 
 	fmt.Println()
 	fmt.Println(StyleBold.Render("Semantic Search Status"))
-	fmt.Println(strings.Repeat("─", 40))
+	fmt.Println(RenderSeparator(40))
 
 	// ONNX Runtime.
 	if onnxAvail {
@@ -270,12 +269,12 @@ func runStatusCheck() error {
 	// Model.
 	if cfg != nil && cfg.Settings.SemanticSearch != nil {
 		ss := cfg.Settings.SemanticSearch
-		fmt.Printf("  Model: %s\n", ss.Model)
-		fmt.Printf("  Enabled: %v\n", ss.Enabled)
-		fmt.Printf("  Dimensions: %d\n", ss.Dimensions)
-		fmt.Printf("  Max Tokens: %d\n", ss.MaxTokens)
+		fmt.Println(RenderField("Model", ss.Model))
+		fmt.Println(RenderField("Enabled", fmt.Sprintf("%v", ss.Enabled)))
+		fmt.Println(RenderField("Dimensions", fmt.Sprintf("%d", ss.Dimensions)))
+		fmt.Println(RenderField("Max Tokens", fmt.Sprintf("%d", ss.MaxTokens)))
 	} else {
-		fmt.Println("  Model: not configured")
+		fmt.Println(RenderField("Model", StyleDim.Render("not configured")))
 		fmt.Println(searchDimStyle.Render("    Set up: knowns search --setup"))
 	}
 
@@ -284,10 +283,10 @@ func runStatusCheck() error {
 	vs := search.NewSQLiteVectorStore(searchDir, "", 0)
 	count, model, indexedAt := vs.Stats()
 	if count > 0 {
-		fmt.Printf("  Index: %d chunks (model: %s)\n", count, model)
-		fmt.Printf("  Indexed at: %s\n", indexedAt.Format(time.RFC3339))
+		fmt.Println(RenderField("Index", fmt.Sprintf("%d chunks (model: %s)", count, model)))
+		fmt.Println(RenderField("Indexed at", indexedAt.Format(time.RFC3339)))
 	} else {
-		fmt.Println("  Index: empty")
+		fmt.Println(RenderField("Index", StyleDim.Render("empty")))
 		fmt.Println(searchDimStyle.Render("    Build: knowns search --reindex"))
 	}
 
@@ -319,8 +318,8 @@ func runSetup() error {
 	if !onnxAvail {
 		fmt.Println(searchWarnStyle.Render("ONNX Runtime not found."))
 		fmt.Println()
-		fmt.Println("Install ONNX Runtime first:")
-		fmt.Println("  knowns search --install-runtime")
+		fmt.Println(RenderHint("Install ONNX Runtime first:"))
+		fmt.Println(RenderHint("  " + RenderCmd("knowns search --install-runtime")))
 		fmt.Println()
 		return nil
 	}
@@ -329,8 +328,8 @@ func runSetup() error {
 	if cfg.Settings.SemanticSearch == nil || cfg.Settings.SemanticSearch.Model == "" {
 		fmt.Println(searchWarnStyle.Render("No embedding model configured."))
 		fmt.Println()
-		fmt.Println("Set a model first:")
-		fmt.Println("  knowns model set gte-small")
+		fmt.Println(RenderHint("Set a model first:"))
+		fmt.Println(RenderHint("  " + RenderCmd("knowns model set gte-small")))
 		fmt.Println()
 		return nil
 	}
@@ -341,14 +340,14 @@ func runSetup() error {
 		_ = store.Config.Set("settings.semanticSearch.enabled", true)
 		fmt.Println(searchSuccessStyle.Render("Semantic search enabled."))
 	} else {
-		fmt.Println("Semantic search is already enabled.")
+		fmt.Println(StyleDim.Render("Semantic search is already enabled."))
 	}
 
 	fmt.Println()
-	fmt.Println("Next steps:")
-	fmt.Println("  1. Build the index: knowns search --reindex")
-	fmt.Println("  2. Search: knowns search \"your query\"")
-	fmt.Println()
+	fmt.Println(RenderNextSteps(
+		RenderCmd("knowns search --reindex"),
+		RenderCmd("knowns search \"your query\""),
+	))
 
 	return nil
 }
@@ -374,7 +373,7 @@ func runInstallRuntime() error {
 		return err
 	}
 
-	fmt.Printf("Downloading ONNX Runtime for %s/%s...\n\n", runtime.GOOS, runtime.GOARCH)
+	fmt.Printf("%s\n\n", RenderInfo(fmt.Sprintf("Downloading ONNX Runtime for %s/%s...", runtime.GOOS, runtime.GOARCH)))
 
 	// Download to temp file.
 	tmpFile, err := os.CreateTemp("", "onnxruntime-*"+onnxArchiveSuffix(url))
@@ -406,7 +405,7 @@ func runInstallRuntime() error {
 	fmt.Println(searchSuccessStyle.Render("ONNX Runtime installed successfully."))
 	fmt.Println(searchDimStyle.Render(fmt.Sprintf("  Path: %s", destPath)))
 	fmt.Println()
-	fmt.Println("Next: knowns search --setup")
+	fmt.Println(RenderHint("Next: " + RenderCmd("knowns search --setup")))
 	return nil
 }
 
@@ -523,12 +522,22 @@ type reindexState struct {
 	err       error
 }
 
+// completedPhase records a finished indexing phase.
+type completedPhase struct {
+	name  string
+	count int
+}
+
 type reindexModel struct {
-	bar       progress.Model
-	state     *reindexState
-	quit      bool
-	startTime time.Time
-	prog      *tea.Program
+	bar             progress.Model
+	state           *reindexState
+	quit            bool
+	startTime       time.Time
+	phaseStartTime  time.Time
+	prog            *tea.Program
+	lastPhase       string
+	lastTotal       int
+	completedPhases []completedPhase
 }
 
 func reindexTickCmd() tea.Cmd {
@@ -552,6 +561,17 @@ func (m *reindexModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.quit {
 			return m, nil
 		}
+		// Detect phase transition.
+		if m.state.phase != m.lastPhase && m.lastPhase != "" {
+			m.completedPhases = append(m.completedPhases, completedPhase{
+				name:  m.lastPhase,
+				count: m.lastTotal,
+			})
+			m.phaseStartTime = time.Now()
+		}
+		m.lastPhase = m.state.phase
+		m.lastTotal = m.state.total
+
 		pct := 0.0
 		if m.state.total > 0 {
 			pct = float64(m.state.processed) / float64(m.state.total)
@@ -559,6 +579,12 @@ func (m *reindexModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd := m.bar.SetPercent(pct)
 		return m, tea.Batch(cmd, reindexTickCmd())
 	case reindexDoneMsg:
+		if m.lastPhase != "" {
+			m.completedPhases = append(m.completedPhases, completedPhase{
+				name:  m.lastPhase,
+				count: m.lastTotal,
+			})
+		}
 		m.state.done = true
 		m.state.err = msg.err
 		m.quit = true
@@ -573,18 +599,28 @@ func (m *reindexModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *reindexModel) View() tea.View {
+	var b strings.Builder
+
 	if m.quit {
-		return tea.NewView("")
+		for _, cp := range m.completedPhases {
+			b.WriteString(fmt.Sprintf("  %s Indexed %s (%d)\n",
+				searchSuccessStyle.Render("✓"), cp.name, cp.count))
+		}
+		return tea.NewView(b.String())
 	}
-	pct := 0.0
+
+	// Completed phases.
+	for _, cp := range m.completedPhases {
+		b.WriteString(fmt.Sprintf("  %s Indexed %s (%d)\n",
+			searchSuccessStyle.Render("✓"), cp.name, cp.count))
+	}
+
+	// Active phase bar.
 	processed := m.state.processed
 	total := m.state.total
 	phase := m.state.phase
-	if total > 0 {
-		pct = float64(processed) / float64(total)
-	}
 
-	elapsed := time.Since(m.startTime)
+	elapsed := time.Since(m.phaseStartTime)
 	eta := ""
 	if elapsed.Seconds() > 0.5 && processed > 0 && processed < total {
 		itemsPerSec := float64(processed) / elapsed.Seconds()
@@ -594,9 +630,10 @@ func (m *reindexModel) View() tea.View {
 		}
 	}
 
-	info := fmt.Sprintf(" %3.0f%%  Indexing %s (%d/%d)%s",
-		pct*100, phase, processed, total, eta)
-	return tea.NewView(fmt.Sprintf("  %s%s\n", m.bar.View(), searchDimStyle.Render(info)))
+	info := fmt.Sprintf("  Indexing %s (%d/%d)%s",
+		phase, processed, total, eta)
+	b.WriteString(fmt.Sprintf("  %s%s\n", m.bar.View(), searchDimStyle.Render(info)))
+	return tea.NewView(b.String())
 }
 
 func runReindex() error {
@@ -609,7 +646,7 @@ func runReindex() error {
 	total := taskCount + docCount
 
 	if total == 0 {
-		fmt.Println("No tasks or docs to index.")
+		fmt.Println(RenderWarning("No tasks or docs to index."))
 		return nil
 	}
 
@@ -654,20 +691,17 @@ func runReindex() error {
 	if embedder != nil && vecStore != nil {
 		defer embedder.Close()
 
-		fmt.Printf("Rebuilding semantic search index (%d tasks, %d docs)...\n\n", taskCount, docCount)
+		fmt.Printf("%s\n\n", RenderInfo(fmt.Sprintf("Rebuilding semantic search index (%d tasks, %d docs)...", taskCount, docCount)))
 
 		startTime := time.Now()
-		state := &reindexState{phase: "tasks", total: total}
+		state := &reindexState{phase: "tasks", total: taskCount}
 
-		bar := progress.New(
-			progress.WithColors(lipgloss.Color(KnownsBrand)),
-			progress.WithWidth(40),
-			progress.WithoutPercentage(),
-		)
+		bar := NewBrandProgressBar()
 		m := &reindexModel{
-			bar:       bar,
-			state:     state,
-			startTime: startTime,
+			bar:            bar,
+			state:          state,
+			startTime:      startTime,
+			phaseStartTime: startTime,
 		}
 		p := tea.NewProgram(m, tea.WithInput(os.Stdin))
 		m.prog = p
@@ -714,13 +748,13 @@ func runReindex() error {
 	} else {
 		fmt.Println(searchDimStyle.Render("Semantic search is not configured."))
 		fmt.Println()
-		fmt.Println(searchDimStyle.Render("Set up with:"))
-		fmt.Println(searchDimStyle.Render("  knowns model download gte-small"))
-		fmt.Println(searchDimStyle.Render("  knowns search --reindex"))
-		fmt.Println()
+		fmt.Println(RenderNextSteps(
+			RenderCmd("knowns model download gte-small"),
+			RenderCmd("knowns search --reindex"),
+		))
 	}
 	fmt.Println(searchDimStyle.Render("Keyword search does not require indexing (scans tasks/docs on each query)."))
-	fmt.Printf("Found %d tasks and %d docs available for keyword search.\n", taskCount, docCount)
+	fmt.Println(RenderInfo(fmt.Sprintf("Found %d tasks and %d docs available for keyword search.", taskCount, docCount)))
 	return nil
 }
 

@@ -210,9 +210,11 @@ knowns browser --open   # Start Web UI and open browser
 | **Validation**      | Check broken refs with `knowns validate`           |
 | **Template System** | Code generation with Handlebars (`.hbs`) templates |
 | **Import System**   | Import docs/templates from git, npm, or local      |
+| **Memory System**   | 3-layer memory (project/working/global) for AI recall |
 | **AI Integration**  | Full MCP Server with AC/plan/notes operations      |
 | **AI Workspaces**   | Multi-phase agent orchestration with live terminal |
 | **Web UI**          | Kanban board, doc browser, mermaid diagrams        |
+| **Knowledge Graph** | Visual graph of tasks, docs, memories + relationships (search, impact analysis, clusters) |
 
 ---
 
@@ -307,16 +309,19 @@ Claude: [Creates conventional commit]
 
 | Skill                | Description                                             |
 | -------------------- | ------------------------------------------------------- |
-| `/kn-init`           | Initialize session - read docs, understand project      |
-| `/kn-plan <id>`      | Take task, gather context, create implementation plan   |
-| `/kn-implement <id>` | Execute plan, track progress, check acceptance criteria |
-| `/kn-research`       | Search codebase, find patterns, explore before coding   |
-| `/kn-commit`         | Create conventional commit with verification            |
-| `/kn-spec`           | Create specification document for features (SDD)        |
-| `/kn-verify`         | Run SDD verification and coverage report                |
-| `/kn-doc`            | Create or update documentation                          |
-| `/kn-extract`        | Extract reusable patterns into docs/templates           |
-| `/kn-template`       | List, run, or create code templates                     |
+| `/kn-init`           | Initialize session - read docs, load memory, understand project |
+| `/kn-plan <id>`      | Take task, gather context, create implementation plan           |
+| `/kn-implement <id>` | Execute plan, track progress, check acceptance criteria         |
+| `/kn-research`       | Search codebase, find patterns, explore before coding           |
+| `/kn-commit`         | Create conventional commit with verification                    |
+| `/kn-spec`           | Create specification document for features (SDD)                |
+| `/kn-go <spec>`      | Full pipeline from approved spec (no review gates)              |
+| `/kn-verify`         | Run SDD verification and coverage report                        |
+| `/kn-review`         | Multi-perspective code review (P1/P2/P3 severity)               |
+| `/kn-doc`            | Create or update documentation                                  |
+| `/kn-extract`        | Extract reusable patterns into docs, templates, and memory      |
+| `/kn-template`       | List, run, or create code templates                             |
+| `/kn-debug`          | Debug errors and failures with memory-backed triage             |
 
 ---
 
@@ -329,7 +334,7 @@ Claude: [Creates conventional commit]
 | [Reference System](./docs/reference-system.md) | How `@doc/` and `@task-` linking works     |
 | [Semantic Search](./docs/semantic-search.md)   | Setup and usage of AI-powered search       |
 | [Templates](./docs/templates.md)               | Code generation with Handlebars            |
-| [Web UI](./docs/web-ui.md)                     | Kanban board and document browser          |
+| [Web UI](./docs/web-ui.md)                     | Kanban board, doc browser, and knowledge graph |
 | [MCP Integration](./docs/mcp-integration.md)   | Claude Desktop setup with full MCP tools   |
 | [Configuration](./docs/configuration.md)       | Project structure and options              |
 | [Developer Guide](./docs/developer-guide.md)   | Technical docs for contributors            |

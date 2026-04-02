@@ -132,3 +132,11 @@ func splitCSV(s string) []string {
 	}
 	return result
 }
+
+// unescapeText replaces literal \n and \t sequences with actual newlines and tabs.
+// This handles the common case where shell passes "line1\nline2" as literal characters.
+func unescapeText(s string) string {
+	s = strings.ReplaceAll(s, `\n`, "\n")
+	s = strings.ReplaceAll(s, `\t`, "\t")
+	return s
+}

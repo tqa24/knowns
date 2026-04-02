@@ -13,6 +13,7 @@ var ErrSemanticNotConfigured = fmt.Errorf("semantic search not configured or dis
 
 // InitSemantic attempts to initialize semantic search components.
 // Returns a descriptive error if initialization fails at any step.
+// If the index is outdated (model or chunk version changed), it auto-reindexes.
 // On success, the caller is responsible for calling vecStore.Close() and
 // embedder.Close() when done.
 func InitSemantic(store *storage.Store) (*Embedder, VectorStore, error) {
@@ -57,6 +58,7 @@ func InitSemantic(store *storage.Store) (*Embedder, VectorStore, error) {
 
 	embedder, err := NewEmbedder(EmbedderConfig{
 		ModelDir:   modelDir,
+		ModelName:  ss.Model,
 		Dimensions: dims,
 		MaxTokens:  maxTokens,
 	})
@@ -69,6 +71,15 @@ func InitSemantic(store *storage.Store) (*Embedder, VectorStore, error) {
 	if err := vecStore.Load(); err != nil {
 		embedder.Close()
 		return nil, nil, fmt.Errorf("load vector store: %w", err)
+	}
+
+	// Auto-reindex if model or chunk version changed.
+	if vecStore.NeedsRebuild(ss.Model) && vecStore.Count() > 0 {
+		svc := NewIndexService(store, embedder, vecStore)
+		if err := svc.Reindex(nil); err != nil {
+			// Non-fatal: log but continue with stale index.
+			fmt.Fprintf(os.Stderr, "warning: auto-reindex failed: %v\n", err)
+		}
 	}
 
 	return embedder, vecStore, nil

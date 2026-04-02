@@ -13,7 +13,6 @@ import (
 	"charm.land/bubbles/v2/progress"
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 
 	"github.com/howznguyen/knowns/internal/search"
 )
@@ -59,9 +58,7 @@ type setupStepDoneMsg struct{ err error }
 type setupPostHookDoneMsg struct{ err error }
 
 func newSetupModel(steps []downloadStep) *setupModel {
-	bar := progress.New(
-		progress.WithColors(lipgloss.Color(KnownsBrand)),
-		progress.WithWidth(40),
+	bar := NewBrandProgressBar(
 		progress.WithoutPercentage(),
 	)
 	sp := spinner.New(
@@ -435,7 +432,7 @@ func runSemanticSetup(modelID string, force ...bool) error {
 	}
 
 	fmt.Println()
-	fmt.Printf("  Setting up semantic search (%d downloads)...\n\n", len(steps))
+	fmt.Printf("  %s\n\n", RenderInfo(fmt.Sprintf("Setting up semantic search (%d downloads)...", len(steps))))
 
 	// Drain any pending terminal escape responses from prior bubbletea/huh
 	// programs to prevent ^[[?2026;2$y leak in output.
@@ -487,7 +484,7 @@ func ensureONNXRuntime() error {
 	}
 
 	fmt.Println()
-	fmt.Println("  Installing ONNX Runtime...")
+	fmt.Println(RenderInfo("Installing ONNX Runtime..."))
 	fmt.Println()
 
 	drainStdin()

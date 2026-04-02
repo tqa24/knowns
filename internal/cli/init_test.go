@@ -9,6 +9,9 @@ import (
 )
 
 func TestCreateOpenCodeConfigQuietCreatesConfig(t *testing.T) {
+	execLookPath = func(string) (string, error) { return "/usr/local/bin/knowns", nil }
+	t.Cleanup(func() { execLookPath = defaultExecLookPath })
+
 	projectRoot := t.TempDir()
 
 	if err := createOpenCodeConfigQuiet(projectRoot); err != nil {
@@ -34,10 +37,10 @@ func TestCreateOpenCodeConfigQuietCreatesConfig(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected knowns command to be []any, got %T", knowns["command"])
 	}
-	if len(command) != 5 {
-		t.Fatalf("expected 5 command parts, got %d", len(command))
+	if len(command) != 3 {
+		t.Fatalf("expected 3 command parts, got %d", len(command))
 	}
-	expected := []string{"npx", "-y", "knowns", "mcp", "--stdio"}
+	expected := []string{"knowns", "mcp", "--stdio"}
 	for i, want := range expected {
 		if command[i] != want {
 			t.Fatalf("expected command[%d] = %q, got %#v", i, want, command[i])
@@ -46,6 +49,9 @@ func TestCreateOpenCodeConfigQuietCreatesConfig(t *testing.T) {
 }
 
 func TestCreateMCPJsonFileQuietUsesNpxKnowns(t *testing.T) {
+	execLookPath = func(string) (string, error) { return "/usr/local/bin/knowns", nil }
+	t.Cleanup(func() { execLookPath = defaultExecLookPath })
+
 	projectRoot := t.TempDir()
 
 	if err := createMCPJsonFileQuiet(projectRoot, false); err != nil {
@@ -56,15 +62,15 @@ func TestCreateMCPJsonFileQuietUsesNpxKnowns(t *testing.T) {
 	mcpServers := getMap(t, config, "mcpServers")
 	knowns := getMap(t, mcpServers, "knowns")
 
-	if got := knowns["command"]; got != "npx" {
-		t.Fatalf("expected command npx, got %#v", got)
+	if got := knowns["command"]; got != "knowns" {
+		t.Fatalf("expected command knowns, got %#v", got)
 	}
 
 	args, ok := knowns["args"].([]any)
 	if !ok {
 		t.Fatalf("expected args to be []any, got %T", knowns["args"])
 	}
-	expected := []string{"-y", "knowns", "mcp", "--stdio"}
+	expected := []string{"mcp", "--stdio"}
 	if len(args) != len(expected) {
 		t.Fatalf("expected %d args, got %d", len(expected), len(args))
 	}

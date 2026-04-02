@@ -35,6 +35,8 @@ const ImportsPage = lazyWithRetry(() => import("./pages/ImportsPage"));
 const KanbanPage = lazyWithRetry(() => import("./pages/KanbanPage"));
 const TasksPage = lazyWithRetry(() => import("./pages/TasksPage"));
 const ChatPage = lazyWithRetry(() => import("./pages/ChatPage"));
+const GraphPage = lazyWithRetry(() => import("./pages/GraphPage"));
+const MemoryPage = lazyWithRetry(() => import("./pages/MemoryPage"));
 
 function PageLoading() {
 	return (
@@ -52,6 +54,8 @@ function getCurrentPage(pathname: string) {
 	if (pathname.startsWith("/tasks")) return "tasks";
 	if (pathname.startsWith("/docs")) return "docs";
 	if (pathname.startsWith("/imports")) return "imports";
+	if (pathname.startsWith("/graph")) return "graph";
+	if (pathname.startsWith("/memory")) return "memory";
 	if (pathname.startsWith("/chat")) return "chat";
 	if (pathname.startsWith("/config")) return "config";
 	if (pathname.startsWith("/kanban")) return "kanban";
@@ -97,6 +101,8 @@ export default function AppShell() {
 			kanban: "Kanban",
 			tasks: "Tasks",
 			docs: "Docs",
+			graph: "Graph",
+			memory: "Memory",
 			imports: "Imports",
 			chat: "Chat",
 			config: "Settings",
@@ -264,6 +270,10 @@ export default function AppShell() {
 			}
 			case "docs":
 				return <DocsPage />;
+			case "graph":
+				return <GraphPage />;
+			case "memory":
+				return <MemoryPage />;
 			case "imports":
 				return <ImportsPage />;
 			case "chat":

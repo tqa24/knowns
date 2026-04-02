@@ -162,9 +162,9 @@ func maybeAutoSetup() {
 	// Model not installed — prompt user
 	fmt.Println()
 	fmt.Println(warnStyle.Render("⚠ This project uses semantic search but the embedding model is not installed locally."))
-	fmt.Printf("  Model: %s (%s, ~%dMB)\n", selected.Name, selected.ID, selected.SizeMB)
+	fmt.Println(RenderField("Model", fmt.Sprintf("%s (%s, ~%dMB)", selected.Name, selected.ID, selected.SizeMB)))
 	fmt.Println()
-	fmt.Printf("  Run: %s\n", StyleInfo.Render("knowns sync"))
+	fmt.Println(RenderHint("Run: " + RenderCmd("knowns sync")))
 	fmt.Println()
 }
 

@@ -22,11 +22,15 @@ type Store struct {
 	Versions   *VersionStore
 	Workspaces *WorkspaceStore
 	Chats      *ChatStore
+	Memory     *MemoryStore
 }
 
 // NewStore creates a Store rooted at the given .knowns/ directory path.
 // The directory does not need to exist yet; call Init to create it.
 func NewStore(root string) *Store {
+	home, _ := os.UserHomeDir()
+	globalRoot := filepath.Join(home, ".knowns")
+
 	s := &Store{Root: root}
 	s.Tasks = &TaskStore{root: root}
 	s.Docs = &DocStore{root: root}
@@ -36,6 +40,7 @@ func NewStore(root string) *Store {
 	s.Versions = &VersionStore{root: root}
 	s.Workspaces = &WorkspaceStore{root: root}
 	s.Chats = &ChatStore{root: root}
+	s.Memory = &MemoryStore{root: root, globalRoot: globalRoot}
 	return s
 }
 
@@ -68,6 +73,7 @@ func (s *Store) Init(name string) error {
 		filepath.Join(s.Root, "templates"),
 		filepath.Join(s.Root, "imports"),
 		filepath.Join(s.Root, ".search"),
+		filepath.Join(s.Root, "memory"),
 	}
 	for _, d := range dirs {
 		if err := os.MkdirAll(d, 0755); err != nil {

@@ -565,7 +565,7 @@ func runTimeLog(cmd *cobra.Command, args []string) error {
 		if plain {
 			fmt.Printf("TASK: %s\nENTRIES: 0\n", taskID)
 		} else {
-			fmt.Printf("No time entries for task %s.\n", taskID)
+			fmt.Println(StyleDim.Render(fmt.Sprintf("No time entries for task %s.", taskID)))
 		}
 		return nil
 	}

@@ -57,6 +57,14 @@ mcp__knowns__get_doc({ "path": "learnings/critical-patterns", "smart": true })
 
 These are promoted learnings that cost the most to discover and save the most by knowing. Include a brief summary in the session context if any exist.
 
+## Step 3.6: Load Project Memory
+
+```json
+mcp__knowns__list_memories({ "layer": "project" })
+```
+
+Project memories contain accumulated patterns, decisions, and conventions from past work. Include key entries in the session context summary. If there are many entries, prioritize by recency and relevance to the user's stated focus.
+
 ## Step 4: Summarize
 
 ```markdown
@@ -64,6 +72,7 @@ These are promoted learnings that cost the most to discover and save the most by
 - **Project**: [name]
 - **Key Docs**: README, ARCHITECTURE, CONVENTIONS
 - **Critical Learnings**: [count, or "none yet"]
+- **Project Memories**: [count, or "none yet"]
 - **In-progress tasks**: [count]
 - **Current risks / gaps**: [missing docs, unclear conventions, broken search, etc.]
 - **Ready for**: tasks, docs, questions

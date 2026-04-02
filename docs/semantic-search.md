@@ -204,6 +204,7 @@ Index includes:
 - **Tasks** - All tasks in `.knowns/tasks/`
 - **Local docs** - All docs in `.knowns/docs/`
 - **Imported docs** - All docs from `.knowns/imports/*/docs/`
+- **Memories** - All memory entries in `.knowns/memories/`
 
 Index updates automatically when:
 

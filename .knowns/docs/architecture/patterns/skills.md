@@ -2,7 +2,7 @@
 title: Claude Code Skills
 description: Pattern for creating and managing Claude Code skills in Knowns CLI
 createdAt: '2026-01-17T06:06:37.006Z'
-updatedAt: '2026-03-27T07:09:54.296Z'
+updatedAt: '2026-04-02T09:38:30.160Z'
 tags:
   - pattern
   - claude-code
@@ -16,8 +16,7 @@ Knowns CLI integrates with Claude Code skills - workflow templates that can be i
 ## Skill Structure
 
 ```
-src/instructions/skills/
-├── index.ts                    # Export all skills
+internal/instructions/skills/
 ├── kn-init/
 │   └── SKILL.md               # Skill content with frontmatter
 ├── kn-plan/
@@ -50,19 +49,27 @@ description: Initialize session with project context
 
 | Skill | Description |
 |-------|-------------|
-| `kn-init` | Initialize session (read docs, list tasks, load critical learnings) |
-| `kn-spec` | Create spec with Socratic exploring phase (SDD workflow) |
-| `kn-plan` | Plan task implementation (with pre-execution validation) |
-| `kn-implement` | Implement task (includes reopen logic) |
-| `kn-research` | Research codebase before implementation |
-| `kn-review` | Multi-perspective code review with P1/P2/P3 severity |
+| `kn-init` | Initialize session (read docs, list tasks, load critical learnings, load project memories) |
+| `kn-spec` | Create spec with Socratic exploring phase (SDD workflow). Searches memories for past decisions. |
+| `kn-plan` | Plan task implementation (with pre-execution validation). Searches memories for patterns. |
+| `kn-implement` | Implement task (includes reopen logic). Saves quick insights to memory. |
+| `kn-research` | Research codebase before implementation. Searches docs and memories via unified search. |
+| `kn-review` | Multi-perspective code review with P1/P2/P3 severity. Searches memories for conventions. |
 | `kn-commit` | Generate commit message and commit changes |
-| `kn-extract` | Extract patterns, decisions, failures + consolidation mode |
+| `kn-extract` | Extract patterns, decisions, failures + save to memory + consolidation mode |
 | `kn-doc` | Create and update documentation |
 | `kn-template` | Generate code from templates |
 | `kn-verify` | SDD verification and coverage reporting |
-| `kn-go` | Full pipeline execution from approved spec (no review gates) |
-| `kn-debug` | Structured debugging: triage → reproduce → fix → learn |
+| `kn-go` | Full pipeline execution from approved spec (no review gates). Searches memories per task. |
+| `kn-debug` | Structured debugging: triage → reproduce → fix → learn. Searches and saves to memory. |
+
+## Memory Integration
+
+All skills participate in the memory loop:
+- **Read skills** (init, research, plan, spec, go, review, debug): search `type: "memory"` via unified search
+- **Write skills** (implement, extract, debug): save patterns/decisions/failures with `add_memory(layer="project")`
+- The global rule in KNOWNS.md `## Memory Usage` encourages all skills to save knowledge as it emerges
+
 ## Workflow
 
 ### Manual flow (step by step)
@@ -79,31 +86,22 @@ description: Initialize session with project context
 ```
 /kn-debug → /kn-review → /kn-commit
 ```
+
 ## Sync Commands
 
 ```bash
-knowns sync                   # Sync all (skills + agents)
-knowns sync skills            # Sync skills only
-knowns sync skills --force    # Force overwrite
-knowns sync agent             # Sync agent files only
-knowns sync agent --type mcp  # Use MCP guidelines
-knowns sync agent --all       # Include Gemini, Copilot
+knowns sync                   # Sync all (skills + agents + model + index + MCP)
+knowns sync --skills          # Sync skills only
+knowns sync --instructions    # Sync instruction files only
 ```
+
+Sync always overwrites generated files. The `--force` flag is deprecated.
 
 ## Implementation Details
 
-### index.ts Pattern
+### Source Location
 
-```typescript
-import knInitMd from "./kn-init/SKILL.md";
-
-function createSkill(content: string, folderName: string): Skill {
-  const { name, description } = parseSkillFrontmatter(content);
-  return { name, folderName, description, content };
-}
-
-export const SKILL_INIT = createSkill(knInitMd, "kn-init");
-```
+Skills source lives in `internal/instructions/skills/kn-*/SKILL.md`. These are embedded into the Go binary and synced to `.claude/skills/` (and other platform dirs) during `knowns sync`.
 
 ### Sync Function
 

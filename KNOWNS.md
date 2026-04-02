@@ -9,6 +9,7 @@ Canonical repository guidance for agents working in this project.
 - [Repo Mental Model](#repo-mental-model)
 - [How Agents Should Read This File](#how-agents-should-read-this-file)
 - [Tool Selection](#tool-selection)
+- [Memory Usage](#memory-usage)
 - [Critical Rules](#critical-rules)
 - [Git Safety](#git-safety)
 - [Context Retrieval Strategy](#context-retrieval-strategy)
@@ -75,6 +76,16 @@ Canonical repository guidance for agents working in this project.
 - `bash`: run git, builds, tests, package managers, or other terminal commands.
 - `apply_patch`: make small, explicit file edits.
 - `task`: delegate large research or multi-step exploration when useful.
+
+## Memory Usage
+
+- Session start: `list_memories(layer="project")` to load accumulated project knowledge.
+- During work: `add_working_memory()` for ephemeral session-scoped cache (gone when session ends).
+- After task: `add_memory()` for reusable patterns, decisions, and conventions (alongside docs).
+- Cross-project: `promote_memory()` to move project knowledge to global (`project→global`).
+- Memory complements docs: memory is for fast agent recall, docs are for structured human-readable reference.
+- Never duplicate the full doc content into memory — store a summary and reference the doc with `@doc/<path>`.
+- During any skill: if you discover a reusable pattern, decision, convention, or failure, save it with `add_memory(layer="project")`. Capture knowledge as it emerges, don't wait for extraction.
 
 ## Critical Rules
 

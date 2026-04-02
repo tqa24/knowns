@@ -16,10 +16,20 @@ func EstimateTokens(text string) int {
 	return (len(text) + 3) / 4 // ceiling division
 }
 
+// countTokens uses the tokenizer if available, otherwise falls back to EstimateTokens.
+func countTokens(text string, tok Tokenizer) int {
+	if tok == nil {
+		return EstimateTokens(text)
+	}
+	out := tok.Encode(text, 999999)
+	return len(out.InputIDs)
+}
+
 // markdownHeading represents a heading extracted from markdown content.
 type markdownHeading struct {
 	Level      int
 	Title      string
+	HeaderPath string // full hierarchy path e.g. "API/Endpoints/GET /users"
 	Content    string
 	StartIndex int
 	EndIndex   int
@@ -32,12 +42,53 @@ func extractHeadings(markdown string) []markdownHeading {
 	lines := strings.Split(markdown, "\n")
 	var headings []markdownHeading
 	var current *markdownHeading
+	inCodeBlock := false
+
+	// Header stack for tracking full hierarchy path.
+	type headerEntry struct {
+		level int
+		title string
+	}
+	var headerStack []headerEntry
+
+	buildHeaderPath := func(stack []headerEntry) string {
+		if len(stack) == 0 {
+			return ""
+		}
+		parts := make([]string, len(stack))
+		for i, e := range stack {
+			parts[i] = e.title
+		}
+		return strings.Join(parts, "/")
+	}
 
 	for i, line := range lines {
+		// Track fenced code blocks (triple-backtick toggle).
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") {
+			inCodeBlock = !inCodeBlock
+			continue
+		}
+
+		// Skip heading detection inside code blocks.
+		if inCodeBlock {
+			continue
+		}
+
 		m := headingRE.FindStringSubmatch(line)
 		if m == nil {
 			continue
 		}
+
+		level := len(m[1])
+		title := strings.TrimSpace(m[2])
+
+		// Update header stack: pop entries of equal or higher level.
+		for len(headerStack) > 0 && headerStack[len(headerStack)-1].level >= level {
+			headerStack = headerStack[:len(headerStack)-1]
+		}
+		headerStack = append(headerStack, headerEntry{level: level, title: title})
+		headerPath := buildHeaderPath(headerStack)
 
 		// Close previous heading.
 		if current != nil {
@@ -49,9 +100,6 @@ func extractHeadings(markdown string) []markdownHeading {
 			current.EndIndex = endIdx
 			headings = append(headings, *current)
 		}
-
-		level := len(m[1])
-		title := strings.TrimSpace(m[2])
 
 		// Compute content start (after this heading line).
 		startIdx := 0
@@ -65,6 +113,7 @@ func extractHeadings(markdown string) []markdownHeading {
 		current = &markdownHeading{
 			Level:      level,
 			Title:      title,
+			HeaderPath: headerPath,
 			StartIndex: startIdx,
 			EndIndex:   len(markdown),
 		}
@@ -81,7 +130,8 @@ func extractHeadings(markdown string) []markdownHeading {
 }
 
 // ChunkDocument splits a document into chunks by headings (port of TS chunkDocument).
-func ChunkDocument(content string, path, title, description string, maxTokens int) ChunkResult {
+// If tok is non-nil, it is used for accurate token counting; otherwise EstimateTokens is used.
+func ChunkDocument(content string, path, title, description string, maxTokens int, tok Tokenizer) ChunkResult {
 	if maxTokens <= 0 {
 		maxTokens = 512
 	}
@@ -94,7 +144,7 @@ func ChunkDocument(content string, path, title, description string, maxTokens in
 	if description != "" {
 		metaContent = title + "\n\n" + description
 	}
-	metaTokens := EstimateTokens(metaContent)
+	metaTokens := countTokens(metaContent, tok)
 	chunks = append(chunks, Chunk{
 		ID:           fmt.Sprintf("doc:%s:chunk:0", path),
 		Type:         ChunkTypeDoc,
@@ -110,49 +160,56 @@ func ChunkDocument(content string, path, title, description string, maxTokens in
 	// Extract headings and chunk by section.
 	headings := extractHeadings(content)
 	position := 1
-	parentSection := ""
+
+	// Capture H1 body content (between H1 and first H2) into metadata chunk.
+	for _, h := range headings {
+		if h.Level == 1 && strings.TrimSpace(h.Content) != "" {
+			metaContent += "\n\n" + strings.TrimSpace(h.Content)
+			break // only first H1
+		}
+	}
+	// Update metadata chunk with any H1 body content.
+	metaTokens = countTokens(metaContent, tok)
+	chunks[0].Content = metaContent
+	chunks[0].TokenCount = metaTokens
 
 	for _, h := range headings {
 		if h.Level == 1 {
-			continue // skip h1 (usually doc title, already in metadata)
+			continue // skip h1 (title + body already in metadata chunk)
 		}
 
 		sectionTitle := fmt.Sprintf("%s %s", strings.Repeat("#", h.Level), h.Title)
 		sectionContent := sectionTitle + "\n\n" + h.Content
-		tokenCount := EstimateTokens(sectionContent)
+		tokenCount := countTokens(sectionContent, tok)
 
 		if tokenCount > maxTokens {
 			// Split by paragraphs.
 			paragraphs := splitParagraphs(h.Content)
 			currentContent := sectionTitle
-			currentTokens := EstimateTokens(sectionTitle)
+			currentTokens := countTokens(sectionTitle, tok)
 
 			for _, para := range paragraphs {
-				paraTokens := EstimateTokens(para)
+				paraTokens := countTokens(para, tok)
 
 				if currentTokens+paraTokens > maxTokens && currentContent != sectionTitle {
 					// Save current chunk.
-					ps := ""
-					if h.Level > 2 {
-						ps = parentSection
-					}
 					chunks = append(chunks, Chunk{
-						ID:            fmt.Sprintf("doc:%s:chunk:%d", path, position),
-						Type:          ChunkTypeDoc,
-						DocPath:       path,
-						Section:       sectionTitle,
-						Content:       currentContent,
-						TokenCount:    currentTokens,
-						HeadingLevel:  h.Level,
-						ParentSection: ps,
-						Position:      position,
+						ID:           fmt.Sprintf("doc:%s:chunk:%d", path, position),
+						Type:         ChunkTypeDoc,
+						DocPath:      path,
+						Section:      sectionTitle,
+						Content:      currentContent,
+						TokenCount:   currentTokens,
+						HeadingLevel: h.Level,
+						HeaderPath:   h.HeaderPath,
+						Position:     position,
 					})
 					totalTokens += currentTokens
 					position++
 
 					// Start continuation chunk.
 					currentContent = sectionTitle + " (continued)\n\n" + para
-					currentTokens = EstimateTokens(currentContent)
+					currentTokens = countTokens(currentContent, tok)
 				} else {
 					currentContent += "\n\n" + para
 					currentTokens += paraTokens
@@ -161,53 +218,41 @@ func ChunkDocument(content string, path, title, description string, maxTokens in
 
 			// Remaining content.
 			if currentContent != sectionTitle {
-				ps := ""
-				if h.Level > 2 {
-					ps = parentSection
-				}
 				chunks = append(chunks, Chunk{
-					ID:            fmt.Sprintf("doc:%s:chunk:%d", path, position),
-					Type:          ChunkTypeDoc,
-					DocPath:       path,
-					Section:       sectionTitle,
-					Content:       currentContent,
-					TokenCount:    currentTokens,
-					HeadingLevel:  h.Level,
-					ParentSection: ps,
-					Position:      position,
+					ID:           fmt.Sprintf("doc:%s:chunk:%d", path, position),
+					Type:         ChunkTypeDoc,
+					DocPath:      path,
+					Section:      sectionTitle,
+					Content:      currentContent,
+					TokenCount:   currentTokens,
+					HeadingLevel: h.Level,
+					HeaderPath:   h.HeaderPath,
+					Position:     position,
 				})
 				totalTokens += currentTokens
 				position++
 			}
 		} else {
 			// Fits in one chunk.
-			ps := ""
-			if h.Level > 2 {
-				ps = parentSection
-			}
 			chunks = append(chunks, Chunk{
-				ID:            fmt.Sprintf("doc:%s:chunk:%d", path, position),
-				Type:          ChunkTypeDoc,
-				DocPath:       path,
-				Section:       sectionTitle,
-				Content:       sectionContent,
-				TokenCount:    tokenCount,
-				HeadingLevel:  h.Level,
-				ParentSection: ps,
-				Position:      position,
+				ID:           fmt.Sprintf("doc:%s:chunk:%d", path, position),
+				Type:         ChunkTypeDoc,
+				DocPath:      path,
+				Section:      sectionTitle,
+				Content:      sectionContent,
+				TokenCount:   tokenCount,
+				HeadingLevel: h.Level,
+				HeaderPath:   h.HeaderPath,
+				Position:     position,
 			})
 			totalTokens += tokenCount
 			position++
-		}
-
-		if h.Level == 2 {
-			parentSection = sectionTitle
 		}
 	}
 
 	// If no headings, treat entire content as one chunk.
 	if len(headings) == 0 && strings.TrimSpace(content) != "" {
-		ct := EstimateTokens(content)
+		ct := countTokens(content, tok)
 		chunks = append(chunks, Chunk{
 			ID:           fmt.Sprintf("doc:%s:chunk:1", path),
 			Type:         ChunkTypeDoc,
@@ -225,7 +270,13 @@ func ChunkDocument(content string, path, title, description string, maxTokens in
 }
 
 // ChunkTask splits a task into chunks by field (port of TS chunkTask).
-func ChunkTask(task *models.Task) ChunkResult {
+// If tok is non-nil, it is used for accurate token counting; otherwise EstimateTokens is used.
+// Fields exceeding maxTokens are split by paragraph.
+func ChunkTask(task *models.Task, maxTokens int, tok Tokenizer) ChunkResult {
+	if maxTokens <= 0 {
+		maxTokens = 512
+	}
+
 	var chunks []Chunk
 	totalTokens := 0
 
@@ -245,19 +296,83 @@ func ChunkTask(task *models.Task) ChunkResult {
 		if f.Content == "" {
 			continue
 		}
-		tc := EstimateTokens(f.Content)
-		chunks = append(chunks, Chunk{
-			ID:         fmt.Sprintf("task:%s:chunk:%s", task.ID, f.Name),
-			Type:       ChunkTypeTask,
-			TaskID:     task.ID,
-			Field:      f.Name,
-			Content:    f.Content,
-			TokenCount: tc,
-			Status:     task.Status,
-			Priority:   task.Priority,
-			Labels:     task.Labels,
-		})
-		totalTokens += tc
+		tc := countTokens(f.Content, tok)
+
+		if tc > maxTokens {
+			// Split by paragraphs, matching ChunkDocument behavior.
+			paragraphs := splitParagraphs(f.Content)
+			partIdx := 0
+			currentContent := ""
+			currentTokens := 0
+
+			for _, para := range paragraphs {
+				paraTokens := countTokens(para, tok)
+
+				if currentTokens+paraTokens > maxTokens && currentContent != "" {
+					// Save current chunk.
+					suffix := ""
+					if partIdx > 0 {
+						suffix = fmt.Sprintf(":%d", partIdx)
+					}
+					chunks = append(chunks, Chunk{
+						ID:         fmt.Sprintf("task:%s:chunk:%s%s", task.ID, f.Name, suffix),
+						Type:       ChunkTypeTask,
+						TaskID:     task.ID,
+						Field:      f.Name,
+						Content:    currentContent,
+						TokenCount: currentTokens,
+						Status:     task.Status,
+						Priority:   task.Priority,
+						Labels:     task.Labels,
+					})
+					totalTokens += currentTokens
+					partIdx++
+
+					currentContent = para
+					currentTokens = paraTokens
+				} else {
+					if currentContent != "" {
+						currentContent += "\n\n" + para
+					} else {
+						currentContent = para
+					}
+					currentTokens += paraTokens
+				}
+			}
+
+			// Remaining content.
+			if currentContent != "" {
+				suffix := ""
+				if partIdx > 0 {
+					suffix = fmt.Sprintf(":%d", partIdx)
+				}
+				chunks = append(chunks, Chunk{
+					ID:         fmt.Sprintf("task:%s:chunk:%s%s", task.ID, f.Name, suffix),
+					Type:       ChunkTypeTask,
+					TaskID:     task.ID,
+					Field:      f.Name,
+					Content:    currentContent,
+					TokenCount: currentTokens,
+					Status:     task.Status,
+					Priority:   task.Priority,
+					Labels:     task.Labels,
+				})
+				totalTokens += currentTokens
+			}
+		} else {
+			chunks = append(chunks, Chunk{
+				ID:         fmt.Sprintf("task:%s:chunk:%s", task.ID, f.Name),
+				Type:       ChunkTypeTask,
+				TaskID:     task.ID,
+				Field:      f.Name,
+				Content:    f.Content,
+				TokenCount: tc,
+				Status:     task.Status,
+				Priority:   task.Priority,
+				Labels:     task.Labels,
+			})
+			totalTokens += tc
+		}
 	}
 
 	return ChunkResult{Chunks: chunks, TotalTokens: totalTokens}
@@ -304,4 +419,97 @@ func splitParagraphs(text string) []string {
 		}
 	}
 	return result
+}
+
+// ChunkMemory splits a memory entry into chunks for embedding.
+func ChunkMemory(entry *models.MemoryEntry, maxTokens int, tok Tokenizer) ChunkResult {
+	if maxTokens <= 0 {
+		maxTokens = 512
+	}
+
+	// Build full text: title + category + content.
+	var text string
+	if entry.Title != "" {
+		text = entry.Title
+	}
+	if entry.Category != "" {
+		text += " [" + entry.Category + "]"
+	}
+	if entry.Content != "" {
+		if text != "" {
+			text += "\n\n"
+		}
+		text += entry.Content
+	}
+
+	if text == "" {
+		return ChunkResult{}
+	}
+
+	var chunks []Chunk
+	totalTokens := 0
+	tc := countTokens(text, tok)
+
+	if tc > maxTokens {
+		paragraphs := splitParagraphs(text)
+		partIdx := 0
+		currentContent := ""
+		currentTokens := 0
+
+		for _, para := range paragraphs {
+			paraTokens := countTokens(para, tok)
+			if currentTokens+paraTokens > maxTokens && currentContent != "" {
+				suffix := ""
+				if partIdx > 0 {
+					suffix = fmt.Sprintf(":%d", partIdx)
+				}
+				chunks = append(chunks, Chunk{
+					ID:          fmt.Sprintf("memory:%s:chunk:content%s", entry.ID, suffix),
+					Type:        ChunkTypeMemory,
+					MemoryID:    entry.ID,
+					MemoryLayer: entry.Layer,
+					Content:     currentContent,
+					TokenCount:  currentTokens,
+				})
+				totalTokens += currentTokens
+				partIdx++
+				currentContent = para
+				currentTokens = paraTokens
+			} else {
+				if currentContent != "" {
+					currentContent += "\n\n" + para
+				} else {
+					currentContent = para
+				}
+				currentTokens += paraTokens
+			}
+		}
+		if currentContent != "" {
+			suffix := ""
+			if partIdx > 0 {
+				suffix = fmt.Sprintf(":%d", partIdx)
+			}
+			chunks = append(chunks, Chunk{
+				ID:          fmt.Sprintf("memory:%s:chunk:content%s", entry.ID, suffix),
+				Type:        ChunkTypeMemory,
+				MemoryID:    entry.ID,
+				MemoryLayer: entry.Layer,
+				Content:     currentContent,
+				TokenCount:  currentTokens,
+			})
+			totalTokens += currentTokens
+		}
+	} else {
+		chunks = append(chunks, Chunk{
+			ID:          fmt.Sprintf("memory:%s:chunk:content", entry.ID),
+			Type:        ChunkTypeMemory,
+			MemoryID:    entry.ID,
+			MemoryLayer: entry.Layer,
+			Content:     text,
+			TokenCount:  tc,
+		})
+		totalTokens = tc
+	}
+
+	return ChunkResult{Chunks: chunks, TotalTokens: totalTokens}
 }

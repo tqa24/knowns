@@ -25,6 +25,10 @@ type VectorStore interface {
 	Stats() (chunkCount int, model string, indexedAt time.Time)
 	Close() error
 	Model() string
+	GetContentHash(sourceID string) string
+	SetContentHash(sourceID, hash string)
+	DeleteContentHash(sourceID string)
+	ListContentHashes() map[string]string
 }
 
 // FileVectorStore stores embeddings in a flat binary file with a JSON index.
@@ -52,11 +56,11 @@ type indexEntry struct {
 	TokenCount int       `json:"tokenCount,omitempty"`
 
 	// Doc fields.
-	DocPath       string `json:"docPath,omitempty"`
-	Section       string `json:"section,omitempty"`
-	HeadingLevel  int    `json:"headingLevel,omitempty"`
-	ParentSection string `json:"parentSection,omitempty"`
-	Position      int    `json:"position,omitempty"`
+	DocPath      string `json:"docPath,omitempty"`
+	Section      string `json:"section,omitempty"`
+	HeadingLevel int    `json:"headingLevel,omitempty"`
+	HeaderPath   string `json:"headerPath,omitempty"`
+	Position     int    `json:"position,omitempty"`
 
 	// Task fields.
 	TaskID   string   `json:"taskId,omitempty"`
@@ -216,7 +220,7 @@ func (s *FileVectorStore) AddChunks(chunks []Chunk) {
 			DocPath:       c.DocPath,
 			Section:       c.Section,
 			HeadingLevel:  c.HeadingLevel,
-			ParentSection: c.ParentSection,
+			HeaderPath: c.HeaderPath,
 			Position:      c.Position,
 			TaskID:        c.TaskID,
 			Field:         c.Field,
@@ -312,7 +316,7 @@ func (s *FileVectorStore) Search(queryVec []float32, opts VectorSearchOpts) []Sc
 				DocPath:       entry.DocPath,
 				Section:       entry.Section,
 				HeadingLevel:  entry.HeadingLevel,
-				ParentSection: entry.ParentSection,
+				HeaderPath:   entry.HeaderPath,
 				Position:      entry.Position,
 				TaskID:        entry.TaskID,
 				Field:         entry.Field,
@@ -364,6 +368,18 @@ func (s *FileVectorStore) Close() error { return nil }
 
 // Model returns the embedding model name.
 func (s *FileVectorStore) Model() string { return s.model }
+
+// GetContentHash returns empty for FileVectorStore (no hash support).
+func (s *FileVectorStore) GetContentHash(sourceID string) string { return "" }
+
+// SetContentHash is a no-op for FileVectorStore.
+func (s *FileVectorStore) SetContentHash(sourceID, hash string) {}
+
+// DeleteContentHash is a no-op for FileVectorStore.
+func (s *FileVectorStore) DeleteContentHash(sourceID string) {}
+
+// ListContentHashes returns nil for FileVectorStore.
+func (s *FileVectorStore) ListContentHashes() map[string]string { return nil }
 
 // Compile-time check that FileVectorStore implements VectorStore.
 var _ VectorStore = (*FileVectorStore)(nil)

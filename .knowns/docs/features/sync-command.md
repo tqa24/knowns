@@ -2,7 +2,7 @@
 title: Sync Command
 description: knowns sync — apply config.json to set up skills, instructions, model, git, and search index
 createdAt: '2026-03-27T07:10:42.070Z'
-updatedAt: '2026-03-27T07:10:42.070Z'
+updatedAt: '2026-04-02T09:38:29.325Z'
 tags:
   - feature
   - cli
@@ -24,16 +24,18 @@ knowns sync        # sets up everything from config.json
 ## What It Does
 
 1. **Skills** — copies built-in skills to platform directories (`.claude/skills/`, `.agent/skills/`, `.kiro/skills/`)
-2. **Instructions** — generates agent instruction files (KNOWNS.md, CLAUDE.md, AGENTS.md, etc.) for configured platforms
+2. **Instructions** — generates agent instruction files (KNOWNS.md, CLAUDE.md, AGENTS.md, etc.) for configured platforms. Always overwrites to stay in sync with templates.
 3. **Git integration** — applies `.gitignore` rules based on `gitTrackingMode` setting
 4. **Model download** — downloads the configured embedding model if not installed locally
-5. **Search index** — rebuilds the semantic search index
+5. **Import sync** — syncs git-based imports
+6. **Search index** — rebuilds the semantic search index
+7. **MCP configs** — syncs MCP config files to use the local binary
 
 ## Flags
 
 | Flag | Description |
 |------|-------------|
-| `--force` | Force overwrite existing files |
+| `--force` | Deprecated — sync always overwrites generated files |
 | `--skills` | Sync skills only |
 | `--instructions` | Sync instruction files only |
 | `--model` | Download embedding model only |

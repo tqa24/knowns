@@ -1371,3 +1371,110 @@ export const workspaceApi = {
 		return res.json();
 	},
 };
+
+// --- Graph API ---
+
+export interface GraphNode {
+	id: string;
+	type: "task" | "doc" | "template" | "memory";
+	label: string;
+	data: Record<string, unknown>;
+}
+
+export interface GraphEdge {
+	source: string;
+	target: string;
+	type: "parent" | "spec" | "template-doc" | "mention";
+}
+
+export interface GraphData {
+	nodes: GraphNode[];
+	edges: GraphEdge[];
+}
+
+export async function getGraph(): Promise<GraphData> {
+	const res = await fetch(`${API_BASE}/api/graph`);
+	if (!res.ok) throw new Error("Failed to fetch graph");
+	return res.json();
+}
+
+// --- Memory API ---
+
+export interface MemoryEntry {
+	id: string;
+	title: string;
+	content: string;
+	layer: "working" | "project" | "global";
+	category?: string;
+	tags?: string[];
+	metadata?: Record<string, string>;
+	createdAt: string;
+	updatedAt: string;
+}
+
+export const memoryApi = {
+	async list(layer?: string): Promise<MemoryEntry[]> {
+		const params = new URLSearchParams();
+		if (layer) params.set("layer", layer);
+		const res = await fetch(`${API_BASE}/api/memories?${params.toString()}`);
+		if (!res.ok) throw new Error("Failed to fetch memories");
+		return res.json();
+	},
+
+	async get(id: string): Promise<MemoryEntry> {
+		const res = await fetch(`${API_BASE}/api/memories/${encodeURIComponent(id)}`);
+		if (!res.ok) throw new Error(`Failed to fetch memory ${id}`);
+		return res.json();
+	},
+
+	async create(data: Partial<MemoryEntry>): Promise<MemoryEntry> {
+		const res = await fetch(`${API_BASE}/api/memories`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(data),
+		});
+		if (!res.ok) throw new Error("Failed to create memory");
+		return res.json();
+	},
+
+	async update(id: string, data: Partial<MemoryEntry>): Promise<MemoryEntry> {
+		const res = await fetch(`${API_BASE}/api/memories/${encodeURIComponent(id)}`, {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(data),
+		});
+		if (!res.ok) throw new Error(`Failed to update memory ${id}`);
+		return res.json();
+	},
+
+	async delete(id: string): Promise<void> {
+		const res = await fetch(`${API_BASE}/api/memories/${encodeURIComponent(id)}`, {
+			method: "DELETE",
+		});
+		if (!res.ok) throw new Error(`Failed to delete memory ${id}`);
+	},
+
+	async promote(id: string): Promise<MemoryEntry> {
+		const res = await fetch(`${API_BASE}/api/memories/${encodeURIComponent(id)}/promote`, {
+			method: "POST",
+		});
+		if (!res.ok) throw new Error(`Failed to promote memory ${id}`);
+		return res.json();
+	},
+
+	async demote(id: string): Promise<MemoryEntry> {
+		const res = await fetch(`${API_BASE}/api/memories/${encodeURIComponent(id)}/demote`, {
+			method: "POST",
+		});
+		if (!res.ok) throw new Error(`Failed to demote memory ${id}`);
+		return res.json();
+	},
+
+	async clean(): Promise<{ cleaned: number }> {
+		const res = await fetch(`${API_BASE}/api/memories/clean`, {
+			method: "POST",
+		});
+		if (!res.ok) throw new Error("Failed to clean working memory");
+		return res.json();
+	},
+};

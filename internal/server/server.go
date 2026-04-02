@@ -175,7 +175,14 @@ func NewServer(store *storage.Store, projectRoot string, port int, opts Options)
 
 	// Initialize OpenCode daemon if configured (only when a project is loaded).
 	if store != nil {
-		if resolution := resolveOpenCodeConfig(port, store.Config.GetOpenCodeServerConfig()); resolution.configured {
+		// Gate on version compatibility before attempting daemon spawn.
+		agentStatus := opencode.DetectOpenCode()
+		if !agentStatus.Installed {
+			log.Printf("[server] OpenCode CLI not installed — chat features disabled")
+		} else if !agentStatus.Compatible {
+			log.Printf("[server] OpenCode version %s is below minimum %s — chat features disabled",
+				agentStatus.Version, agentStatus.MinVersion)
+		} else if resolution := resolveOpenCodeConfig(port, store.Config.GetOpenCodeServerConfig()); resolution.configured {
 			cfg := resolution.cfg
 
 			// For non-explicit ports, scan candidates to find one already running.
@@ -193,12 +200,14 @@ func NewServer(store *storage.Store, projectRoot string, port int, opts Options)
 			// Use the shared daemon to ensure exactly one OpenCode process.
 			daemon = opencode.NewDaemon(cfg.Host, cfg.Port)
 			if err := daemon.EnsureRunning(); err != nil {
-				log.Printf("[server] OpenCode daemon not available: %v, using CLI fallback", err)
+				log.Printf("[server] OpenCode daemon not available: %v, chat features disabled", err)
 				daemon = nil
+			} else {
+				// Only set runtime config when daemon is actually running.
+				cfgCopy := cfg
+				runtimeOpenCode = &cfgCopy
+				log.Printf("[server] OpenCode v%s running on %s:%d", agentStatus.Version, cfg.Host, cfg.Port)
 			}
-
-			cfgCopy := cfg
-			runtimeOpenCode = &cfgCopy
 		}
 	}
 
@@ -452,6 +461,9 @@ func (s *Server) buildRouter() chi.Router {
 		routes.SetupRoutes(r, s.store, s.sse, s.projectRoot, s.manager)
 	})
 
+	// --- Agent status (CLI installation check) ---
+	r.Get("/api/agent/status", s.getAgentStatus)
+
 	// --- OpenCode API proxy (for frontend to call OpenCode directly) ---
 	r.Route("/api/opencode", func(r chi.Router) {
 		r.Get("/status", s.getOpenCodeStatus)
@@ -555,6 +567,13 @@ func (s *Server) proxyOpenCode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	proxy.ServeHTTP(w, r2)
+}
+
+// getAgentStatus returns the OpenCode CLI installation status.
+// GET /api/agent/status
+func (s *Server) getAgentStatus(w http.ResponseWriter, r *http.Request) {
+	status := opencode.DetectOpenCode()
+	writeJSON(w, http.StatusOK, status)
 }
 
 func (s *Server) getOpenCodeStatus(w http.ResponseWriter, r *http.Request) {

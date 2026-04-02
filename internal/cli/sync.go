@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/howznguyen/knowns/internal/codegen"
 	"github.com/howznguyen/knowns/internal/storage"
@@ -37,7 +39,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	force, _ := cmd.Flags().GetBool("force")
+	force := true // sync always overwrites to keep files in sync with templates
 	skillsOnly, _ := cmd.Flags().GetBool("skills")
 	instructionsOnly, _ := cmd.Flags().GetBool("instructions")
 	modelOnly, _ := cmd.Flags().GetBool("model")
@@ -59,7 +61,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	projectRoot := filepath.Dir(store.Root)
 	configPlatforms := cfg.Settings.Platforms
 
-	fmt.Printf("Syncing project %s from config.json...\n\n", StyleBold.Render(cfg.Name))
+	fmt.Printf("%s\n\n", RenderInfo(fmt.Sprintf("Syncing project %s from config.json...", StyleBold.Render(cfg.Name))))
 
 	// 1. Skills
 	if syncSkills {
@@ -81,7 +83,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	// 3. Git integration
 	if !specificFlag {
 		if cfg.Settings.GitTrackingMode != "" {
-			fmt.Printf("Applying git tracking mode: %s\n", StyleBold.Render(cfg.Settings.GitTrackingMode))
+			fmt.Println(RenderField("Git tracking mode", StyleBold.Render(cfg.Settings.GitTrackingMode)))
 			if err := writeKnownsGitignore(projectRoot, cfg.Settings.GitTrackingMode); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: git integration failed: %v\n", err)
 			} else {
@@ -100,13 +102,27 @@ func runSync(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// 5. Reindex
+	// 5. Import sync
+	if !specificFlag {
+		if err := runSyncImports(store, force); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: import sync failed: %v\n", err)
+		}
+	}
+
+	// 6. Reindex
 	if syncIndex {
 		fmt.Println(StyleBold.Render("Rebuilding search index..."))
 		if err := runReindex(); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: reindex failed: %v\n", err)
 		}
 		fmt.Println()
+	}
+
+	// 7. Sync MCP configs (update binary paths)
+	if !specificFlag {
+		if err := syncMCPConfigs(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: MCP config sync failed: %v\n", err)
+		}
 	}
 
 	fmt.Println(RenderSuccess("Sync complete."))
@@ -142,18 +158,18 @@ func runSyncModel(store *storage.Store, force bool) error {
 	}
 
 	if isModelInstalled(selected) && !force {
-		fmt.Printf("%s Model %s already installed.\n", RenderSuccess("✓"), selected.Name)
+		fmt.Printf("%s Model %s already installed.\n", StyleSuccess.Render("✓"), selected.Name)
 		return nil
 	}
 
-	fmt.Printf("Downloading embedding model: %s (~%dMB)...\n", StyleBold.Render(selected.Name), selected.SizeMB)
+	fmt.Printf("%s\n", RenderInfo(fmt.Sprintf("Downloading embedding model: %s (~%dMB)...", StyleBold.Render(selected.Name), selected.SizeMB)))
 
 	steps, alreadyInstalled, err := buildSemanticDownloadSteps(modelID)
 	if err != nil {
 		return err
 	}
 	if alreadyInstalled {
-		fmt.Printf("%s Model %s already installed.\n", RenderSuccess("✓"), selected.Name)
+		fmt.Printf("%s Model %s already installed.\n", StyleSuccess.Render("✓"), selected.Name)
 		return nil
 	}
 
@@ -178,7 +194,7 @@ func runSyncSkillsForPlatforms(projectRoot string, force bool, platforms []strin
 		return nil
 	}
 
-	fmt.Printf("Syncing %s skill(s)...\n", StyleBold.Render(fmt.Sprintf("%d", count)))
+	fmt.Printf("%s\n", RenderInfo(fmt.Sprintf("Syncing %s skill(s)...", StyleBold.Render(fmt.Sprintf("%d", count)))))
 
 	if err := codegen.SyncSkillsForPlatforms(projectRoot, platforms); err != nil {
 		return err
@@ -259,11 +275,6 @@ func runSyncInstructions(projectRoot string, platform string, force bool, config
 			exists = true
 		}
 
-		if exists && !force {
-			fmt.Printf("  %s %s %s\n", StyleDim.Render("["+p.name+"]"), filepath.Base(p.filePath), StyleDim.Render("(use --force to overwrite)"))
-			continue
-		}
-
 		if err := os.MkdirAll(filepath.Dir(p.filePath), 0755); err != nil {
 			return fmt.Errorf("create directory %s: %w", filepath.Dir(p.filePath), err)
 		}
@@ -277,18 +288,99 @@ func runSyncInstructions(projectRoot string, platform string, force bool, config
 			return fmt.Errorf("write %s: %w", p.filePath, err)
 		}
 
-		if exists && force {
-			fmt.Printf("  %s %s %s\n", StyleSuccess.Render("["+p.name+"]"), filepath.Base(p.filePath), StyleWarning.Render("overwritten (force sync)."))
+		if exists {
+			fmt.Printf("  %s %s %s\n", StyleSuccess.Render("["+p.name+"]"), filepath.Base(p.filePath), StyleDim.Render("synced."))
 		} else {
-			fmt.Printf("  %s %s %s\n", StyleWarning.Render("["+p.name+"]"), filepath.Base(p.filePath), StyleDim.Render("not found. Run 'knowns init' or create manually."))
+			fmt.Printf("  %s %s %s\n", StyleSuccess.Render("["+p.name+"]"), filepath.Base(p.filePath), StyleDim.Render("created."))
 		}
 	}
 
 	return nil
 }
 
+// runSyncImports syncs all git-based imports during knowns sync.
+func runSyncImports(store *storage.Store, force bool) error {
+	importsDir := filepath.Join(store.Root, "imports")
+	entries, err := os.ReadDir(importsDir)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	type syncableImport struct {
+		name      string
+		importDir string
+		metaPath  string
+		meta      cliImportMeta
+	}
+	var syncables []syncableImport
+	for _, e := range entries {
+		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		name := e.Name()
+		importDir := filepath.Join(importsDir, name)
+		metaPath := filepath.Join(importDir, "_import.json")
+		metaData, readErr := os.ReadFile(metaPath)
+		if readErr != nil {
+			continue
+		}
+		var meta cliImportMeta
+		if jsonErr := json.Unmarshal(metaData, &meta); jsonErr != nil {
+			continue
+		}
+		if meta.Type != "git" || !isGitURLCli(meta.Source) {
+			continue
+		}
+		syncables = append(syncables, syncableImport{
+			name: name, importDir: importDir, metaPath: metaPath, meta: meta,
+		})
+	}
+
+	if len(syncables) == 0 {
+		return nil
+	}
+
+	fmt.Printf("%s\n", RenderInfo(fmt.Sprintf("Syncing %d import(s)...", len(syncables))))
+
+	for i, imp := range syncables {
+		var added, updated, skipped int
+		var commitHash string
+		var isUpToDate bool
+		label := fmt.Sprintf("Syncing %s (%d/%d)", imp.name, i+1, len(syncables))
+		err := RunWithSpinner(label, func() error {
+			var syncErr error
+			added, updated, skipped, commitHash, syncErr = cliGitSync(imp.meta.Source, imp.meta.Ref, imp.importDir, imp.name, imp.meta.LastCommitHash, force)
+			if syncErr == errUpToDate {
+				isUpToDate = true
+				return nil
+			}
+			return syncErr
+		})
+		if err != nil {
+			continue
+		}
+		if isUpToDate {
+			fmt.Printf("    %s\n", StyleDim.Render("already up to date"))
+			continue
+		}
+
+		imp.meta.LastSync = time.Now().UTC().Format(time.RFC3339)
+		imp.meta.LastCommitHash = commitHash
+		if newData, err := json.MarshalIndent(imp.meta, "", "  "); err == nil {
+			_ = os.WriteFile(imp.metaPath, newData, 0644)
+		}
+
+		fmt.Printf("    %s\n", StyleDim.Render(fmt.Sprintf("%d added, %d updated, %d skipped", added, updated, skipped)))
+	}
+	fmt.Println()
+	return nil
+}
+
 func init() {
-	syncCmd.Flags().Bool("force", false, "Force resync (overwrite existing files)")
+	syncCmd.Flags().Bool("force", false, "Force resync (overwrite existing files) [deprecated: sync always overwrites]")
 	syncCmd.Flags().Bool("skills", false, "Sync skills only")
 	syncCmd.Flags().Bool("instructions", false, "Sync instruction files only")
 	syncCmd.Flags().Bool("model", false, "Download embedding model only")

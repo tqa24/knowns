@@ -3,8 +3,10 @@ package search
 import (
 	"fmt"
 	"math"
+	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/howznguyen/knowns/internal/models"
 	"github.com/howznguyen/knowns/internal/storage"
@@ -22,11 +24,6 @@ type SearchOptions struct {
 	Tag      string
 	Limit    int
 }
-
-const (
-	semanticWeight = 0.6
-	keywordWeight  = 0.4
-)
 
 // Engine provides keyword, semantic, and hybrid search across tasks and docs.
 type Engine struct {
@@ -126,6 +123,14 @@ func (e *Engine) keywordSearch(query string, opts SearchOptions) ([]models.Searc
 		results = append(results, docResults...)
 	}
 
+	if opts.Type == "all" || opts.Type == "memory" {
+		memResults, err := e.keywordSearchMemories(queryLower, words, opts)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, memResults...)
+	}
+
 	return results, nil
 }
 
@@ -210,10 +215,47 @@ func (e *Engine) keywordSearchDocs(query string, words []string, opts SearchOpti
 	return results, nil
 }
 
+func (e *Engine) keywordSearchMemories(query string, words []string, opts SearchOptions) ([]models.SearchResult, error) {
+	entries, err := e.store.Memory.List("")
+	if err != nil {
+		return nil, err
+	}
+
+	var results []models.SearchResult
+	for _, entry := range entries {
+		if opts.Tag != "" && !containsStr(entry.Tags, opts.Tag) {
+			continue
+		}
+
+		score := scoreMemory(entry, query, words)
+		if score <= 0 {
+			continue
+		}
+
+		snippet := extractSnippet(entry.Content, query, 150)
+		if snippet == "" {
+			snippet = truncateStr(entry.Content, 150)
+		}
+
+		results = append(results, models.SearchResult{
+			Type:        "memory",
+			ID:          entry.ID,
+			Title:       entry.Title,
+			Score:       score,
+			Snippet:     snippet,
+			MemoryLayer: entry.Layer,
+			Category:    entry.Category,
+			Tags:        entry.Tags,
+			MatchedBy:   []string{"keyword"},
+		})
+	}
+	return results, nil
+}
+
 // ─── semantic search ─────────────────────────────────────────────────
 
 func (e *Engine) semanticSearch(query string, opts SearchOptions) ([]models.SearchResult, error) {
-	queryVec, err := e.embedder.Embed(query)
+	queryVec, err := e.embedder.EmbedQuery(query)
 	if err != nil {
 		return nil, err
 	}
@@ -223,7 +265,7 @@ func (e *Engine) semanticSearch(query string, opts SearchOptions) ([]models.Sear
 		Threshold: 0.3,
 	})
 
-	return e.scoredChunksToResults(scored, opts, "semantic")
+	return e.scoredChunksToResults(scored, opts, "semantic", query)
 }
 
 // ─── hybrid search ───────────────────────────────────────────────────
@@ -242,62 +284,65 @@ func (e *Engine) hybridSearch(query string, opts SearchOptions) ([]models.Search
 	}
 
 	// Merge results.
-	return mergeResults(kwResults, semResults, opts.Limit), nil
+	merged := mergeResults(kwResults, semResults, opts.Limit*2) // get more for reranking
+	return e.rerank(merged, query, opts.Limit), nil
 }
 
-// mergeResults combines keyword and semantic results with weighted scores.
+// mergeResults combines keyword and semantic results using Reciprocal Rank Fusion (RRF).
 func mergeResults(kwResults, semResults []models.SearchResult, limit int) []models.SearchResult {
+	const k = 60.0 // RRF constant — standard value from literature
+
+	// Sort each list by score descending to establish ranks.
+	sort.Slice(kwResults, func(i, j int) bool { return kwResults[i].Score > kwResults[j].Score })
+	sort.Slice(semResults, func(i, j int) bool { return semResults[i].Score > semResults[j].Score })
+
 	type mergedItem struct {
 		result    models.SearchResult
-		kwScore   float64
-		semScore  float64
+		rrfScore  float64
 		matchedBy []string
 	}
 
-	// Index by unique key (type:id).
 	merged := make(map[string]*mergedItem)
 
-	// Normalize keyword scores.
-	kwMax := 0.0
-	for _, r := range kwResults {
-		if r.Score > kwMax {
-			kwMax = r.Score
-		}
-	}
-
-	for _, r := range kwResults {
+	// Add keyword results with RRF scores.
+	for rank, r := range kwResults {
 		key := r.Type + ":" + r.ID
-		normScore := 0.0
-		if kwMax > 0 {
-			normScore = r.Score / kwMax
-		}
 		merged[key] = &mergedItem{
 			result:    r,
-			kwScore:   normScore,
+			rrfScore:  1.0 / (k + float64(rank+1)),
 			matchedBy: []string{"keyword"},
 		}
 	}
 
-	// Normalize semantic scores (already 0-1 from cosine similarity).
-	for _, r := range semResults {
+	// Add semantic results with RRF scores.
+	for rank, r := range semResults {
 		key := r.Type + ":" + r.ID
+		rrfScore := 1.0 / (k + float64(rank+1))
 		if item, ok := merged[key]; ok {
-			item.semScore = r.Score
+			item.rrfScore += rrfScore
 			item.matchedBy = []string{"semantic", "keyword"}
 		} else {
 			merged[key] = &mergedItem{
 				result:    r,
-				semScore:  r.Score,
+				rrfScore:  rrfScore,
 				matchedBy: []string{"semantic"},
 			}
 		}
 	}
 
-	// Compute final scores.
+	// Compute final scores normalized to 0-1.
+	maxRRF := 0.0
+	for _, item := range merged {
+		if item.rrfScore > maxRRF {
+			maxRRF = item.rrfScore
+		}
+	}
+
 	var results []models.SearchResult
 	for _, item := range merged {
-		finalScore := item.semScore*semanticWeight + item.kwScore*keywordWeight
-		item.result.Score = finalScore
+		if maxRRF > 0 {
+			item.result.Score = item.rrfScore / maxRRF
+		}
 		item.result.MatchedBy = item.matchedBy
 		results = append(results, item.result)
 	}
@@ -314,11 +359,11 @@ func mergeResults(kwResults, semResults []models.SearchResult, limit int) []mode
 }
 
 // scoredChunksToResults converts vector search results back to SearchResults.
-func (e *Engine) scoredChunksToResults(scored []ScoredChunk, opts SearchOptions, method string) ([]models.SearchResult, error) {
-	// Group chunks by source (task ID or doc path) and take the best score.
+// Uses multi-chunk scoring: aggregates top-3 chunk scores per source for better ranking.
+func (e *Engine) scoredChunksToResults(scored []ScoredChunk, opts SearchOptions, method string, query string) ([]models.SearchResult, error) {
 	type sourceResult struct {
 		result models.SearchResult
-		score  float64
+		scores []float64 // all chunk scores for this source
 	}
 	seen := make(map[string]*sourceResult)
 
@@ -326,11 +371,28 @@ func (e *Engine) scoredChunksToResults(scored []ScoredChunk, opts SearchOptions,
 		var key string
 		var result models.SearchResult
 
+		// Tree-aware scoring: boost doc chunks whose HeaderPath matches query words.
+		chunkScore := sc.Score
+		if sc.Type == ChunkTypeDoc && sc.HeaderPath != "" {
+			headerLower := strings.ToLower(sc.HeaderPath)
+			queryWords := strings.Fields(strings.ToLower(query))
+			matchCount := 0
+			for _, w := range queryWords {
+				if strings.Contains(headerLower, w) {
+					matchCount++
+				}
+			}
+			if matchCount > 0 {
+				// Boost proportional to how many query words match the heading path.
+				ratio := float64(matchCount) / float64(len(queryWords))
+				chunkScore += ratio * 0.15 // up to 15% boost for full path match
+			}
+		}
+
 		switch sc.Type {
 		case ChunkTypeTask:
 			key = "task:" + sc.TaskID
 
-			// Apply filters.
 			if opts.Status != "" && sc.Status != opts.Status {
 				continue
 			}
@@ -344,7 +406,6 @@ func (e *Engine) scoredChunksToResults(scored []ScoredChunk, opts SearchOptions,
 				continue
 			}
 
-			// Fetch task title for display.
 			title := sc.TaskID
 			if task, err := e.store.Tasks.Get(sc.TaskID); err == nil {
 				title = task.Title
@@ -356,7 +417,7 @@ func (e *Engine) scoredChunksToResults(scored []ScoredChunk, opts SearchOptions,
 				Type:      "task",
 				ID:        sc.TaskID,
 				Title:     title,
-				Score:     sc.Score,
+				Score:     chunkScore,
 				Status:    result.Status,
 				Priority:  result.Priority,
 				MatchedBy: []string{method},
@@ -370,7 +431,7 @@ func (e *Engine) scoredChunksToResults(scored []ScoredChunk, opts SearchOptions,
 					continue
 				}
 			}
-			if opts.Type == "task" {
+			if opts.Type == "task" || opts.Type == "memory" {
 				continue
 			}
 
@@ -385,11 +446,39 @@ func (e *Engine) scoredChunksToResults(scored []ScoredChunk, opts SearchOptions,
 				Type:      "doc",
 				ID:        sc.DocPath,
 				Title:     title,
-				Score:     sc.Score,
+				Score:     chunkScore,
 				Path:      sc.DocPath,
 				Tags:      tags,
 				Snippet:   sc.Section,
 				MatchedBy: []string{method},
+			}
+
+		case ChunkTypeMemory:
+			key = "memory:" + sc.MemoryID
+
+			if opts.Type == "task" || opts.Type == "doc" {
+				continue
+			}
+
+			title := sc.MemoryID
+			var memLayer, category string
+			var tags []string
+			if entry, err := e.store.Memory.Get(sc.MemoryID); err == nil {
+				title = entry.Title
+				memLayer = entry.Layer
+				category = entry.Category
+				tags = entry.Tags
+			}
+
+			result = models.SearchResult{
+				Type:        "memory",
+				ID:          sc.MemoryID,
+				Title:       title,
+				Score:       chunkScore,
+				MemoryLayer: memLayer,
+				Category:    category,
+				Tags:        tags,
+				MatchedBy:   []string{method},
 			}
 
 		default:
@@ -397,23 +486,56 @@ func (e *Engine) scoredChunksToResults(scored []ScoredChunk, opts SearchOptions,
 		}
 
 		if existing, ok := seen[key]; ok {
-			if sc.Score > existing.score {
+			existing.scores = append(existing.scores, chunkScore)
+			// Keep the result with the best snippet.
+			if chunkScore > existing.result.Score {
 				existing.result = result
-				existing.score = sc.Score
 			}
 		} else {
-			seen[key] = &sourceResult{result: result, score: sc.Score}
+			seen[key] = &sourceResult{result: result, scores: []float64{chunkScore}}
 		}
 	}
 
+	// Aggregate scores: best + decay bonus from additional chunks.
 	results := make([]models.SearchResult, 0, len(seen))
 	for _, sr := range seen {
+		sort.Float64s(sr.scores)
+		// Reverse to descending.
+		for i, j := 0, len(sr.scores)-1; i < j; i, j = i+1, j-1 {
+			sr.scores[i], sr.scores[j] = sr.scores[j], sr.scores[i]
+		}
+
+		finalScore := sr.scores[0] // best chunk
+		// Add decayed bonus from top-3 additional chunks.
+		for i := 1; i < len(sr.scores) && i < 3; i++ {
+			finalScore += sr.scores[i] * 0.1 // 10% bonus per additional relevant chunk
+		}
+
+		sr.result.Score = finalScore
 		results = append(results, sr.result)
 	}
 	return results, nil
 }
 
-// ─── scoring helpers (unchanged from original) ──────────────────────
+// ─── scoring helpers ──────────────────────────────────────────────────
+
+// wordBoundaryCount counts whole-word matches of query in text (case-insensitive).
+func wordBoundaryCount(text, word string) int {
+	re, err := regexp.Compile(`(?i)\b` + regexp.QuoteMeta(word) + `\b`)
+	if err != nil {
+		return 0
+	}
+	return len(re.FindAllStringIndex(text, -1))
+}
+
+// phraseMatch checks if the exact phrase appears in text (case-insensitive).
+func phraseMatch(text, phrase string) bool {
+	re, err := regexp.Compile(`(?i)\b` + regexp.QuoteMeta(phrase) + `\b`)
+	if err != nil {
+		return strings.Contains(strings.ToLower(text), strings.ToLower(phrase))
+	}
+	return re.MatchString(text)
+}
 
 func scoreTask(task *models.Task, query string, words []string) float64 {
 	score := 0.0
@@ -423,17 +545,27 @@ func scoreTask(task *models.Task, query string, words []string) float64 {
 	planLower := strings.ToLower(task.ImplementationPlan)
 	notesLower := strings.ToLower(task.ImplementationNotes)
 
-	if titleLower == query {
-		score += 100
+	// Exact phrase match (word-boundary aware).
+	if phraseMatch(task.Title, query) {
+		if titleLower == query {
+			score += 100
+		} else {
+			score += 60
+		}
 	} else if strings.Contains(titleLower, query) {
-		score += 50
+		score += 30 // substring only
 	}
+
 	if strings.Contains(idLower, query) {
 		score += 30
 	}
-	if strings.Contains(descLower, query) {
-		score += 20
+
+	if phraseMatch(task.Description, query) {
+		score += 25
+	} else if strings.Contains(descLower, query) {
+		score += 15
 	}
+
 	if strings.Contains(planLower, query) {
 		score += 15
 	}
@@ -450,16 +582,23 @@ func scoreTask(task *models.Task, query string, words []string) float64 {
 			score += 5
 		}
 	}
+
+	// Per-word scoring with word-boundary boost.
 	if len(words) > 1 {
-		matchCount := 0
+		wordScore := 0.0
 		for _, w := range words {
-			if strings.Contains(titleLower, w) || strings.Contains(descLower, w) {
-				matchCount++
+			if wordBoundaryCount(task.Title, w) > 0 {
+				wordScore += 2.0
+			} else if strings.Contains(titleLower, w) {
+				wordScore += 0.5
+			}
+			if wordBoundaryCount(task.Description, w) > 0 {
+				wordScore += 1.0
+			} else if strings.Contains(descLower, w) {
+				wordScore += 0.3
 			}
 		}
-		if matchCount > 0 {
-			score += float64(matchCount) / float64(len(words)) * 20
-		}
+		score += wordScore / float64(len(words)) * 20
 	}
 	return score
 }
@@ -471,35 +610,56 @@ func scoreDoc(doc *models.Doc, query string, words []string) float64 {
 	contentLower := strings.ToLower(doc.Content)
 	pathLower := strings.ToLower(doc.Path)
 
-	if titleLower == query {
-		score += 100
+	// Exact phrase match (word-boundary aware).
+	if phraseMatch(doc.Title, query) {
+		if titleLower == query {
+			score += 100
+		} else {
+			score += 60
+		}
 	} else if strings.Contains(titleLower, query) {
-		score += 50
+		score += 30
 	}
+
 	if strings.Contains(pathLower, query) {
 		score += 25
 	}
-	if strings.Contains(descLower, query) {
-		score += 20
-	}
-	if strings.Contains(contentLower, query) {
+
+	if phraseMatch(doc.Description, query) {
+		score += 25
+	} else if strings.Contains(descLower, query) {
 		score += 15
 	}
+
+	// Search in doc content.
+	if phraseMatch(doc.Content, query) {
+		score += 20
+	} else if strings.Contains(contentLower, query) {
+		score += 10
+	}
+
 	for _, tag := range doc.Tags {
 		if strings.Contains(strings.ToLower(tag), query) {
 			score += 10
 		}
 	}
+
+	// Per-word scoring with word-boundary boost.
 	if len(words) > 1 {
-		matchCount := 0
+		wordScore := 0.0
 		for _, w := range words {
-			if strings.Contains(titleLower, w) || strings.Contains(contentLower, w) {
-				matchCount++
+			if wordBoundaryCount(doc.Title, w) > 0 {
+				wordScore += 2.0
+			} else if strings.Contains(titleLower, w) {
+				wordScore += 0.5
+			}
+			if wordBoundaryCount(doc.Content, w) > 0 {
+				wordScore += 1.0
+			} else if strings.Contains(contentLower, w) {
+				wordScore += 0.3
 			}
 		}
-		if matchCount > 0 {
-			score += float64(matchCount) / float64(len(words)) * 20
-		}
+		score += wordScore / float64(len(words)) * 20
 	}
 	return score
 }
@@ -542,6 +702,204 @@ func containsStr(slice []string, item string) bool {
 		}
 	}
 	return false
+}
+
+func scoreMemory(entry *models.MemoryEntry, query string, words []string) float64 {
+	score := 0.0
+	titleLower := strings.ToLower(entry.Title)
+	contentLower := strings.ToLower(entry.Content)
+	categoryLower := strings.ToLower(entry.Category)
+
+	if phraseMatch(entry.Title, query) {
+		if titleLower == query {
+			score += 100
+		} else {
+			score += 60
+		}
+	} else if strings.Contains(titleLower, query) {
+		score += 30
+	}
+
+	if strings.Contains(categoryLower, query) {
+		score += 20
+	}
+
+	if phraseMatch(entry.Content, query) {
+		score += 20
+	} else if strings.Contains(contentLower, query) {
+		score += 10
+	}
+
+	for _, tag := range entry.Tags {
+		if strings.Contains(strings.ToLower(tag), query) {
+			score += 10
+		}
+	}
+
+	if len(words) > 1 {
+		wordScore := 0.0
+		for _, w := range words {
+			if wordBoundaryCount(entry.Title, w) > 0 {
+				wordScore += 2.0
+			} else if strings.Contains(titleLower, w) {
+				wordScore += 0.5
+			}
+			if wordBoundaryCount(entry.Content, w) > 0 {
+				wordScore += 1.0
+			} else if strings.Contains(contentLower, w) {
+				wordScore += 0.3
+			}
+		}
+		score += wordScore / float64(len(words)) * 20
+	}
+	return score
+}
+
+// ─── heuristic reranker ─────────────────────────────────────────────
+
+// rerank applies heuristic signals on top of RRF scores to improve ranking.
+func (e *Engine) rerank(results []models.SearchResult, query string, limit int) []models.SearchResult {
+	if len(results) == 0 {
+		return results
+	}
+
+	queryLower := strings.ToLower(query)
+	words := strings.Fields(queryLower)
+	now := time.Now()
+
+	type scored struct {
+		result   models.SearchResult
+		rrfScore float64
+		bonus    float64
+	}
+
+	items := make([]scored, len(results))
+	for i, r := range results {
+		items[i] = scored{result: r, rrfScore: r.Score}
+	}
+
+	for i := range items {
+		r := items[i].result
+		bonus := 0.0
+
+		switch r.Type {
+		case "task":
+			task, err := e.store.Tasks.Get(r.ID)
+			if err != nil {
+				break
+			}
+
+			// Keyword density in title.
+			titleLower := strings.ToLower(task.Title)
+			for _, w := range words {
+				bonus += float64(wordBoundaryCount(task.Title, w)) * 0.03
+			}
+
+			// Exact title match.
+			if phraseMatch(task.Title, query) {
+				bonus += 0.15
+			} else if strings.Contains(titleLower, queryLower) {
+				bonus += 0.05
+			}
+
+			// Label overlap with query words.
+			for _, label := range task.Labels {
+				labelLower := strings.ToLower(label)
+				for _, w := range words {
+					if labelLower == w {
+						bonus += 0.05
+					}
+				}
+			}
+
+			// Recency: tasks updated within 7 days get a boost.
+			age := now.Sub(task.UpdatedAt).Hours() / 24
+			if age < 7 {
+				bonus += 0.05 * (1 - age/7)
+			}
+
+		case "doc":
+			doc, err := e.store.Docs.Get(r.ID)
+			if err != nil {
+				break
+			}
+
+			// Keyword density in title.
+			titleLower := strings.ToLower(doc.Title)
+			for _, w := range words {
+				bonus += float64(wordBoundaryCount(doc.Title, w)) * 0.03
+			}
+
+			// Exact title match.
+			if phraseMatch(doc.Title, query) {
+				bonus += 0.15
+			} else if strings.Contains(titleLower, queryLower) {
+				bonus += 0.05
+			}
+
+			// Tag overlap with query words.
+			for _, tag := range doc.Tags {
+				tagLower := strings.ToLower(tag)
+				for _, w := range words {
+					if tagLower == w {
+						bonus += 0.08
+					}
+				}
+			}
+
+			// Keyword density in content (capped).
+			for _, w := range words {
+				count := wordBoundaryCount(doc.Content, w)
+				if count > 10 {
+					count = 10
+				}
+				bonus += float64(count) * 0.005
+			}
+
+			// Recency.
+			age := now.Sub(doc.UpdatedAt).Hours() / 24
+			if age < 7 {
+				bonus += 0.05 * (1 - age/7)
+			}
+		}
+
+		items[i].bonus = bonus
+	}
+
+	// Combine: reranked score = rrfScore + bonus (capped at 0.3 to not overwhelm RRF).
+	for i := range items {
+		b := items[i].bonus
+		if b > 0.3 {
+			b = 0.3
+		}
+		items[i].result.Score = items[i].rrfScore + b
+	}
+
+	// Re-normalize to 0-1.
+	maxScore := 0.0
+	for _, it := range items {
+		if it.result.Score > maxScore {
+			maxScore = it.result.Score
+		}
+	}
+
+	out := make([]models.SearchResult, len(items))
+	for i, it := range items {
+		if maxScore > 0 {
+			it.result.Score = it.result.Score / maxScore
+		}
+		out[i] = it.result
+	}
+
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Score > out[j].Score
+	})
+
+	if len(out) > limit {
+		out = out[:limit]
+	}
+
+	return out
 }
 
 // Reindex rebuilds the search index using the index service.

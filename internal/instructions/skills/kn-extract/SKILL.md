@@ -132,7 +132,25 @@ mcp__knowns__create_doc({
 - **Prevention:** <what to do differently>
 ```
 
-## Step 5: Create Template (if code-generatable)
+## Step 5: Save to Memory
+
+For each extracted pattern or decision worth quick recall, save a concise memory entry alongside the doc:
+
+```json
+mcp__knowns__add_memory({
+  "title": "<pattern/decision name>",
+  "content": "<2-3 sentence summary>. Full reference: @doc/<path>",
+  "layer": "project",
+  "category": "<pattern|decision|convention|failure>",
+  "tags": ["<domain>"]
+})
+```
+
+Memory = fast agent recall in future sessions. Doc = full structured reference.
+Do NOT duplicate the entire doc content — store a summary and link to the doc.
+Skip this step if the extraction produced nothing generalizable.
+
+## Step 6: Create Template (if code-generatable)
 
 ```json
 mcp__knowns__create_template({
@@ -142,7 +160,7 @@ mcp__knowns__create_template({
 })
 ```
 
-## Step 6: Promote Critical Learnings
+## Step 7: Promote Critical Learnings
 
 For any finding that meets ALL criteria:
 - Affects more than one future feature
@@ -175,7 +193,7 @@ mcp__knowns__create_doc({
 
 **Calibration:** Do NOT promote everything. If critical-patterns grows past 20-30 entries it becomes noise. Only promote learnings that would have saved ≥30 minutes if known in advance.
 
-## Step 7: Validate
+## Step 8: Validate
 
 **CRITICAL:** After creating doc/template, validate to catch broken refs:
 
@@ -185,7 +203,7 @@ mcp__knowns__validate({ "entity": "<doc-path>" })
 
 If errors found, fix before continuing.
 
-## Step 8: Link Back to Task
+## Step 9: Link Back to Task
 
 ```json
 mcp__knowns__update_task({

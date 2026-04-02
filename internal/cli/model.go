@@ -11,7 +11,6 @@ import (
 
 	"charm.land/bubbles/v2/progress"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 
 	"github.com/howznguyen/knowns/internal/models"
 	"github.com/spf13/cobra"
@@ -185,7 +184,7 @@ var (
 
 // ─── progress bar model (bubbletea) ──────────────────────────────────
 
-type progressMsg float64     // 0.0–1.0
+type progressMsg float64      // 0.0–1.0
 type progressDoneMsg struct{} // download finished
 type progressErrMsg struct{ err error }
 
@@ -204,10 +203,7 @@ type downloadModel struct {
 }
 
 func newDownloadModel(fileName, url, dst string) downloadModel {
-	bar := progress.New(
-		progress.WithColors(lipgloss.Color(KnownsBrand)),
-		progress.WithWidth(40),
-	)
+	bar := NewBrandProgressBar()
 	return downloadModel{
 		bar:       bar,
 		fileName:  fileName,
@@ -365,9 +361,7 @@ func downloadWithProgress(label, url, dst string) (int64, error) {
 	}
 
 	// Create bubbletea program
-	bar := progress.New(
-		progress.WithColors(lipgloss.Color(KnownsBrand)),
-		progress.WithWidth(40),
+	bar := NewBrandProgressBar(
 		progress.WithoutPercentage(),
 	)
 
@@ -620,10 +614,12 @@ func runModelList(cmd *cobra.Command, args []string) error {
 	}
 
 	hasInstalled := false
-	fmt.Printf("Available embedding models (%d):\n\n", len(supportedModels))
+	fmt.Println(RenderCount("Available embedding models", len(supportedModels)))
+	fmt.Println()
 	fmt.Printf("%-22s %-22s %-8s %-8s %-8s %-10s\n",
-		"ID", "NAME", "DIMS", "TOKENS", "SIZE", "STATUS")
-	fmt.Println(strings.Repeat("-", 78))
+		StyleBold.Render("ID"), StyleBold.Render("NAME"), StyleBold.Render("DIMS"),
+		StyleBold.Render("TOKENS"), StyleBold.Render("SIZE"), StyleBold.Render("STATUS"))
+	fmt.Println(RenderSeparator(78))
 	for _, m := range supportedModels {
 		installed := isModelInstalled(&m)
 		if installedOnly && !installed {
@@ -632,13 +628,13 @@ func runModelList(cmd *cobra.Command, args []string) error {
 		if installed {
 			hasInstalled = true
 		}
-		status := "—"
+		status := StyleDim.Render("—")
 		if installed && m.ID == currentModel {
-			status = "active"
+			status = StyleSuccess.Render("active")
 		} else if installed {
-			status = "installed"
+			status = StyleInfo.Render("installed")
 		} else if m.ID == currentModel {
-			status = "set"
+			status = StyleWarning.Render("set")
 		}
 		fmt.Printf("%-22s %-22s %-8d %-8d %-8s %-10s\n",
 			m.ID, m.Name, m.Dimensions, m.MaxTokens,
@@ -646,7 +642,7 @@ func runModelList(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Println()
 	if !hasInstalled {
-		fmt.Println("Use 'knowns model download <modelId>' to download a model.")
+		fmt.Println(RenderHint("Use " + RenderCmd("knowns model download <modelId>") + " to download a model."))
 	}
 	return nil
 }
@@ -753,7 +749,7 @@ func runModelRemove(cmd *cobra.Command, args []string) error {
 	}
 
 	if !isModelInstalled(selected) {
-		fmt.Printf("Model %q is not installed.\n", modelID)
+		fmt.Println(RenderWarning(fmt.Sprintf("Model %q is not installed.", modelID)))
 		return nil
 	}
 
@@ -828,9 +824,9 @@ func runModelStatus(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 
 	// Global models section.
-	fmt.Println("Global Models:")
-	fmt.Printf("  Location:   %s\n", getModelsDir())
-	fmt.Printf("  Downloaded: %d / %d\n", len(installed), len(supportedModels))
+	fmt.Println(StyleBold.Render("Global Models"))
+	fmt.Println(RenderField("Location", getModelsDir()))
+	fmt.Println(RenderField("Downloaded", fmt.Sprintf("%d / %d", len(installed), len(supportedModels))))
 
 	var totalSize int64
 	for _, id := range installed {
@@ -841,13 +837,13 @@ func runModelStatus(cmd *cobra.Command, args []string) error {
 		}
 	}
 	if totalSize > 0 {
-		fmt.Printf("  Total size: %s\n", formatBytes(totalSize))
+		fmt.Println(RenderField("Total size", formatBytes(totalSize)))
 	}
 	fmt.Println()
 
 	// Downloaded models.
 	if len(installed) > 0 {
-		fmt.Println("Downloaded models:")
+		fmt.Println(StyleBold.Render("Downloaded models:"))
 		for _, id := range installed {
 			for i := range supportedModels {
 				if supportedModels[i].ID == id {
@@ -863,27 +859,27 @@ func runModelStatus(cmd *cobra.Command, args []string) error {
 	} else {
 		fmt.Println(modelDimStyle.Render("  No models downloaded"))
 		fmt.Println()
-		fmt.Println("  Download a model to enable semantic search:")
-		fmt.Println(modelDimStyle.Render("    knowns model download gte-small"))
+		fmt.Println(RenderHint("Download a model to enable semantic search:"))
+		fmt.Println(RenderHint("  " + RenderCmd("knowns model download gte-small")))
 	}
 	fmt.Println()
 
 	// Current project section.
-	fmt.Println("Current Project:")
 	projectRoot := strings.TrimSuffix(store.Root, "/.knowns")
-	fmt.Printf("  Path: %s\n", projectRoot)
+	fmt.Println(StyleBold.Render("Current Project"))
+	fmt.Println(RenderField("Path", projectRoot))
 	if cfg != nil && cfg.Settings.SemanticSearch != nil {
 		ss := cfg.Settings.SemanticSearch
-		fmt.Printf("  Model: %s\n", ss.Model)
+		fmt.Println(RenderField("Model", ss.Model))
 		if ss.Dimensions > 0 {
-			fmt.Printf("  Dimensions: %d\n", ss.Dimensions)
+			fmt.Println(RenderField("Dimensions", fmt.Sprintf("%d", ss.Dimensions)))
 		}
 		if ss.MaxTokens > 0 {
-			fmt.Printf("  Max Tokens: %d\n", ss.MaxTokens)
+			fmt.Println(RenderField("Max Tokens", fmt.Sprintf("%d", ss.MaxTokens)))
 		}
 	} else {
 		fmt.Println(modelDimStyle.Render("  No model configured"))
-		fmt.Println(modelDimStyle.Render("    Set one: knowns model set gte-small"))
+		fmt.Println(RenderHint("Set one: " + RenderCmd("knowns model set gte-small")))
 	}
 	fmt.Println()
 

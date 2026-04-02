@@ -91,6 +91,7 @@ func (tr *TaskRoutes) get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tr.loadTaskTimeEntries(task)
+	task.ActiveTimer = tr.store.Time.GetActiveTimer(task.ID)
 	respondJSON(w, http.StatusOK, task)
 }
 

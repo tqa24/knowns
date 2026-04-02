@@ -17,9 +17,10 @@ description: Use when you need to understand existing code, find patterns, or ex
 ## Search Order
 
 1. Project docs
-2. Completed or related tasks
-3. Existing code paths and implementations
-4. Adjacent tests, templates, and validation logic
+2. Project memories
+3. Completed or related tasks
+4. Existing code paths and implementations
+5. Adjacent tests, templates, and validation logic
 
 ## Step 1: Search Documentation
 
@@ -28,21 +29,29 @@ mcp__knowns__search({ "query": "<topic>", "type": "doc" })
 mcp__knowns__get_doc({ "path": "<path>", "smart": true })
 ```
 
-## Step 2: Search Completed Tasks
+## Step 2: Search Project Memory
+
+```json
+mcp__knowns__search_memories({ "query": "<topic>", "layer": "project" })
+```
+
+Project memories contain accumulated patterns, decisions, and conventions from past work. If relevant memories exist, include them in findings and note whether they're still current.
+
+## Step 3: Search Completed Tasks
 
 ```json
 mcp__knowns__search({ "query": "<keywords>", "type": "task" })
 mcp__knowns__get_task({ "taskId": "<id>" })
 ```
 
-## Step 3: Search Codebase
+## Step 4: Search Codebase
 
 ```bash
 find . -name "*<pattern>*" -type f | grep -v node_modules | head -20
 grep -r "<pattern>" --include="*.ts" -l | head -20
 ```
 
-## Step 4: Document Findings
+## Step 5: Document Findings
 
 ```markdown
 ## Research: [Topic]

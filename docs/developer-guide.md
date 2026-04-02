@@ -14,7 +14,7 @@ Technical notes for contributors working on the current Go codebase.
 | Web server | Go HTTP server |
 | Web UI | React app embedded into the binary |
 | AI integration | MCP server + generated instruction files |
-| Search | Keyword + optional semantic search |
+| Search | Keyword + optional semantic search (tasks, docs, memories) |
 
 ---
 
@@ -26,10 +26,11 @@ Main repo structure:
 cmd/knowns/          CLI entrypoint
 internal/cli/        Cobra commands
 internal/models/     Domain models and config structs
-internal/storage/    Persistence for tasks, docs, versions, config
+internal/storage/    Persistence for tasks, docs, versions, config, memories
 internal/server/     HTTP server, routes, browser backend
 internal/mcp/        MCP server implementation
 internal/search/     Search and semantic-search support
+internal/validate/   Validation engine for refs and integrity
 ui/                  React UI source and embedded assets
 tests/               End-to-end and integration coverage
 ```

@@ -325,6 +325,15 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// OpenCode install check (before config steps)
+	if cfg.EnableChatUI {
+		fmt.Println()
+		if err := maybeInstallOpenCode(force); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: OpenCode setup issue: %v\n", err)
+		}
+		fmt.Println()
+	}
+
 	steps = append(steps,
 		initStep{
 			label: "Syncing skills",
@@ -571,6 +580,28 @@ func findEmbeddingModel(id string) *embeddingModelInfo {
 	return nil
 }
 
+// execLookPath is used to locate binaries in PATH. Overridable in tests.
+var execLookPath = exec.LookPath
+
+// defaultExecLookPath is the original value of execLookPath for test cleanup.
+var defaultExecLookPath = exec.LookPath
+
+// mcpCommand returns the command and args for starting the Knowns MCP server.
+// If the "knowns" binary is found in PATH, it uses it directly for faster startup.
+// Otherwise it falls back to "npx -y knowns" which downloads on demand.
+func mcpCommand() (command string, args []string) {
+	if _, err := execLookPath("knowns"); err == nil {
+		return "knowns", []string{"mcp", "--stdio"}
+	}
+	return "npx", []string{"-y", "knowns", "mcp", "--stdio"}
+}
+
+// mcpCommandFlat returns the MCP command as a single slice (for OpenCode config format).
+func mcpCommandFlat() []string {
+	cmd, args := mcpCommand()
+	return append([]string{cmd}, args...)
+}
+
 // createMCPJsonFileQuiet creates .mcp.json without printing (for step runner).
 func createMCPJsonFileQuiet(projectRoot string, force bool) error {
 	mcpPath := filepath.Join(projectRoot, ".mcp.json")
@@ -578,11 +609,12 @@ func createMCPJsonFileQuiet(projectRoot string, force bool) error {
 		return nil
 	}
 
+	cmd, args := mcpCommand()
 	mcpConfig := map[string]interface{}{
 		"mcpServers": map[string]interface{}{
 			"knowns": map[string]interface{}{
-				"command": "npx",
-				"args":    []string{"-y", "knowns", "mcp", "--stdio"},
+				"command": cmd,
+				"args":    args,
 			},
 		},
 	}
@@ -619,7 +651,7 @@ func createOpenCodeConfigQuiet(projectRoot string) error {
 
 	mcp["knowns"] = map[string]any{
 		"type":    "local",
-		"command": []string{"npx", "-y", "knowns", "mcp", "--stdio"},
+		"command": mcpCommandFlat(),
 		"enabled": true,
 	}
 
@@ -685,9 +717,10 @@ func createKiroMCPConfigQuiet(projectRoot string) error {
 		servers = make(map[string]any)
 	}
 
+	cmd, args := mcpCommand()
 	servers["knowns"] = map[string]any{
-		"command":     "npx",
-		"args":        []string{"-y", "knowns", "mcp", "--stdio"},
+		"command":     cmd,
+		"args":        args,
 		"disabled":    false,
 		"autoApprove": []string{"*"},
 	}
@@ -741,11 +774,12 @@ func createMCPJsonFile(projectRoot string, force bool) {
 		return
 	}
 
+	cmd, args := mcpCommand()
 	mcpConfig := map[string]interface{}{
 		"mcpServers": map[string]interface{}{
 			"knowns": map[string]interface{}{
-				"command": "npx",
-				"args":    []string{"-y", "knowns", "mcp", "--stdio"},
+				"command": cmd,
+				"args":    args,
 			},
 		},
 	}
@@ -830,6 +864,7 @@ func renderCanonicalInstructionContent() string {
 	sb.WriteString("- [Repo Mental Model](#repo-mental-model)\n")
 	sb.WriteString("- [How Agents Should Read This File](#how-agents-should-read-this-file)\n")
 	sb.WriteString("- [Tool Selection](#tool-selection)\n")
+	sb.WriteString("- [Memory Usage](#memory-usage)\n")
 	sb.WriteString("- [Critical Rules](#critical-rules)\n")
 	sb.WriteString("- [Git Safety](#git-safety)\n")
 	sb.WriteString("- [Context Retrieval Strategy](#context-retrieval-strategy)\n")
@@ -884,6 +919,14 @@ func renderCanonicalInstructionContent() string {
 	sb.WriteString("- `bash`: run git, builds, tests, package managers, or other terminal commands.\n")
 	sb.WriteString("- `apply_patch`: make small, explicit file edits.\n")
 	sb.WriteString("- `task`: delegate large research or multi-step exploration when useful.\n\n")
+	sb.WriteString("## Memory Usage\n\n")
+	sb.WriteString("- Session start: `list_memories(layer=\"project\")` to load accumulated project knowledge.\n")
+	sb.WriteString("- During work: `add_working_memory()` for ephemeral session-scoped cache (gone when session ends).\n")
+	sb.WriteString("- After task: `add_memory()` for reusable patterns, decisions, and conventions (alongside docs).\n")
+	sb.WriteString("- Cross-project: `promote_memory()` to move project knowledge to global (`project→global`).\n")
+	sb.WriteString("- Memory complements docs: memory is for fast agent recall, docs are for structured human-readable reference.\n")
+	sb.WriteString("- Never duplicate the full doc content into memory — store a summary and reference the doc with `@doc/<path>`.\n")
+	sb.WriteString("- During any skill: if you discover a reusable pattern, decision, convention, or failure, save it with `add_memory(layer=\"project\")`. Capture knowledge as it emerges, don't wait for extraction.\n\n")
 	sb.WriteString("## Critical Rules\n\n")
 	sb.WriteString("- Never manually edit Knowns-managed task or doc markdown.\n")
 	sb.WriteString("- Search first, then read only relevant docs and code.\n")
@@ -970,7 +1013,8 @@ func renderCompatibilityInstructionContent(relativePath, platform, projectRoot s
 	sb.WriteString("- Never manually edit Knowns-managed task or doc markdown.\n")
 	sb.WriteString("- Search first, then read only relevant docs and code.\n")
 	sb.WriteString("- Plan before implementation unless the user explicitly overrides that workflow.\n")
-	sb.WriteString("- Validate before considering work complete.\n\n")
+	sb.WriteString("- Validate before considering work complete.\n")
+	sb.WriteString("- Use memory tools: `list_memories` at session start, `add_memory` after tasks for reusable knowledge, `add_working_memory` for session cache.\n\n")
 	sb.WriteString("## Quick Reference\n\n")
 	sb.WriteString("```bash\n")
 	sb.WriteString("knowns doc list --plain               # List docs\n")

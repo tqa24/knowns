@@ -39,7 +39,7 @@ func CheckForUpdate() string {
 	if cached != nil && time.Since(time.UnixMilli(cached.LastChecked)) < cacheTTL {
 		latest = cached.LatestVersion
 	} else {
-		fetched := fetchLatestVersion()
+		fetched := FetchLatestVersion()
 		if fetched == "" {
 			return ""
 		}
@@ -50,12 +50,11 @@ func CheckForUpdate() string {
 		})
 	}
 
-	if latest == "" || compareVersions(latest, Version) <= 0 {
+	if latest == "" || CompareVersions(latest, Version) <= 0 {
 		return ""
 	}
 
-	installCmd := detectInstallCmd()
-	return fmt.Sprintf("\n UPDATE  v%s available (current v%s) → %s\n", latest, Version, installCmd)
+	return fmt.Sprintf("\n UPDATE  v%s available (current v%s) → knowns update\n", latest, Version)
 }
 
 func shouldSkipUpdateCheck() bool {
@@ -67,6 +66,10 @@ func shouldSkipUpdateCheck() bool {
 	}
 	for _, arg := range os.Args {
 		if arg == "--plain" {
+			return true
+		}
+		// Skip when running "knowns update" — it handles its own check.
+		if arg == "update" {
 			return true
 		}
 	}
@@ -109,7 +112,9 @@ func writeUpdateCache(path string, c *updateCache) {
 	os.WriteFile(path, data, 0644)
 }
 
-func fetchLatestVersion() string {
+// FetchLatestVersion fetches the latest version string from the npm registry.
+// Returns empty string on any error.
+func FetchLatestVersion() string {
 	client := &http.Client{Timeout: fetchTimeout}
 	resp, err := client.Get(npmRegistryURL)
 	if err != nil {
@@ -130,7 +135,8 @@ func fetchLatestVersion() string {
 	return result.Version
 }
 
-func compareVersions(a, b string) int {
+// CompareVersions compares two semver strings. Returns 1 if a > b, -1 if a < b, 0 if equal.
+func CompareVersions(a, b string) int {
 	a = strings.TrimPrefix(a, "v")
 	b = strings.TrimPrefix(b, "v")
 
@@ -160,7 +166,8 @@ func compareVersions(a, b string) int {
 	return 0
 }
 
-func detectInstallCmd() string {
+// DetectInstallCmd returns the appropriate upgrade command based on how knowns was installed.
+func DetectInstallCmd() string {
 	exe, _ := os.Executable()
 	exePath := strings.ToLower(exe)
 

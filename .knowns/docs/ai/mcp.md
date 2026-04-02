@@ -1,13 +1,20 @@
 ---
 title: MCP Configuration
+description: MCP server setup — Claude Code and OpenCode supported, others for reference
 createdAt: '2026-01-23T04:07:55.764Z'
-updatedAt: '2026-03-12T17:59:05.274Z'
-description: 'MCP server setup — Claude Code and OpenCode supported, others for reference'
+updatedAt: '2026-04-02T09:27:44.662Z'
 tags:
   - feature
   - ai
   - mcp
 ---
+
+PATH: ai/mcp
+TITLE: MCP Configuration
+DESCRIPTION: MCP server setup — Claude Code and OpenCode supported, others for reference
+TAGS: feature, ai, mcp
+UPDATED: 2026-04-02
+
 ## Overview
 
 MCP (Model Context Protocol) allows AI to call Knowns functions directly.
@@ -176,10 +183,31 @@ knowns mcp setup
 | `mcp__knowns__create_doc` | Create doc |
 | `mcp__knowns__update_doc` | Update doc |
 
+### Memory (Persistent)
+| Tool | Description |
+|------|-------------|
+| `mcp__knowns__add_memory` | Create a memory entry (project or global layer) |
+| `mcp__knowns__get_memory` | Get memory entry by ID |
+| `mcp__knowns__list_memories` | List memories with layer/category/tag filters |
+| `mcp__knowns__search` (type: memory) | Search memory entries via unified search |
+| `mcp__knowns__update_memory` | Update memory entry |
+| `mcp__knowns__delete_memory` | Delete memory entry (dry-run by default) |
+| `mcp__knowns__promote_memory` | Promote up one layer (working→project→global) |
+| `mcp__knowns__demote_memory` | Demote down one layer (global→project→working) |
+
+### Working Memory (Session-Scoped)
+| Tool | Description |
+|------|-------------|
+| `mcp__knowns__add_working_memory` | Add ephemeral session memory |
+| `mcp__knowns__get_working_memory` | Get working memory by ID |
+| `mcp__knowns__list_working_memories` | List all session memories |
+| `mcp__knowns__delete_working_memory` | Delete a working memory entry |
+| `mcp__knowns__clear_working_memory` | Clear all session memories |
+
 ### Search
 | Tool | Description |
 |------|-------------|
-| `mcp__knowns__search` | Unified search (tasks + docs) with semantic support |
+| `mcp__knowns__search` | Unified search (tasks + docs + memories) with semantic support |
 
 ### Time
 | Tool | Description |
@@ -200,12 +228,11 @@ knowns mcp setup
 ### Validation
 | Tool | Description |
 |------|-------------|
-| `mcp__knowns__validate` | Validate tasks, docs, templates for broken refs and quality |
+| `mcp__knowns__validate` | Validate tasks, docs, templates, memories for broken refs and quality |
 
 ### Other
 | Tool | Description |
 |------|-------------|
-| `mcp__knowns__search` | Unified search (tasks + docs) |
 | `mcp__knowns__get_board` | Get kanban board |
 ## MCP vs CLI
 
@@ -240,6 +267,9 @@ knowns mcp setup
 | Search | ✅ | ✅ |
 | Templates | ✅ | ✅ |
 | **Validate** | ✅ | ✅ |
+| **Memory (persistent)** | ✅ | ✅ |
+| **Working memory** | ✅ | ✅ |
+| **Promote/demote** | ✅ | ✅ |
 | **Project detection** | N/A | ✅ |
 ## Example: Full Task Workflow via MCP
 

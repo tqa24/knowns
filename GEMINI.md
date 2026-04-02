@@ -22,6 +22,7 @@ Compatibility entrypoint for runtimes that auto-detect `GEMINI.md`.
 - Search first, then read only relevant docs and code.
 - Plan before implementation unless the user explicitly overrides that workflow.
 - Validate before considering work complete.
+- Use memory tools: `list_memories` at session start, `add_memory` after tasks for reusable knowledge, `add_working_memory` for session cache.
 
 ## Quick Reference
 

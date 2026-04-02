@@ -161,9 +161,31 @@ func (d *Daemon) start() error {
 	d.startedByUs = true
 	log.Printf("[daemon] Spawned OpenCode daemon (pid %d) on %s:%d", cmd.Process.Pid, d.Host, d.Port)
 
-	// Give the daemon a moment to bind its port.
-	time.Sleep(2 * time.Second)
+	// Wait for daemon to become healthy via polling.
+	if err := d.waitForHealthy(15*time.Second, 500*time.Millisecond); err != nil {
+		return fmt.Errorf("daemon started but not healthy: %w", err)
+	}
 	return nil
+}
+
+// waitForHealthy polls the daemon health endpoint until it responds or timeout.
+func (d *Daemon) waitForHealthy(timeout, interval time.Duration) error {
+	client := NewClient(Config{Host: d.Host, Port: d.Port})
+	deadline := time.After(timeout)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-deadline:
+			return fmt.Errorf("timed out after %s waiting for daemon on %s:%d", timeout, d.Host, d.Port)
+		case <-ticker.C:
+			if client.IsServerAvailable() {
+				log.Printf("[daemon] Daemon healthy on %s:%d", d.Host, d.Port)
+				return nil
+			}
+		}
+	}
 }
 
 // ReadPID reads the daemon PID from the PID file.
