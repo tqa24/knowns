@@ -160,6 +160,117 @@ func (e *Embedder) EmbedDocument(text string) ([]float32, error) {
 	return e.Embed(e.modelConfig.DocPrefix + text)
 }
 
+// EmbedBatch embeds multiple texts in a single ONNX inference call.
+func (e *Embedder) EmbedBatch(texts []string) ([][]float32, error) {
+	if len(texts) == 0 {
+		return nil, nil
+	}
+	if len(texts) == 1 {
+		vec, err := e.Embed(texts[0])
+		if err != nil {
+			return nil, err
+		}
+		return [][]float32{vec}, nil
+	}
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	// Tokenize all texts and find max sequence length.
+	tokens := make([]TokenizerOutput, len(texts))
+	maxSeqLen := 0
+	for i, text := range texts {
+		tokens[i] = e.tokenizer.Encode(text, e.maxTokens)
+		if n := len(tokens[i].InputIDs); n > maxSeqLen {
+			maxSeqLen = n
+		}
+	}
+
+	// Flatten into padded batch tensors.
+	batchSize := int64(len(texts))
+	totalLen := int(batchSize) * maxSeqLen
+	inputIDs := make([]int64, totalLen)
+	attMask := make([]int64, totalLen)
+	tokenTypes := make([]int64, totalLen)
+
+	for i, tok := range tokens {
+		off := i * maxSeqLen
+		copy(inputIDs[off:], tok.InputIDs)
+		copy(attMask[off:], tok.AttentionMask)
+		copy(tokenTypes[off:], tok.TokenTypeIDs)
+	}
+
+	// Create batch tensors with shape (batchSize, maxSeqLen).
+	shape := ort.NewShape(batchSize, int64(maxSeqLen))
+
+	inputIDsTensor, err := ort.NewTensor(shape, inputIDs)
+	if err != nil {
+		return nil, fmt.Errorf("batch input_ids tensor: %w", err)
+	}
+	defer inputIDsTensor.Destroy()
+
+	attMaskTensor, err := ort.NewTensor(shape, attMask)
+	if err != nil {
+		return nil, fmt.Errorf("batch attention_mask tensor: %w", err)
+	}
+	defer attMaskTensor.Destroy()
+
+	tokenTypeTensor, err := ort.NewTensor(shape, tokenTypes)
+	if err != nil {
+		return nil, fmt.Errorf("batch token_type_ids tensor: %w", err)
+	}
+	defer tokenTypeTensor.Destroy()
+
+	outputShape := ort.NewShape(batchSize, int64(maxSeqLen), int64(e.dimensions))
+	outputTensor, err := ort.NewEmptyTensor[float32](outputShape)
+	if err != nil {
+		return nil, fmt.Errorf("batch output tensor: %w", err)
+	}
+	defer outputTensor.Destroy()
+
+	inputs := []ort.Value{inputIDsTensor, attMaskTensor, tokenTypeTensor}
+	outputs := []ort.Value{outputTensor}
+	if err := e.session.Run(inputs, outputs); err != nil {
+		return nil, fmt.Errorf("batch inference: %w", err)
+	}
+
+	// Extract per-item embeddings.
+	outputData := outputTensor.GetData()
+	results := make([][]float32, len(texts))
+	itemSize := maxSeqLen * e.dimensions
+	for i := range texts {
+		itemOutput := outputData[i*itemSize : (i+1)*itemSize]
+		itemMask := attMask[i*maxSeqLen : (i+1)*maxSeqLen]
+		results[i] = meanPool(itemOutput, itemMask, maxSeqLen, e.dimensions)
+		NormalizeL2(results[i])
+	}
+	return results, nil
+}
+
+// EmbedDocumentBatch embeds multiple texts with the document prefix.
+func (e *Embedder) EmbedDocumentBatch(texts []string) ([][]float32, error) {
+	if e.modelConfig.DocPrefix == "" {
+		return e.EmbedBatch(texts)
+	}
+	prefixed := make([]string, len(texts))
+	for i, t := range texts {
+		prefixed[i] = e.modelConfig.DocPrefix + t
+	}
+	return e.EmbedBatch(prefixed)
+}
+
+// EmbedQueryBatch embeds multiple texts with the query prefix.
+func (e *Embedder) EmbedQueryBatch(texts []string) ([][]float32, error) {
+	if e.modelConfig.QueryPrefix == "" {
+		return e.EmbedBatch(texts)
+	}
+	prefixed := make([]string, len(texts))
+	for i, t := range texts {
+		prefixed[i] = e.modelConfig.QueryPrefix + t
+	}
+	return e.EmbedBatch(prefixed)
+}
+
 // ModelConfig returns the embedding model configuration.
 func (e *Embedder) ModelConfig() EmbeddingModelConfig {
 	return e.modelConfig

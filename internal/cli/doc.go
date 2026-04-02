@@ -269,7 +269,7 @@ func runDocCreate(cmd *cobra.Command, args []string) error {
 	tags, _ := cmd.Flags().GetStringArray("tag")
 	folder, _ := cmd.Flags().GetString("folder")
 	content, _ := cmd.Flags().GetString("content")
-
+	content = unescapeText(content)
 	// Build path from folder + sanitized title
 	slug := slugifyTitle(title)
 	var docPath string
@@ -347,6 +347,7 @@ func runDocEdit(cmd *cobra.Command, args []string) error {
 
 	if cmd.Flags().Changed("content") {
 		v, _ := cmd.Flags().GetString("content")
+		v = unescapeText(v)
 		if targetSection != "" {
 			doc.Content = replaceDocSection(doc.Content, targetSection, v)
 		} else {
@@ -355,6 +356,7 @@ func runDocEdit(cmd *cobra.Command, args []string) error {
 	}
 	if cmd.Flags().Changed("append") {
 		v, _ := cmd.Flags().GetString("append")
+		v = unescapeText(v)
 		if doc.Content == "" {
 			doc.Content = v
 		} else {

@@ -12,6 +12,7 @@ const pageLabels: Record<string, string> = {
 	kanban: "Kanban",
 	tasks: "Tasks",
 	docs: "Docs",
+	graph: "Graph",
 	templates: "Templates",
 	imports: "Imports",
 	chat: "AI Chat",

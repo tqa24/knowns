@@ -357,3 +357,148 @@ func repeatStr(s string, n int) string {
 	}
 	return result
 }
+
+// --- Content Hash Tests ---
+
+func TestContentHash_Deterministic(t *testing.T) {
+	h1 := contentHash("hello world")
+	h2 := contentHash("hello world")
+	if h1 != h2 {
+		t.Errorf("same input should produce same hash: %q != %q", h1, h2)
+	}
+}
+
+func TestContentHash_DifferentInputs(t *testing.T) {
+	h1 := contentHash("hello")
+	h2 := contentHash("world")
+	if h1 == h2 {
+		t.Errorf("different inputs should produce different hashes")
+	}
+}
+
+func TestTaskContentForHash_IncludesAllFields(t *testing.T) {
+	task := &models.Task{
+		Title:       "Test",
+		Description: "Desc",
+		Status:      "todo",
+		Priority:    "high",
+		AcceptanceCriteria: []models.AcceptanceCriterion{
+			{Text: "AC1"},
+			{Text: "AC2"},
+		},
+		ImplementationPlan:  "Plan",
+		ImplementationNotes: "Notes",
+	}
+
+	hash := taskContentForHash(task)
+	for _, expected := range []string{"Test", "Desc", "todo", "high", "AC1", "AC2", "Plan", "Notes"} {
+		if !contains(hash, expected) {
+			t.Errorf("taskContentForHash missing %q", expected)
+		}
+	}
+}
+
+func TestTaskContentForHash_ChangesOnUpdate(t *testing.T) {
+	task := &models.Task{
+		Title:       "Test",
+		Description: "Original",
+		Status:      "todo",
+	}
+	h1 := contentHash(taskContentForHash(task))
+
+	task.Description = "Updated"
+	h2 := contentHash(taskContentForHash(task))
+
+	if h1 == h2 {
+		t.Errorf("hash should change when task content changes")
+	}
+}
+
+// --- SQLite VectorStore Content Hash Tests ---
+
+func TestSQLiteVectorStore_ContentHashes(t *testing.T) {
+	dir := t.TempDir()
+	store := NewSQLiteVectorStore(dir, "test-model", 384)
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	defer store.Close()
+
+	// Initially empty.
+	if h := store.GetContentHash("task:abc"); h != "" {
+		t.Errorf("expected empty hash, got %q", h)
+	}
+
+	// Set and get.
+	store.SetContentHash("task:abc", "hash123")
+	if h := store.GetContentHash("task:abc"); h != "hash123" {
+		t.Errorf("expected %q, got %q", "hash123", h)
+	}
+
+	// Update.
+	store.SetContentHash("task:abc", "hash456")
+	if h := store.GetContentHash("task:abc"); h != "hash456" {
+		t.Errorf("expected %q, got %q", "hash456", h)
+	}
+
+	// List.
+	store.SetContentHash("doc:readme", "hashXYZ")
+	hashes := store.ListContentHashes()
+	if len(hashes) != 2 {
+		t.Fatalf("expected 2 hashes, got %d", len(hashes))
+	}
+	if hashes["task:abc"] != "hash456" {
+		t.Errorf("task:abc hash = %q, want %q", hashes["task:abc"], "hash456")
+	}
+	if hashes["doc:readme"] != "hashXYZ" {
+		t.Errorf("doc:readme hash = %q, want %q", hashes["doc:readme"], "hashXYZ")
+	}
+
+	// Delete.
+	store.DeleteContentHash("task:abc")
+	if h := store.GetContentHash("task:abc"); h != "" {
+		t.Errorf("expected empty after delete, got %q", h)
+	}
+	hashes = store.ListContentHashes()
+	if len(hashes) != 1 {
+		t.Errorf("expected 1 hash after delete, got %d", len(hashes))
+	}
+}
+
+func TestSQLiteVectorStore_ClearRemovesHashes(t *testing.T) {
+	dir := t.TempDir()
+	store := NewSQLiteVectorStore(dir, "test-model", 384)
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	defer store.Close()
+
+	store.SetContentHash("task:abc", "hash123")
+	store.SetContentHash("doc:readme", "hash456")
+
+	if err := store.Clear(); err != nil {
+		t.Fatalf("Clear: %v", err)
+	}
+
+	hashes := store.ListContentHashes()
+	if len(hashes) != 0 {
+		t.Errorf("expected 0 hashes after Clear, got %d", len(hashes))
+	}
+}
+
+// --- FileVectorStore Content Hash No-ops ---
+
+func TestFileVectorStore_ContentHashNoOps(t *testing.T) {
+	dir := t.TempDir()
+	store := NewFileVectorStore(dir, "test-model", 384)
+
+	// All should be no-ops / return empty.
+	if h := store.GetContentHash("task:abc"); h != "" {
+		t.Errorf("expected empty, got %q", h)
+	}
+	store.SetContentHash("task:abc", "hash123") // no-op
+	store.DeleteContentHash("task:abc")          // no-op
+	if hashes := store.ListContentHashes(); hashes != nil {
+		t.Errorf("expected nil, got %v", hashes)
+	}
+}

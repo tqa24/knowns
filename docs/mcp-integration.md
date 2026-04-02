@@ -320,6 +320,30 @@ mcp__knowns__validate({})
 mcp__knowns__validate({ "scope": "tasks" })
 ```
 
+### Memory
+
+| Tool                  | Description                                          | Parameters                                    |
+| --------------------- | ---------------------------------------------------- | --------------------------------------------- |
+| `add_memory`          | Create a memory entry (project or global layer)      | `content`, `title?`, `layer?`, `category?`, `tags?` |
+| `get_memory`          | Get memory entry by ID                               | `id`                                          |
+| `list_memories`       | List memories with filters                           | `layer?`, `category?`, `tag?`                 |
+| `update_memory`       | Update memory entry                                  | `id`, `title?`, `content?`, `category?`, `tags?` |
+| `delete_memory`       | Delete memory entry (dry-run by default)             | `id`, `dryRun?`                               |
+| `promote_memory`      | Promote up one layer (working→project→global)        | `id`                                          |
+| `demote_memory`       | Demote down one layer (global→project→working)       | `id`                                          |
+
+> **Note:** To search memory entries, use `search` with `type: "memory"`.
+
+### Working Memory (Session-Scoped)
+
+| Tool                    | Description                    | Parameters                          |
+| ----------------------- | ------------------------------ | ----------------------------------- |
+| `add_working_memory`    | Add ephemeral session memory   | `content`, `title?`, `category?`, `tags?` |
+| `get_working_memory`    | Get working memory by ID       | `id`                                |
+| `list_working_memories` | List all session memories      | -                                   |
+| `delete_working_memory` | Delete a working memory entry  | `id`                                |
+| `clear_working_memory`  | Clear all session memories     | -                                   |
+
 ### Board
 
 | Tool        | Description            | Parameters |

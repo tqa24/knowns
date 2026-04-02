@@ -15,7 +15,6 @@ import (
 
 	"charm.land/bubbles/v2/progress"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 
 	"github.com/howznguyen/knowns/internal/models"
 	"github.com/howznguyen/knowns/internal/search"
@@ -523,12 +522,22 @@ type reindexState struct {
 	err       error
 }
 
+// completedPhase records a finished indexing phase.
+type completedPhase struct {
+	name  string
+	count int
+}
+
 type reindexModel struct {
-	bar       progress.Model
-	state     *reindexState
-	quit      bool
-	startTime time.Time
-	prog      *tea.Program
+	bar             progress.Model
+	state           *reindexState
+	quit            bool
+	startTime       time.Time
+	phaseStartTime  time.Time
+	prog            *tea.Program
+	lastPhase       string
+	lastTotal       int
+	completedPhases []completedPhase
 }
 
 func reindexTickCmd() tea.Cmd {
@@ -552,6 +561,17 @@ func (m *reindexModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.quit {
 			return m, nil
 		}
+		// Detect phase transition.
+		if m.state.phase != m.lastPhase && m.lastPhase != "" {
+			m.completedPhases = append(m.completedPhases, completedPhase{
+				name:  m.lastPhase,
+				count: m.lastTotal,
+			})
+			m.phaseStartTime = time.Now()
+		}
+		m.lastPhase = m.state.phase
+		m.lastTotal = m.state.total
+
 		pct := 0.0
 		if m.state.total > 0 {
 			pct = float64(m.state.processed) / float64(m.state.total)
@@ -559,6 +579,12 @@ func (m *reindexModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd := m.bar.SetPercent(pct)
 		return m, tea.Batch(cmd, reindexTickCmd())
 	case reindexDoneMsg:
+		if m.lastPhase != "" {
+			m.completedPhases = append(m.completedPhases, completedPhase{
+				name:  m.lastPhase,
+				count: m.lastTotal,
+			})
+		}
 		m.state.done = true
 		m.state.err = msg.err
 		m.quit = true
@@ -573,18 +599,28 @@ func (m *reindexModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *reindexModel) View() tea.View {
+	var b strings.Builder
+
 	if m.quit {
-		return tea.NewView("")
+		for _, cp := range m.completedPhases {
+			b.WriteString(fmt.Sprintf("  %s Indexed %s (%d)\n",
+				searchSuccessStyle.Render("✓"), cp.name, cp.count))
+		}
+		return tea.NewView(b.String())
 	}
-	pct := 0.0
+
+	// Completed phases.
+	for _, cp := range m.completedPhases {
+		b.WriteString(fmt.Sprintf("  %s Indexed %s (%d)\n",
+			searchSuccessStyle.Render("✓"), cp.name, cp.count))
+	}
+
+	// Active phase bar.
 	processed := m.state.processed
 	total := m.state.total
 	phase := m.state.phase
-	if total > 0 {
-		pct = float64(processed) / float64(total)
-	}
 
-	elapsed := time.Since(m.startTime)
+	elapsed := time.Since(m.phaseStartTime)
 	eta := ""
 	if elapsed.Seconds() > 0.5 && processed > 0 && processed < total {
 		itemsPerSec := float64(processed) / elapsed.Seconds()
@@ -594,9 +630,10 @@ func (m *reindexModel) View() tea.View {
 		}
 	}
 
-	info := fmt.Sprintf(" %3.0f%%  Indexing %s (%d/%d)%s",
-		pct*100, phase, processed, total, eta)
-	return tea.NewView(fmt.Sprintf("  %s%s\n", m.bar.View(), searchDimStyle.Render(info)))
+	info := fmt.Sprintf("  Indexing %s (%d/%d)%s",
+		phase, processed, total, eta)
+	b.WriteString(fmt.Sprintf("  %s%s\n", m.bar.View(), searchDimStyle.Render(info)))
+	return tea.NewView(b.String())
 }
 
 func runReindex() error {
@@ -657,17 +694,14 @@ func runReindex() error {
 		fmt.Printf("%s\n\n", RenderInfo(fmt.Sprintf("Rebuilding semantic search index (%d tasks, %d docs)...", taskCount, docCount)))
 
 		startTime := time.Now()
-		state := &reindexState{phase: "tasks", total: total}
+		state := &reindexState{phase: "tasks", total: taskCount}
 
-		bar := progress.New(
-			progress.WithColors(lipgloss.Color(KnownsBrand)),
-			progress.WithWidth(40),
-			progress.WithoutPercentage(),
-		)
+		bar := NewBrandProgressBar()
 		m := &reindexModel{
-			bar:       bar,
-			state:     state,
-			startTime: startTime,
+			bar:            bar,
+			state:          state,
+			startTime:      startTime,
+			phaseStartTime: startTime,
 		}
 		p := tea.NewProgram(m, tea.WithInput(os.Stdin))
 		m.prog = p

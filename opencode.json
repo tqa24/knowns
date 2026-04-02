@@ -16,8 +16,6 @@
     },
     "knowns": {
       "command": [
-        "npx",
-        "-y",
         "knowns",
         "mcp",
         "--stdio"

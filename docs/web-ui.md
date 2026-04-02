@@ -33,8 +33,19 @@ knowns browser --dev
 
 - task board and task details
 - document browsing and markdown rendering
+- knowledge graph visualization (tasks, docs, memories relationships)
+- memory management (3-layer: working, project, global)
 - search and navigation shortcuts
 - real-time updates from local project data
+
+### Knowledge Graph
+
+The `/graph` page visualizes relationships between tasks, docs, and memories using Cytoscape.js:
+
+- **Node types**: tasks (circle), docs (rounded rectangle), memories (hexagon)
+- **Edge types**: parent (solid), spec (dashed), mention (dotted)
+- **Features**: search highlighting, impact analysis (2-hop BFS), cluster detection
+- **Interactions**: hover to highlight neighbors, drag nodes, click for details
 
 The exact page layout can evolve, but the browser UI is powered by the local Knowns server and reads from your current project.
 

@@ -18,6 +18,20 @@ type TimeStore struct {
 func (ts *TimeStore) statePath() string   { return filepath.Join(ts.root, "time.json") }
 func (ts *TimeStore) entriesPath() string { return filepath.Join(ts.root, "time-entries.json") }
 
+// GetActiveTimer returns the active timer for a specific task, or nil if none.
+func (ts *TimeStore) GetActiveTimer(taskID string) *models.ActiveTimer {
+	state, err := ts.GetState()
+	if err != nil {
+		return nil
+	}
+	for i := range state.Active {
+		if state.Active[i].TaskID == taskID {
+			return &state.Active[i]
+		}
+	}
+	return nil
+}
+
 // GetState returns the current timer state from time.json.
 func (ts *TimeStore) GetState() (*models.TimeState, error) {
 	data, err := os.ReadFile(ts.statePath())

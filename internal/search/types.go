@@ -17,8 +17,9 @@ const ChunkVersion = 2
 type ChunkType string
 
 const (
-	ChunkTypeDoc  ChunkType = "doc"
-	ChunkTypeTask ChunkType = "task"
+	ChunkTypeDoc    ChunkType = "doc"
+	ChunkTypeTask   ChunkType = "task"
+	ChunkTypeMemory ChunkType = "memory"
 )
 
 // Chunk is a piece of a task or document prepared for embedding.
@@ -42,6 +43,10 @@ type Chunk struct {
 	Status   string   `json:"status,omitempty"`
 	Priority string   `json:"priority,omitempty"`
 	Labels   []string `json:"labels,omitempty"`
+
+	// Memory fields (populated when Type == ChunkTypeMemory).
+	MemoryID    string `json:"memoryId,omitempty"`
+	MemoryLayer string `json:"memoryLayer,omitempty"`
 }
 
 // ChunkResult is the output of chunking a single task or doc.

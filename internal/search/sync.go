@@ -31,6 +31,18 @@ func BestEffortRemoveDoc(store *storage.Store, docPath string) {
 	})
 }
 
+func BestEffortIndexMemory(store *storage.Store, memoryID string) {
+	runBestEffort(store, "index memory "+memoryID, func(svc *IndexService) error {
+		return svc.IndexMemory(memoryID)
+	})
+}
+
+func BestEffortRemoveMemory(store *storage.Store, memoryID string) {
+	runBestEffort(store, "remove memory "+memoryID, func(svc *IndexService) error {
+		return svc.RemoveMemory(memoryID)
+	})
+}
+
 func runBestEffort(store *storage.Store, action string, fn func(*IndexService) error) {
 	if store == nil {
 		return

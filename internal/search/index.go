@@ -1,6 +1,8 @@
 package search
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 
 	"github.com/howznguyen/knowns/internal/models"
@@ -26,47 +28,138 @@ func NewIndexService(store *storage.Store, embedder *Embedder, vecStore VectorSt
 // ReindexProgress is called during reindexing to report progress.
 type ReindexProgress func(phase string, current, total int)
 
-// Reindex clears the vector store and re-indexes all tasks and docs.
+// Reindex re-indexes all tasks and docs, skipping unchanged items via content hashing.
+// If the model or chunk version changed, all hashes are invalidated and a full rebuild occurs.
 func (s *IndexService) Reindex(progress ReindexProgress) error {
-	if err := s.vecStore.Clear(); err != nil {
-		return fmt.Errorf("clear vecstore: %w", err)
+	// If model/version changed, clear everything for a full rebuild.
+	if s.vecStore.NeedsRebuild(s.vecStore.Model()) {
+		if err := s.vecStore.Clear(); err != nil {
+			return fmt.Errorf("clear vecstore: %w", err)
+		}
 	}
 
 	tasks, err := s.store.Tasks.List()
 	if err != nil {
 		return fmt.Errorf("list tasks: %w", err)
 	}
-	docs, err := s.store.Docs.List()
+	allDocs, err := s.store.Docs.List()
 	if err != nil {
 		return fmt.Errorf("list docs: %w", err)
 	}
 
-	total := len(tasks) + len(docs)
-	current := 0
-
-	// Index tasks.
-	for _, task := range tasks {
-		current++
-		if progress != nil {
-			progress("tasks", current, total)
-		}
-		if err := s.embedAndStoreTask(task); err != nil {
-			continue // non-fatal
+	// Split docs into local and imported.
+	var docs, importedDocs []*models.Doc
+	for _, doc := range allDocs {
+		if doc.IsImported {
+			importedDocs = append(importedDocs, doc)
+		} else {
+			docs = append(docs, doc)
 		}
 	}
 
-	// Index docs.
-	for _, doc := range docs {
-		current++
+	// Build set of current source IDs for orphan cleanup.
+	currentIDs := make(map[string]bool)
+
+	// Phase 1: Index tasks.
+	for i, task := range tasks {
 		if progress != nil {
-			progress("docs", current, total)
+			progress("tasks", i+1, len(tasks))
 		}
+		sourceID := "task:" + task.ID
+		currentIDs[sourceID] = true
+
+		hash := contentHash(taskContentForHash(task))
+		if s.vecStore.GetContentHash(sourceID) == hash {
+			continue // unchanged
+		}
+
+		s.vecStore.RemoveByPrefix(fmt.Sprintf("task:%s:", task.ID))
+		if err := s.embedAndStoreTask(task); err != nil {
+			continue // non-fatal
+		}
+		s.vecStore.SetContentHash(sourceID, hash)
+	}
+
+	// Phase 2: Index local docs.
+	for i, doc := range docs {
+		if progress != nil {
+			progress("docs", i+1, len(docs))
+		}
+		sourceID := "doc:" + doc.Path
+		currentIDs[sourceID] = true
+
 		fullDoc, err := s.store.Docs.Get(doc.Path)
 		if err != nil {
 			continue
 		}
+
+		hash := contentHash(fullDoc.Title + "\n" + fullDoc.Description + "\n" + fullDoc.Content)
+		if s.vecStore.GetContentHash(sourceID) == hash {
+			continue
+		}
+
+		s.vecStore.RemoveByPrefix(fmt.Sprintf("doc:%s:", doc.Path))
 		if err := s.embedAndStoreDoc(fullDoc); err != nil {
 			continue
+		}
+		s.vecStore.SetContentHash(sourceID, hash)
+	}
+
+	// Phase 3: Index imported docs.
+	for i, doc := range importedDocs {
+		if progress != nil {
+			progress("imports", i+1, len(importedDocs))
+		}
+		sourceID := "doc:" + doc.Path
+		currentIDs[sourceID] = true
+
+		fullDoc, err := s.store.Docs.Get(doc.Path)
+		if err != nil {
+			continue
+		}
+
+		hash := contentHash(fullDoc.Title + "\n" + fullDoc.Description + "\n" + fullDoc.Content)
+		if s.vecStore.GetContentHash(sourceID) == hash {
+			continue
+		}
+
+		s.vecStore.RemoveByPrefix(fmt.Sprintf("doc:%s:", doc.Path))
+		if err := s.embedAndStoreDoc(fullDoc); err != nil {
+			continue
+		}
+		s.vecStore.SetContentHash(sourceID, hash)
+	}
+
+	// Phase 4: Index memory entries.
+	memories, err := s.store.Memory.List("")
+	if err != nil {
+		memories = nil // non-fatal
+	}
+	for i, entry := range memories {
+		if progress != nil {
+			progress("memories", i+1, len(memories))
+		}
+		sourceID := "memory:" + entry.ID
+		currentIDs[sourceID] = true
+
+		hash := contentHash(entry.Title + "\n" + entry.Category + "\n" + entry.Content)
+		if s.vecStore.GetContentHash(sourceID) == hash {
+			continue
+		}
+
+		s.vecStore.RemoveByPrefix(fmt.Sprintf("memory:%s:", entry.ID))
+		if err := s.embedAndStoreMemory(entry); err != nil {
+			continue
+		}
+		s.vecStore.SetContentHash(sourceID, hash)
+	}
+
+	// Phase 4: Clean up orphaned entries (deleted tasks/docs/memories).
+	for id := range s.vecStore.ListContentHashes() {
+		if !currentIDs[id] {
+			// Extract prefix for chunk removal (e.g. "task:abc" → "task:abc:")
+			s.vecStore.RemoveByPrefix(id + ":")
+			s.vecStore.DeleteContentHash(id)
 		}
 	}
 
@@ -113,6 +206,26 @@ func (s *IndexService) RemoveDoc(docPath string) error {
 	return s.vecStore.Save()
 }
 
+// IndexMemory incrementally indexes a single memory entry (removes old chunks first).
+func (s *IndexService) IndexMemory(memoryID string) error {
+	s.vecStore.RemoveByPrefix(fmt.Sprintf("memory:%s:", memoryID))
+
+	entry, err := s.store.Memory.Get(memoryID)
+	if err != nil {
+		return err
+	}
+	if err := s.embedAndStoreMemory(entry); err != nil {
+		return err
+	}
+	return s.vecStore.Save()
+}
+
+// RemoveMemory removes all chunks for a memory entry from the vector store.
+func (s *IndexService) RemoveMemory(memoryID string) error {
+	s.vecStore.RemoveByPrefix(fmt.Sprintf("memory:%s:", memoryID))
+	return s.vecStore.Save()
+}
+
 func (s *IndexService) embedAndStoreTask(task *models.Task) error {
 	maxTokens := 512
 	if cfg, ok := EmbeddingModels[s.vecStore.Model()]; ok {
@@ -131,6 +244,15 @@ func (s *IndexService) embedAndStoreDoc(doc *models.Doc) error {
 	return s.embedAndStore(result.Chunks)
 }
 
+func (s *IndexService) embedAndStoreMemory(entry *models.MemoryEntry) error {
+	maxTokens := 512
+	if cfg, ok := EmbeddingModels[s.vecStore.Model()]; ok {
+		maxTokens = cfg.MaxTokens
+	}
+	result := ChunkMemory(entry, maxTokens, s.embedder.GetTokenizer())
+	return s.embedAndStore(result.Chunks)
+}
+
 func (s *IndexService) embedAndStore(chunks []Chunk) error {
 	for i := range chunks {
 		vec, err := s.embedder.EmbedDocument(chunks[i].Content)
@@ -141,4 +263,18 @@ func (s *IndexService) embedAndStore(chunks []Chunk) error {
 	}
 	s.vecStore.AddChunks(chunks)
 	return nil
+}
+
+func contentHash(content string) string {
+	h := sha256.Sum256([]byte(content))
+	return hex.EncodeToString(h[:])
+}
+
+func taskContentForHash(task *models.Task) string {
+	s := task.Title + "\n" + task.Description + "\n" + task.Status + "\n" + task.Priority
+	for _, ac := range task.AcceptanceCriteria {
+		s += "\n" + ac.Text
+	}
+	s += "\n" + task.ImplementationPlan + "\n" + task.ImplementationNotes
+	return s
 }

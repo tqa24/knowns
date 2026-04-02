@@ -547,6 +547,7 @@ The sidebar provides access to:
 - **Kanban** - Visual task board
 - **Tasks** - Table view of all tasks
 - **Docs** - Documentation browser
+- **Graph** - Knowledge graph (tasks, docs, memories + relationships)
 - **Config** - Project settings
 
 ### Kanban Board
@@ -674,19 +675,28 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
 
 ### Available MCP Tools
 
-| Tool              | Description                                         |
-| ----------------- | --------------------------------------------------- |
-| `get_task`        | Get task details by ID                              |
-| `list_tasks`      | List tasks with filters                             |
-| `create_task`     | Create a new task                                   |
-| `update_task`     | Update task fields                                  |
-| `get_doc`         | Get document content                                |
-| `list_docs`       | List all documents                                  |
-| `search`          | Unified search (tasks + docs) with semantic support |
-| `list_templates`  | List available templates                            |
-| `get_template`    | Get template config                                 |
-| `run_template`    | Run template (use `dryRun: true` first)             |
-| `create_template` | Create new template                                 |
+| Tool                  | Description                                         |
+| --------------------- | --------------------------------------------------- |
+| `get_task`            | Get task details by ID                              |
+| `list_tasks`          | List tasks with filters                             |
+| `create_task`         | Create a new task                                   |
+| `update_task`         | Update task fields                                  |
+| `get_doc`             | Get document content                                |
+| `list_docs`           | List all documents                                  |
+| `search`              | Unified search (tasks + docs + memories)            |
+| `list_templates`      | List available templates                            |
+| `get_template`        | Get template config                                 |
+| `run_template`        | Run template (use `dryRun: true` first)             |
+| `create_template`     | Create new template                                 |
+| `add_memory`          | Create a memory entry (project or global layer)     |
+| `list_memories`       | List memories with filters                          |
+| `get_memory`          | Get memory entry by ID                              |
+| `update_memory`       | Update memory entry                                 |
+| `delete_memory`       | Delete memory entry                                 |
+| `promote_memory`      | Promote up one layer (working→project→global)       |
+| `add_working_memory`  | Add ephemeral session-scoped memory                 |
+| `list_working_memories` | List session memories                             |
+| `clear_working_memory` | Clear all session memories                         |
 
 ### Plain Text Mode
 

@@ -73,7 +73,7 @@ func maybeInstallOpenCode(force bool) error {
 	status := opencode.DetectOpenCode()
 
 	if status.Installed && status.Compatible && !force {
-		fmt.Printf("  %s OpenCode v%s detected\n", RenderSuccess("✓"), status.Version)
+		fmt.Printf("  %s OpenCode v%s detected\n", StyleSuccess.Render("✓"), status.Version)
 		return nil
 	}
 
@@ -165,6 +165,6 @@ func maybeInstallOpenCode(force bool) error {
 		return nil
 	}
 
-	fmt.Printf("  %s OpenCode v%s installed successfully\n", RenderSuccess("✓"), verified.Version)
+	fmt.Printf("  %s OpenCode v%s installed successfully\n", StyleSuccess.Render("✓"), verified.Version)
 	return nil
 }

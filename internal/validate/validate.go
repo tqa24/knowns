@@ -42,8 +42,9 @@ type Options struct {
 
 // Reference-detection regexes.
 var (
-	taskRefRE = regexp.MustCompile(`@task-([a-z0-9]+)`)
-	docRefRE  = regexp.MustCompile(`@doc/([^\s\)]+)`)
+	taskRefRE   = regexp.MustCompile(`@task-([a-z0-9]+)`)
+	docRefRE    = regexp.MustCompile(`@doc/([^\s\)]+)`)
+	memoryRefRE = regexp.MustCompile(`@memory-([a-z0-9]+)`)
 )
 
 // Valid status and priority values.
@@ -78,6 +79,13 @@ func Run(store *storage.Store, opts Options) *Result {
 		docPaths[d.Path] = true
 	}
 
+	// Load memory entries for cross-reference validation.
+	memories, _ := store.Memory.List("")
+	memoryIDs := make(map[string]bool, len(memories))
+	for _, m := range memories {
+		memoryIDs[m.ID] = true
+	}
+
 	// Build parent map for circular detection.
 	parentMap := make(map[string]string, len(tasks))
 	for _, t := range tasks {
@@ -92,7 +100,7 @@ func Run(store *storage.Store, opts Options) *Result {
 			if opts.Entity != "" && opts.Entity != t.ID {
 				continue
 			}
-			issues = append(issues, validateTask(t, taskIDs, docPaths, parentMap, opts)...)
+			issues = append(issues, validateTask(t, taskIDs, docPaths, memoryIDs, parentMap, opts)...)
 		}
 	}
 
@@ -115,7 +123,17 @@ func Run(store *storage.Store, opts Options) *Result {
 				})
 				continue
 			}
-			issues = append(issues, validateDoc(fullDoc, taskIDs, docPaths)...)
+			issues = append(issues, validateDoc(fullDoc, taskIDs, docPaths, memoryIDs)...)
+		}
+	}
+
+	// --- Memory ---
+	if opts.Scope == "all" || opts.Scope == "memory" {
+		for _, m := range memories {
+			if opts.Entity != "" && opts.Entity != m.ID {
+				continue
+			}
+			issues = append(issues, validateMemory(m, taskIDs, docPaths, memoryIDs)...)
 		}
 	}
 
@@ -170,7 +188,7 @@ func Run(store *storage.Store, opts Options) *Result {
 
 // ---------- Task validation ----------
 
-func validateTask(t *models.Task, taskIDs, docPaths map[string]bool, parentMap map[string]string, opts Options) []Issue {
+func validateTask(t *models.Task, taskIDs, docPaths, memoryIDs map[string]bool, parentMap map[string]string, opts Options) []Issue {
 	var issues []Issue
 
 	// Title required.
@@ -289,6 +307,15 @@ func validateTask(t *models.Task, taskIDs, docPaths map[string]bool, parentMap m
 			})
 		}
 	}
+	for _, match := range memoryRefRE.FindAllStringSubmatch(checkText, -1) {
+		refID := match[1]
+		if !memoryIDs[refID] {
+			issues = append(issues, Issue{
+				Level: "warning", Code: "BROKEN_MEMORY_REF",
+				Message: fmt.Sprintf("Referenced memory @memory-%s not found", refID), Entity: t.ID,
+			})
+		}
+	}
 
 	// SDD-specific checks.
 	if opts.Scope == "sdd" {
@@ -319,7 +346,7 @@ func detectCircularParent(id string, parentMap map[string]string) bool {
 
 // ---------- Doc validation ----------
 
-func validateDoc(d *models.Doc, taskIDs, docPaths map[string]bool) []Issue {
+func validateDoc(d *models.Doc, taskIDs, docPaths, memoryIDs map[string]bool) []Issue {
 	var issues []Issue
 
 	if d.Title == "" {
@@ -359,6 +386,73 @@ func validateDoc(d *models.Doc, taskIDs, docPaths map[string]bool) []Issue {
 			issues = append(issues, Issue{
 				Level: "info", Code: "BROKEN_DOC_REF",
 				Message: fmt.Sprintf("Referenced doc @doc/%s not found", refPath), Entity: d.Path,
+			})
+		}
+	}
+	for _, match := range memoryRefRE.FindAllStringSubmatch(d.Content, -1) {
+		refID := match[1]
+		if !memoryIDs[refID] {
+			issues = append(issues, Issue{
+				Level: "info", Code: "BROKEN_MEMORY_REF",
+				Message: fmt.Sprintf("Referenced memory @memory-%s not found", refID), Entity: d.Path,
+			})
+		}
+	}
+
+	return issues
+}
+
+// ---------- Memory validation ----------
+
+func validateMemory(m *models.MemoryEntry, taskIDs, docPaths, memoryIDs map[string]bool) []Issue {
+	var issues []Issue
+
+	if m.Title == "" {
+		issues = append(issues, Issue{
+			Level: "warning", Code: "MEMORY_NO_TITLE",
+			Message: "Memory entry has no title", Entity: m.ID,
+		})
+	}
+
+	if m.Content == "" {
+		issues = append(issues, Issue{
+			Level: "info", Code: "MEMORY_NO_CONTENT",
+			Message: "Memory entry has no content", Entity: m.ID,
+		})
+	}
+
+	if !models.ValidMemoryLayer(m.Layer) {
+		issues = append(issues, Issue{
+			Level: "error", Code: "MEMORY_INVALID_LAYER",
+			Message: fmt.Sprintf("Memory entry has invalid layer: %q", m.Layer), Entity: m.ID,
+		})
+	}
+
+	// Inline refs in memory content.
+	for _, match := range taskRefRE.FindAllStringSubmatch(m.Content, -1) {
+		refID := match[1]
+		if !taskIDs[refID] {
+			issues = append(issues, Issue{
+				Level: "info", Code: "BROKEN_TASK_REF",
+				Message: fmt.Sprintf("Referenced task @task-%s not found", refID), Entity: m.ID,
+			})
+		}
+	}
+	for _, match := range docRefRE.FindAllStringSubmatch(m.Content, -1) {
+		refPath := strings.TrimRight(match[1], ".,;)")
+		if !docPaths[refPath] {
+			issues = append(issues, Issue{
+				Level: "info", Code: "BROKEN_DOC_REF",
+				Message: fmt.Sprintf("Referenced doc @doc/%s not found", refPath), Entity: m.ID,
+			})
+		}
+	}
+	for _, match := range memoryRefRE.FindAllStringSubmatch(m.Content, -1) {
+		refID := match[1]
+		if refID != m.ID && !memoryIDs[refID] {
+			issues = append(issues, Issue{
+				Level: "info", Code: "BROKEN_MEMORY_REF",
+				Message: fmt.Sprintf("Referenced memory @memory-%s not found", refID), Entity: m.ID,
 			})
 		}
 	}

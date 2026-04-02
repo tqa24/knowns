@@ -52,6 +52,10 @@ func runTaskCreate(cmd *cobra.Command, args []string) error {
 	plan, _ := cmd.Flags().GetString("plan")
 	notes, _ := cmd.Flags().GetString("notes")
 
+	description = unescapeText(description)
+	plan = unescapeText(plan)
+	notes = unescapeText(notes)
+
 	// Load config for defaults
 	cfg, _ := store.Config.Load()
 
@@ -237,6 +241,9 @@ func runTaskView(cmd *cobra.Command, id string) error {
 		return fmt.Errorf("task %q not found", id)
 	}
 
+	// Load active timer if any.
+	task.ActiveTimer = store.Time.GetActiveTimer(task.ID)
+
 	jsonOut := isJSON(cmd)
 	plain := isPlain(cmd)
 
@@ -283,7 +290,7 @@ func runTaskEdit(cmd *cobra.Command, args []string) error {
 	}
 	if cmd.Flags().Changed("description") {
 		v, _ := cmd.Flags().GetString("description")
-		task.Description = v
+		task.Description = unescapeText(v)
 	}
 	if cmd.Flags().Changed("status") {
 		v, _ := cmd.Flags().GetString("status")
@@ -311,14 +318,15 @@ func runTaskEdit(cmd *cobra.Command, args []string) error {
 	}
 	if cmd.Flags().Changed("plan") {
 		v, _ := cmd.Flags().GetString("plan")
-		task.ImplementationPlan = v
+		task.ImplementationPlan = unescapeText(v)
 	}
 	if cmd.Flags().Changed("notes") {
 		v, _ := cmd.Flags().GetString("notes")
-		task.ImplementationNotes = v
+		task.ImplementationNotes = unescapeText(v)
 	}
 	if cmd.Flags().Changed("append-notes") {
 		v, _ := cmd.Flags().GetString("append-notes")
+		v = unescapeText(v)
 		if task.ImplementationNotes == "" {
 			task.ImplementationNotes = v
 		} else {
@@ -662,6 +670,13 @@ func sprintTaskPlain(t *models.Task) string {
 	if t.TimeSpent > 0 {
 		fmt.Fprintf(&b, "TIME SPENT: %s\n", formatDuration(t.TimeSpent))
 	}
+	if t.ActiveTimer != nil {
+		status := "running"
+		if t.ActiveTimer.PausedAt != nil {
+			status = "paused"
+		}
+		fmt.Fprintf(&b, "TIMER: %s (started %s)\n", status, t.ActiveTimer.StartedAt)
+	}
 	fmt.Fprintf(&b, "CREATED: %s\n", t.CreatedAt.Format("2006-01-02T15:04:05Z"))
 	fmt.Fprintf(&b, "UPDATED: %s\n", t.UpdatedAt.Format("2006-01-02T15:04:05Z"))
 	if len(t.Subtasks) > 0 {
@@ -709,6 +724,13 @@ func renderTaskDetailed(t *models.Task) string {
 	}
 	if t.TimeSpent > 0 {
 		fmt.Fprintf(&b, "\n%s %s\n", StyleDim.Render("Time Spent:"), StyleInfo.Render(formatDuration(t.TimeSpent)))
+	}
+	if t.ActiveTimer != nil {
+		status := StyleSuccess.Render("● running")
+		if t.ActiveTimer.PausedAt != nil {
+			status = StyleWarning.Render("⏸ paused")
+		}
+		fmt.Fprintf(&b, "\n%s %s %s\n", StyleDim.Render("Timer:"), status, StyleDim.Render("(since "+t.ActiveTimer.StartedAt+")"))
 	}
 	fmt.Fprintf(&b, "\n%s\n",
 		StyleDim.Render(fmt.Sprintf("Created: %s | Updated: %s",

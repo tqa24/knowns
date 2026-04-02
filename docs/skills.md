@@ -10,7 +10,7 @@ Knowns ships 13 built-in skills:
 
 | Skill | Trigger | Purpose |
 | ----- | ------- | ------- |
-| `kn-init` | `/kn-init` | Read project context, load critical learnings |
+| `kn-init` | `/kn-init` | Read project context, load critical learnings, load project memories |
 | `kn-spec` | `/kn-spec` | Create spec with Socratic exploring phase (SDD) |
 | `kn-plan` | `/kn-plan` | Create implementation plan with pre-execution validation |
 | `kn-research` | `/kn-research` | Research docs and code before changes |
@@ -91,9 +91,9 @@ Go mode generates tasks, plans, implements, verifies, and commits — only stopp
 
 **`kn-go`** — Full pipeline execution from an approved spec. Generates tasks → plans each → implements each → verifies SDD coverage → commits. Supports `--dry-run` to preview, re-run to continue from where it left off, and context budget checkpointing.
 
-**`kn-debug`** — Structured debugging: classify → check known patterns → reproduce → root cause → fix → verify → capture learning. Integrates with Knowns search to find previously documented solutions.
+**`kn-debug`** — Structured debugging: classify → check known patterns → reproduce → root cause → fix → verify → capture learning. Integrates with unified search (docs + memories) to find previously documented solutions. Saves quick debug patterns to project memory.
 
-**`kn-extract` (enhanced)** — Now captures three categories: patterns, decisions (good/bad/surprise/tradeoff), and failures. Promotes critical learnings to `learnings/critical-patterns` which is read by `kn-init`. Use `--consolidate` to review and merge all existing learnings.
+**`kn-extract` (enhanced)** — Now captures three categories: patterns, decisions (good/bad/surprise/tradeoff), and failures. Saves concise entries to project memory for fast agent recall alongside full docs. Promotes critical learnings to `learnings/critical-patterns` which is read by `kn-init`. Use `--consolidate` to review and merge all existing learnings.
 
 **`kn-spec` (enhanced)** — Now includes Phase 0 Socratic exploring: assesses scope, classifies domain, identifies gray areas, asks one question at a time to lock decisions before writing the spec. Use `--skip-explore` for trivial features.
 

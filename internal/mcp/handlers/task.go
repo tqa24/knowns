@@ -163,10 +163,11 @@ func RegisterTaskTools(s *server.MCPServer, getStore func() *storage.Store) {
 				return errNotFound("Task", err)
 			}
 
-			// Load time entries.
+			// Load time entries and active timer.
 			if entries, err := store.Time.GetEntries(task.ID); err == nil {
 				task.TimeEntries = entries
 			}
+			task.ActiveTimer = store.Time.GetActiveTimer(task.ID)
 
 			out, _ := json.MarshalIndent(task, "", "  ")
 			return mcp.NewToolResultText(string(out)), nil
@@ -376,6 +377,9 @@ func RegisterTaskTools(s *server.MCPServer, getStore func() *storage.Store) {
 
 			// Notify server for real-time UI updates.
 			go notifyTaskUpdated(store, task.ID)
+
+			// Include active timer in response.
+			task.ActiveTimer = store.Time.GetActiveTimer(task.ID)
 
 			out, _ := json.MarshalIndent(task, "", "  ")
 			return mcp.NewToolResultText(string(out)), nil

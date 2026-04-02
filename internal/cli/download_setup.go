@@ -13,7 +13,6 @@ import (
 	"charm.land/bubbles/v2/progress"
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 
 	"github.com/howznguyen/knowns/internal/search"
 )
@@ -59,9 +58,7 @@ type setupStepDoneMsg struct{ err error }
 type setupPostHookDoneMsg struct{ err error }
 
 func newSetupModel(steps []downloadStep) *setupModel {
-	bar := progress.New(
-		progress.WithColors(lipgloss.Color(KnownsBrand)),
-		progress.WithWidth(40),
+	bar := NewBrandProgressBar(
 		progress.WithoutPercentage(),
 	)
 	sp := spinner.New(

@@ -44,7 +44,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  %s Already on the latest version %s\n", RenderSuccess(""), StyleBold.Render("v"+current))
 		// Still sync configs even if up to date
 		if !checkOnly {
-			return syncMCPConfigs()
+			return runSync(syncCmd, nil)
 		}
 		return nil
 	}
@@ -67,9 +67,9 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// 3. Sync MCP configs
+	// 3. Full sync (skills, instructions, model, search index, MCP configs)
 	fmt.Println()
-	return syncMCPConfigs()
+	return runSync(syncCmd, nil)
 }
 
 // runUpgrade detects the install method and runs the appropriate upgrade command.
@@ -96,7 +96,7 @@ func runUpgrade() error {
 		return fmt.Errorf("upgrade failed: %w", err)
 	}
 
-	fmt.Println(RenderSuccess("✓ Upgrade complete."))
+	fmt.Println(StyleSuccess.Render("✓") + " Upgrade complete.")
 	return nil
 }
 
@@ -146,7 +146,7 @@ func syncMCPConfigs() error {
 	}
 
 	if updated > 0 {
-		fmt.Printf("%s Synced %d MCP config(s) to use local binary.\n", RenderSuccess("✓"), updated)
+		fmt.Printf("%s Synced %d MCP config(s) to use local binary.\n", StyleSuccess.Render("✓"), updated)
 	} else {
 		fmt.Printf("%s MCP configs already up to date.\n", StyleDim.Render("·"))
 	}

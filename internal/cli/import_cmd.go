@@ -80,18 +80,22 @@ func runImportAdd(cmd *cobra.Command, args []string) error {
 
 	// Auto-sync git imports immediately.
 	if importType == "git" {
+		var commitHash string
 		added, updated, skipped, syncErr := runImportWithSpinner(
 			fmt.Sprintf("Syncing %s", name),
 			func() (int, int, int, error) {
-				return cliGitSync(source, "", importsDir, name)
+				a, u, s, h, e := cliGitSync(source, "", importsDir, name, "", false)
+				commitHash = h
+				return a, u, s, e
 			},
 		)
 		if syncErr != nil {
 			fmt.Println(RenderHint("You can retry with: " + RenderCmd("knowns import sync")))
 			return nil
 		}
-		// Update lastSync.
+		// Update lastSync and commitHash.
 		meta.LastSync = time.Now().UTC().Format(time.RFC3339)
+		meta.LastCommitHash = commitHash
 		if newData, err := json.MarshalIndent(meta, "", "  "); err == nil {
 			_ = os.WriteFile(manifestPath, newData, 0644)
 		}
@@ -208,56 +212,85 @@ func runImportSync(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("read imports: %w", err)
 	}
 
-	synced := 0
+	// Collect syncable imports.
+	type syncableImport struct {
+		name      string
+		importDir string
+		metaPath  string
+		meta      cliImportMeta
+	}
+	var syncables []syncableImport
 	for _, e := range entries {
 		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
 		name := e.Name()
 		importDir := filepath.Join(importsDir, name)
-
-		// Read metadata.
 		metaPath := filepath.Join(importDir, "_import.json")
 		metaData, readErr := os.ReadFile(metaPath)
 		if readErr != nil {
-			fmt.Printf("  %s %s: skipped (no metadata)\n", StyleDim.Render("•"), name)
 			continue
 		}
 		var meta cliImportMeta
 		if jsonErr := json.Unmarshal(metaData, &meta); jsonErr != nil {
-			fmt.Printf("  %s %s: skipped (invalid metadata)\n", StyleDim.Render("•"), name)
 			continue
 		}
-
 		if meta.Type != "git" || !isGitURLCli(meta.Source) {
-			fmt.Printf("  %s %s: skipped (not a git import)\n", StyleDim.Render("•"), name)
-			synced++
+			continue
+		}
+		syncables = append(syncables, syncableImport{
+			name: name, importDir: importDir, metaPath: metaPath, meta: meta,
+		})
+	}
+
+	if len(syncables) == 0 {
+		fmt.Println(StyleDim.Render("No imports to sync."))
+		return nil
+	}
+
+	fmt.Printf("%s\n\n", RenderInfo(fmt.Sprintf("Syncing %d import(s)...", len(syncables))))
+
+	synced := 0
+	upToDate := 0
+	for i, imp := range syncables {
+		var added, updated, skipped int
+		var commitHash string
+		var isUpToDate bool
+		label := fmt.Sprintf("Syncing %s (%d/%d)", imp.name, i+1, len(syncables))
+		err := RunWithSpinner(label, func() error {
+			var syncErr error
+			added, updated, skipped, commitHash, syncErr = cliGitSync(imp.meta.Source, imp.meta.Ref, imp.importDir, imp.name, imp.meta.LastCommitHash, false)
+			if syncErr == errUpToDate {
+				isUpToDate = true
+				return nil
+			}
+			return syncErr
+		})
+		if err != nil {
+			continue
+		}
+		if isUpToDate {
+			upToDate++
+			fmt.Printf("    %s\n", StyleDim.Render("already up to date"))
 			continue
 		}
 
-		_, _, _, syncErr := runImportWithSpinner(
-			fmt.Sprintf("Syncing %s from %s", name, meta.Source),
-			func() (int, int, int, error) {
-				return cliGitSync(meta.Source, meta.Ref, importDir, name)
-			},
-		)
-		if syncErr != nil {
-			continue
+		// Update lastSync and commitHash.
+		imp.meta.LastSync = time.Now().UTC().Format(time.RFC3339)
+		imp.meta.LastCommitHash = commitHash
+		if newData, err := json.MarshalIndent(imp.meta, "", "  "); err == nil {
+			_ = os.WriteFile(imp.metaPath, newData, 0644)
 		}
 
-		// Update lastSync.
-		meta.LastSync = time.Now().UTC().Format(time.RFC3339)
-		if newData, err := json.MarshalIndent(meta, "", "  "); err == nil {
-			_ = os.WriteFile(metaPath, newData, 0644)
-		}
-
+		fmt.Printf("    %s\n", StyleDim.Render(fmt.Sprintf("%d added, %d updated, %d skipped", added, updated, skipped)))
 		synced++
 	}
 
-	if synced == 0 {
-		fmt.Println(StyleDim.Render("No imports to sync."))
+	fmt.Println()
+	if upToDate > 0 {
+		fmt.Println(RenderSuccess(fmt.Sprintf("Synced %d/%d import(s), %d already up to date.", synced, len(syncables), upToDate)))
 	} else {
-		fmt.Println(RenderSuccess(fmt.Sprintf("Synced %d import(s).", synced)))
+		fmt.Println(RenderSuccess(fmt.Sprintf("Synced %d/%d import(s).", synced, len(syncables))))
 	}
 	return nil
 }
@@ -324,11 +357,44 @@ func cliTokenUsernameForHost(hostAndPath string) string {
 	}
 }
 
+// cliGitLsRemoteHead returns the commit hash for the remote HEAD (or a specific ref).
+// Returns empty string on any error (network, auth, etc.).
+func cliGitLsRemoteHead(source, ref string) string {
+	url := cliInjectGitToken(source)
+	target := "HEAD"
+	if ref != "" {
+		target = ref
+	}
+	cmd := exec.Command("git", "ls-remote", url, target)
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	// Output format: "<hash>\t<ref>\n"
+	line := strings.TrimSpace(string(out))
+	if idx := strings.IndexByte(line, '\t'); idx > 0 {
+		return line[:idx]
+	}
+	return ""
+}
+
+// errUpToDate is returned when the remote commit hash matches the cached hash.
+var errUpToDate = fmt.Errorf("already up to date")
+
 // cliGitSync clones a git repo and copies .knowns/docs and .knowns/templates into importDir.
-func cliGitSync(source, ref, importDir, name string) (added, updated, skipped int, err error) {
+// If cachedHash is non-empty and matches the remote HEAD, returns errUpToDate without cloning.
+// Returns the remote commit hash so callers can persist it.
+func cliGitSync(source, ref, importDir, name, cachedHash string, force bool) (added, updated, skipped int, commitHash string, err error) {
+	// Check remote commit hash before cloning.
+	remoteHash := cliGitLsRemoteHead(source, ref)
+	if remoteHash != "" && remoteHash == cachedHash && !force {
+		return 0, 0, 0, remoteHash, errUpToDate
+	}
+
 	tmpDir, err := os.MkdirTemp("", "knowns-import-*")
 	if err != nil {
-		return 0, 0, 0, err
+		return 0, 0, 0, remoteHash, err
 	}
 	defer os.RemoveAll(tmpDir)
 
@@ -347,19 +413,19 @@ func cliGitSync(source, ref, importDir, name string) (added, updated, skipped in
 	if err := gitCmd.Run(); err != nil {
 		errMsg := strings.TrimSpace(stderr.String())
 		if cliIsAuthError(errMsg) {
-			return 0, 0, 0, fmt.Errorf("authentication failed for %s\n\n"+
+			return 0, 0, 0, "", fmt.Errorf("authentication failed for %s\n\n"+
 				"Options:\n"+
 				"  1. Use SSH URL:      git@host:owner/repo.git\n"+
 				"  2. Set token:        export KNOWNS_GIT_TOKEN=<your-token>\n"+
 				"  3. Set config token: knowns config set git.token <your-token>", source)
 		}
-		return 0, 0, 0, fmt.Errorf("git clone failed: %s", errMsg)
+		return 0, 0, 0, "", fmt.Errorf("git clone failed: %s", errMsg)
 	}
 
 	// Check for .knowns/ directory.
 	knownsDir := filepath.Join(tmpDir, ".knowns")
 	if _, err := os.Stat(knownsDir); os.IsNotExist(err) {
-		return 0, 0, 0, fmt.Errorf("no .knowns directory found in %s", source)
+		return 0, 0, 0, "", fmt.Errorf("no .knowns directory found in %s", source)
 	}
 
 	for _, sub := range []string{"docs", "templates"} {
@@ -402,7 +468,7 @@ func cliGitSync(source, ref, importDir, name string) (added, updated, skipped in
 		})
 	}
 
-	return added, updated, skipped, nil
+	return added, updated, skipped, remoteHash, nil
 }
 
 // cliIsAuthError checks if a git stderr message indicates an authentication failure.
@@ -526,11 +592,12 @@ func runImportWithSpinner(label string, syncFunc func() (int, int, int, error)) 
 
 // cliImportMeta matches the server's importMeta format for _import.json.
 type cliImportMeta struct {
-	Source     string `json:"source"`
-	Type       string `json:"type"`
-	Ref        string `json:"ref,omitempty"`
-	LastSync   string `json:"lastSync,omitempty"`
-	ImportedAt string `json:"importedAt,omitempty"`
+	Source         string `json:"source"`
+	Type           string `json:"type"`
+	Ref            string `json:"ref,omitempty"`
+	LastSync       string `json:"lastSync,omitempty"`
+	ImportedAt     string `json:"importedAt,omitempty"`
+	LastCommitHash string `json:"lastCommitHash,omitempty"`
 }
 
 // importNameFromSource derives a safe directory name from an import source.

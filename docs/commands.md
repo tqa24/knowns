@@ -351,6 +351,69 @@ knowns time report [options]
 
 ---
 
+## Memory Commands
+
+### `knowns memory list`
+
+List memory entries.
+
+```bash
+knowns memory list [options]
+```
+
+| Option     | Description                |
+| ---------- | -------------------------- |
+| `--layer`  | Filter by layer (`project`, `global`) |
+| `--category` | Filter by category       |
+| `--tag`    | Filter by tag              |
+| `--plain`  | Plain text output          |
+
+### `knowns memory view`
+
+View a memory entry.
+
+```bash
+knowns memory view <id> [options]
+```
+
+| Option    | Description                |
+| --------- | -------------------------- |
+| `--plain` | Plain text output          |
+
+### `knowns memory add`
+
+Add a memory entry.
+
+```bash
+knowns memory add [options]
+```
+
+| Option       | Description                          |
+| ------------ | ------------------------------------ |
+| `-t, --title` | Memory title                        |
+| `-c, --content` | Memory content                    |
+| `--layer`    | `project` (default) or `global`      |
+| `--category` | Category (pattern, decision, etc.)   |
+| `--tags`     | Comma-separated tags                 |
+
+### `knowns memory promote`
+
+Promote a memory entry up one layer (working→project→global).
+
+```bash
+knowns memory promote <id>
+```
+
+### `knowns memory demote`
+
+Demote a memory entry down one layer (global→project→working).
+
+```bash
+knowns memory demote <id>
+```
+
+---
+
 ## Validate Command
 
 ### `knowns validate`
@@ -807,7 +870,7 @@ knowns sync [options]
 
 | Option           | Description                                                 |
 | ---------------- | ----------------------------------------------------------- |
-| `--force`        | Force resync (overwrite existing files)                     |
+| `--force`        | Force resync (deprecated — sync always overwrites) |
 | `--skills`       | Sync skills only                                            |
 | `--instructions` | Sync instruction files only                                 |
 | `--model`        | Download embedding model only                               |
@@ -820,6 +883,7 @@ knowns sync [options]
 3. Git integration — applies `.gitignore` rules based on `gitTrackingMode`
 4. Model download — downloads configured embedding model if not installed
 5. Search index — rebuilds the semantic search index
+6. MCP configs — syncs MCP config files to use the local binary
 
 **After cloning a repo:**
 

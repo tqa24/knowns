@@ -420,3 +420,96 @@ func splitParagraphs(text string) []string {
 	}
 	return result
 }
+
+// ChunkMemory splits a memory entry into chunks for embedding.
+func ChunkMemory(entry *models.MemoryEntry, maxTokens int, tok Tokenizer) ChunkResult {
+	if maxTokens <= 0 {
+		maxTokens = 512
+	}
+
+	// Build full text: title + category + content.
+	var text string
+	if entry.Title != "" {
+		text = entry.Title
+	}
+	if entry.Category != "" {
+		text += " [" + entry.Category + "]"
+	}
+	if entry.Content != "" {
+		if text != "" {
+			text += "\n\n"
+		}
+		text += entry.Content
+	}
+
+	if text == "" {
+		return ChunkResult{}
+	}
+
+	var chunks []Chunk
+	totalTokens := 0
+	tc := countTokens(text, tok)
+
+	if tc > maxTokens {
+		paragraphs := splitParagraphs(text)
+		partIdx := 0
+		currentContent := ""
+		currentTokens := 0
+
+		for _, para := range paragraphs {
+			paraTokens := countTokens(para, tok)
+			if currentTokens+paraTokens > maxTokens && currentContent != "" {
+				suffix := ""
+				if partIdx > 0 {
+					suffix = fmt.Sprintf(":%d", partIdx)
+				}
+				chunks = append(chunks, Chunk{
+					ID:          fmt.Sprintf("memory:%s:chunk:content%s", entry.ID, suffix),
+					Type:        ChunkTypeMemory,
+					MemoryID:    entry.ID,
+					MemoryLayer: entry.Layer,
+					Content:     currentContent,
+					TokenCount:  currentTokens,
+				})
+				totalTokens += currentTokens
+				partIdx++
+				currentContent = para
+				currentTokens = paraTokens
+			} else {
+				if currentContent != "" {
+					currentContent += "\n\n" + para
+				} else {
+					currentContent = para
+				}
+				currentTokens += paraTokens
+			}
+		}
+		if currentContent != "" {
+			suffix := ""
+			if partIdx > 0 {
+				suffix = fmt.Sprintf(":%d", partIdx)
+			}
+			chunks = append(chunks, Chunk{
+				ID:          fmt.Sprintf("memory:%s:chunk:content%s", entry.ID, suffix),
+				Type:        ChunkTypeMemory,
+				MemoryID:    entry.ID,
+				MemoryLayer: entry.Layer,
+				Content:     currentContent,
+				TokenCount:  currentTokens,
+			})
+			totalTokens += currentTokens
+		}
+	} else {
+		chunks = append(chunks, Chunk{
+			ID:          fmt.Sprintf("memory:%s:chunk:content", entry.ID),
+			Type:        ChunkTypeMemory,
+			MemoryID:    entry.ID,
+			MemoryLayer: entry.Layer,
+			Content:     text,
+			TokenCount:  tc,
+		})
+		totalTokens = tc
+	}
+
+	return ChunkResult{Chunks: chunks, TotalTokens: totalTokens}
+}

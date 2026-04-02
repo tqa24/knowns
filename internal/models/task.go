@@ -38,8 +38,9 @@ type Task struct {
 	AcceptanceCriteria []AcceptanceCriterion `json:"acceptanceCriteria" yaml:"-"`
 
 	// TimeSpent is the total time tracked in seconds.
-	TimeSpent   int         `json:"timeSpent"            yaml:"timeSpent"`
-	TimeEntries []TimeEntry `json:"timeEntries,omitempty" yaml:"-"`
+	TimeSpent   int          `json:"timeSpent"            yaml:"timeSpent"`
+	TimeEntries []TimeEntry  `json:"timeEntries,omitempty" yaml:"-"`
+	ActiveTimer *ActiveTimer `json:"activeTimer,omitempty" yaml:"-"`
 
 	// ImplementationPlan and ImplementationNotes live in the markdown body.
 	ImplementationPlan  string `json:"implementationPlan,omitempty"  yaml:"-"`

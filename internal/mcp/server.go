@@ -74,6 +74,13 @@ func NewMCPServer(projectHint string) *MCPServer {
 	handlers.RegisterBoardTools(s.srv, getStore)
 	handlers.RegisterTemplateTools(s.srv, getStore)
 	handlers.RegisterValidateTools(s.srv, getStore)
+	handlers.RegisterMemoryTools(s.srv, getStore)
+
+	// Working memory is session-scoped (in-memory only).
+	workingMemory := handlers.NewWorkingMemoryStore()
+	handlers.RegisterWorkingMemoryTools(s.srv, func() *handlers.WorkingMemoryStore {
+		return workingMemory
+	})
 
 	// Auto-detect project from hint or cwd.
 	s.autoDetectProject(setStore, projectHint)

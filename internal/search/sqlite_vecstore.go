@@ -134,6 +134,11 @@ CREATE TABLE IF NOT EXISTS chunks (
     labels          TEXT
 );
 
+CREATE TABLE IF NOT EXISTS content_hashes (
+    source_id TEXT PRIMARY KEY,
+    hash      TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_chunks_type ON chunks(type);
 CREATE INDEX IF NOT EXISTS idx_chunks_doc_path ON chunks(doc_path);
 CREATE INDEX IF NOT EXISTS idx_chunks_task_id ON chunks(task_id);
@@ -296,6 +301,7 @@ func (s *SQLiteVectorStore) Clear() error {
 	if s.db != nil {
 		s.db.Exec("DELETE FROM chunks")
 		s.db.Exec("DELETE FROM metadata")
+		s.db.Exec("DELETE FROM content_hashes")
 	}
 	return nil
 }
@@ -517,6 +523,55 @@ func (s *SQLiteVectorStore) Close() error {
 
 // Model returns the embedding model name.
 func (s *SQLiteVectorStore) Model() string { return s.model }
+
+// GetContentHash returns the stored hash for a source ID, or empty if not found.
+func (s *SQLiteVectorStore) GetContentHash(sourceID string) string {
+	if s.db == nil {
+		return ""
+	}
+	var hash string
+	err := s.db.QueryRow("SELECT hash FROM content_hashes WHERE source_id = ?", sourceID).Scan(&hash)
+	if err != nil {
+		return ""
+	}
+	return hash
+}
+
+// SetContentHash stores a content hash for a source ID.
+func (s *SQLiteVectorStore) SetContentHash(sourceID, hash string) {
+	if s.db == nil {
+		return
+	}
+	s.db.Exec("INSERT OR REPLACE INTO content_hashes (source_id, hash) VALUES (?, ?)", sourceID, hash)
+}
+
+// DeleteContentHash removes the hash for a source ID.
+func (s *SQLiteVectorStore) DeleteContentHash(sourceID string) {
+	if s.db == nil {
+		return
+	}
+	s.db.Exec("DELETE FROM content_hashes WHERE source_id = ?", sourceID)
+}
+
+// ListContentHashes returns all stored source_id → hash pairs.
+func (s *SQLiteVectorStore) ListContentHashes() map[string]string {
+	if s.db == nil {
+		return nil
+	}
+	rows, err := s.db.Query("SELECT source_id, hash FROM content_hashes")
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	result := make(map[string]string)
+	for rows.Next() {
+		var id, hash string
+		if err := rows.Scan(&id, &hash); err == nil {
+			result[id] = hash
+		}
+	}
+	return result
+}
 
 // migrateFromFile checks for old FileVectorStore files and migrates to SQLite.
 // Must be called before opening the database (no lock held by caller pattern — but

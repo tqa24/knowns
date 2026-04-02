@@ -46,6 +46,21 @@ func (e *Embedder) EmbedDocument(text string) ([]float32, error) {
 	return nil, fmt.Errorf("%w", ErrSemanticRuntimeUnavailable)
 }
 
+// EmbedBatch embeds multiple texts in a single call (stub).
+func (e *Embedder) EmbedBatch(texts []string) ([][]float32, error) {
+	return nil, fmt.Errorf("%w", ErrSemanticRuntimeUnavailable)
+}
+
+// EmbedDocumentBatch embeds multiple texts with the document prefix (stub).
+func (e *Embedder) EmbedDocumentBatch(texts []string) ([][]float32, error) {
+	return nil, fmt.Errorf("%w", ErrSemanticRuntimeUnavailable)
+}
+
+// EmbedQueryBatch embeds multiple texts with the query prefix (stub).
+func (e *Embedder) EmbedQueryBatch(texts []string) ([][]float32, error) {
+	return nil, fmt.Errorf("%w", ErrSemanticRuntimeUnavailable)
+}
+
 // ModelConfig returns the embedding model configuration.
 func (e *Embedder) ModelConfig() EmbeddingModelConfig {
 	if e == nil {

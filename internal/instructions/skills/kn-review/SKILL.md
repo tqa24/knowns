@@ -39,6 +39,11 @@ If task has spec:
 mcp__knowns__get_doc({ "path": "<spec-path>", "smart": true })
 ```
 
+Search for relevant conventions and past review patterns:
+```json
+mcp__knowns__search({ "query": "<feature area>", "type": "memory" })
+```
+
 ---
 
 ## Step 2: Multi-Perspective Review

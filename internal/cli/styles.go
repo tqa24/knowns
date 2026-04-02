@@ -3,8 +3,12 @@ package cli
 import (
 	"fmt"
 	"image/color"
+	"os"
 	"strings"
+	"sync/atomic"
+	"time"
 
+	"charm.land/bubbles/v2/progress"
 	"charm.land/lipgloss/v2"
 )
 
@@ -24,6 +28,57 @@ var (
 
 // KnownsBrand is the primary Knowns navy blue used for progress bars and accents.
 const KnownsBrand = "#1e3a5f"
+
+// KnownsBrandLight is the secondary lighter blue for gradient endpoints.
+const KnownsBrandLight = "#4a90d9"
+
+// NewBrandProgressBar creates a progress bar with the Knowns brand gradient.
+// Use this for all progress bars in the CLI for consistent styling.
+func NewBrandProgressBar(opts ...progress.Option) progress.Model {
+	defaults := []progress.Option{
+		progress.WithColors(lipgloss.Color(KnownsBrand), lipgloss.Color(KnownsBrandLight)),
+		progress.WithWidth(40),
+	}
+	return progress.New(append(defaults, opts...)...)
+}
+
+// spinnerFramesBrand are the braille spinner frames used by RunWithSpinner.
+var spinnerFramesBrand = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
+// RunWithSpinner runs fn with a spinner animation showing label.
+// On success prints ✓ label, on error prints ✗ label: error.
+// Returns the error from fn.
+func RunWithSpinner(label string, fn func() error) error {
+	var stopped atomic.Bool
+
+	go func() {
+		i := 0
+		for !stopped.Load() {
+			frame := StyleDim.Render(spinnerFramesBrand[i%len(spinnerFramesBrand)])
+			fmt.Fprintf(os.Stderr, "\r  %s %s", frame, label)
+			time.Sleep(80 * time.Millisecond)
+			i++
+		}
+	}()
+
+	err := fn()
+	stopped.Store(true)
+	time.Sleep(80 * time.Millisecond)
+
+	// Clear spinner line.
+	clearLine := fmt.Sprintf("\r  %s %s", "  ", strings.Repeat(" ", len(label)+2))
+	fmt.Fprint(os.Stderr, clearLine)
+
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "\r  %s %s: %s\n",
+			StyleWarning.Render("✗"), label, StyleWarning.Render(err.Error()))
+	} else {
+		fmt.Fprintf(os.Stderr, "\r  %s %s\n",
+			StyleSuccess.Render("✓"), label)
+	}
+
+	return err
+}
 
 // ─── Semantic styles ─────────────────────────────────────────────────
 

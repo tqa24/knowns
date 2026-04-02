@@ -10,6 +10,8 @@ import {
 	Github,
 	ExternalLink,
 	ArrowRightLeft,
+	Network,
+	Brain,
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import logoImage from "../../public/logo.png";
@@ -65,6 +67,18 @@ const topNavItems = [
 		label: "Docs",
 		icon: FileText,
 		to: "/docs",
+	},
+	{
+		id: "graph",
+		label: "Graph",
+		icon: Network,
+		to: "/graph",
+	},
+	{
+		id: "memory",
+		label: "Memory",
+		icon: Brain,
+		to: "/memory",
 	},
 ];
 

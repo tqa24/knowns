@@ -67,6 +67,14 @@ func SetupRoutes(r chi.Router, store *storage.Store, sse Broadcaster, projectRoo
 	upr := &UserPrefsRoutes{store: storage.NewUserPrefsStore()}
 	upr.Register(r)
 
+	// Graph
+	ggr := &GraphRoutes{store: store}
+	ggr.Register(r)
+
+	// Memory
+	mr := &MemoryRoutes{store: store, sse: sse}
+	mr.Register(r)
+
 	// Workspaces (multi-project management)
 	if manager != nil {
 		wsr := &WorkspaceRoutes{manager: manager, sse: sse}

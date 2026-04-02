@@ -25,6 +25,10 @@ type VectorStore interface {
 	Stats() (chunkCount int, model string, indexedAt time.Time)
 	Close() error
 	Model() string
+	GetContentHash(sourceID string) string
+	SetContentHash(sourceID, hash string)
+	DeleteContentHash(sourceID string)
+	ListContentHashes() map[string]string
 }
 
 // FileVectorStore stores embeddings in a flat binary file with a JSON index.
@@ -364,6 +368,18 @@ func (s *FileVectorStore) Close() error { return nil }
 
 // Model returns the embedding model name.
 func (s *FileVectorStore) Model() string { return s.model }
+
+// GetContentHash returns empty for FileVectorStore (no hash support).
+func (s *FileVectorStore) GetContentHash(sourceID string) string { return "" }
+
+// SetContentHash is a no-op for FileVectorStore.
+func (s *FileVectorStore) SetContentHash(sourceID, hash string) {}
+
+// DeleteContentHash is a no-op for FileVectorStore.
+func (s *FileVectorStore) DeleteContentHash(sourceID string) {}
+
+// ListContentHashes returns nil for FileVectorStore.
+func (s *FileVectorStore) ListContentHashes() map[string]string { return nil }
 
 // Compile-time check that FileVectorStore implements VectorStore.
 var _ VectorStore = (*FileVectorStore)(nil)

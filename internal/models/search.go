@@ -28,4 +28,8 @@ type SearchResult struct {
 	// Doc-specific fields (populated when Type == "doc").
 	Path string   `json:"path,omitempty"`
 	Tags []string `json:"tags,omitempty"`
+
+	// Memory-specific fields (populated when Type == "memory").
+	MemoryLayer string `json:"memoryLayer,omitempty"`
+	Category    string `json:"category,omitempty"`
 }

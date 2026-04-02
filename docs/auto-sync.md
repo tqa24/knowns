@@ -27,10 +27,9 @@ knowns sync --skills
 
 # Sync instruction files only
 knowns sync --instructions
-
-# Overwrite generated files
-knowns sync --force
 ```
+
+Sync always overwrites generated files to keep them in sync with the current CLI version. The `--force` flag is deprecated and no longer needed.
 
 For instruction-file generation only, `knowns agents --sync` is also available as a compatibility command.
 
@@ -55,7 +54,7 @@ Example:
 
 ## Practical Notes
 
-- If generated files already exist, use `--force` to overwrite them.
+- Sync always overwrites generated files (skills, instruction files) to match the current CLI.
 - If a platform is filtered out by config, `knowns sync` skips it.
 - If docs and generated files disagree after an upgrade, rerun `knowns sync` and trust the current CLI output.
 
