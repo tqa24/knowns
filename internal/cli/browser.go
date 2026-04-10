@@ -223,9 +223,20 @@ func waitForHTTPServer(port int, timeout time.Duration) error {
 }
 
 func isAddrInUse(err error) bool {
+	if errors.Is(err, syscall.EADDRINUSE) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "address already in use") || strings.Contains(msg, "only one usage of each socket address") {
+		return true
+	}
+
 	var opErr *net.OpError
 	if !errors.As(err, &opErr) {
 		return false
+	}
+	if errors.Is(opErr.Err, syscall.EADDRINUSE) {
+		return true
 	}
 	var sysErr *os.SyscallError
 	if !errors.As(opErr.Err, &sysErr) {
