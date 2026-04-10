@@ -70,6 +70,8 @@ Working rules:
 - Append compact progress notes at meaningful checkpoints, not after every tiny edit
 - If a step reveals missing context, pause implementation and gather it before continuing
 - If the task needs docs or template changes, do them as part of completion, not as an afterthought
+- Use `search` to discover relevant sources; use `retrieve` when implementation needs assembled context with citations for docs, tasks, and memories.
+- Prefer `knowns retrieve "<keywords>" --json` for agent/script consumption; use `--plain` only for manual inspection.
 
 ## Step 4: Handle Scope Changes
 

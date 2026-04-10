@@ -2,7 +2,7 @@
 title: Semantic Search Quality Improvements
 description: Specification for fixing chunking algorithm and embedding model prefix issues to improve semantic search quality
 createdAt: '2026-04-01T08:02:49.337Z'
-updatedAt: '2026-04-01T08:09:00.521Z'
+updatedAt: '2026-04-06T07:01:32.948Z'
 tags:
   - spec
   - approved
@@ -104,15 +104,15 @@ Related: @doc/specs/semantic-search (original spec)
 ## Technical Notes
 
 ### Files to modify
-- `internal/search/types.go` — add prefix fields to `EmbeddingModelConfig`, add `ChunkVersion` constant, replace `ParentSection` with `HeaderPath` in `Chunk`
-- `internal/search/embedding_onnx.go` — add `EmbedQuery()`/`EmbedDocument()` methods
-- `internal/search/embedding_stub.go` — add stub methods
-- `internal/search/embedding_common.go` — model prefix config values
-- `internal/search/chunker.go` — tokenizer dependency, H1 content fix, task chunk splitting, code block detection, header stack
-- `internal/search/engine.go` — use `EmbedQuery()` for search
-- `internal/search/index.go` — use `EmbedDocument()` for indexing, pass tokenizer to chunker
-- `internal/search/init.go` — version check + auto-reindex logic
-- `internal/search/sqlite_vecstore.go` — store/read `chunkVersion` in metadata, migrate `parent_section` to `header_path`
+- @code/internal/search/types.go — add prefix fields to `EmbeddingModelConfig`, add `ChunkVersion` constant, replace `ParentSection` with `HeaderPath` in `Chunk`
+- @code/internal/search/embedding_onnx.go — add `EmbedQuery()` / `EmbedDocument()` methods
+- @code/internal/search/embedding_stub.go — add stub methods
+- @code/internal/search/embedding_common.go — model prefix config values
+- @code/internal/search/chunker.go — tokenizer dependency, H1 content fix, task chunk splitting, code block detection, header stack
+- @code/internal/search/engine.go — use `EmbedQuery()` for search
+- @code/internal/search/index.go — use `EmbedDocument()` for indexing, pass tokenizer to chunker
+- @code/internal/search/init.go — version check + auto-reindex logic
+- @code/internal/search/sqlite_vecstore.go — store/read `chunkVersion` in metadata, migrate `parent_section` to `header_path`
 
 ### Model prefix reference
 
@@ -125,7 +125,6 @@ Related: @doc/specs/semantic-search (original spec)
 | bge-base-en-v1.5 | `"Represent this sentence: "` | `"Represent this sentence: "` |
 | nomic-embed-text-v1.5 | `"search_query: "` | `"search_document: "` |
 | multilingual-e5-small | `"query: "` | `"passage: "` |
-
 ## Open Questions
 
 - [ ] Should `Embed()` be deprecated or kept long-term? (Current plan: keep for backward compat)

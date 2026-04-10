@@ -12,6 +12,14 @@ import (
 // ConfigRoutes handles /api/config endpoints.
 type ConfigRoutes struct {
 	store *storage.Store
+	mgr   *storage.Manager
+}
+
+func (cr *ConfigRoutes) getStore() *storage.Store {
+	if cr.mgr != nil {
+		return cr.mgr.GetStore()
+	}
+	return cr.store
 }
 
 // Register wires the config routes onto r.
@@ -24,7 +32,7 @@ func (cr *ConfigRoutes) Register(r chi.Router) {
 //
 // GET /api/config
 func (cr *ConfigRoutes) get(w http.ResponseWriter, r *http.Request) {
-	project, err := cr.store.Config.Load()
+	project, err := cr.getStore().Config.Load()
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -90,7 +98,7 @@ func (cr *ConfigRoutes) get(w http.ResponseWriter, r *http.Request) {
 //
 // POST /api/config
 func (cr *ConfigRoutes) save(w http.ResponseWriter, r *http.Request) {
-	project, err := cr.store.Config.Load()
+	project, err := cr.getStore().Config.Load()
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "load config: "+err.Error())
 		return
@@ -107,7 +115,7 @@ func (cr *ConfigRoutes) save(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := cr.store.Config.Save(project); err != nil {
+	if err := cr.getStore().Config.Save(project); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

@@ -97,6 +97,7 @@ mcp__knowns__start_time({ "taskId": "<id>" })
 ```
 
 - Research context: follow refs, search related docs/memories, check templates
+- Use `search` for discovery first. If a task/spec needs assembled execution context, use `knowns retrieve "<keywords>" --json` before drafting or executing the plan.
 - Draft and save plan directly (no approval gate)
 
 ```json

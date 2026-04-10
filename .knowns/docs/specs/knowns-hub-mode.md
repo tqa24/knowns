@@ -2,7 +2,7 @@
 title: Knowns Hub Mode
 description: 'Specification for Hub Mode: standalone app with shared OpenCode daemon, project registry, workspace switching, and port handling fixes'
 createdAt: '2026-03-24T07:08:41.276Z'
-updatedAt: '2026-03-24T07:13:13.856Z'
+updatedAt: '2026-04-06T07:03:43.671Z'
 tags:
   - spec
   - approved
@@ -128,10 +128,10 @@ Hub Mode transforms Knowns from a per-project CLI tool into a standalone applica
 ```
 
 ### New packages
-- `internal/registry/` — project registry (CRUD, scan, persist)
-- `internal/agents/opencode/daemon.go` — daemon lifecycle (PID file, health check, start/stop)
-- `internal/storage/manager.go` — multi-store manager (lazy load, switch, cleanup)
-- `internal/server/routes/workspace.go` — workspace API endpoints
+- @code/internal/registry — project registry (CRUD, scan, persist)
+- @code/internal/agents/opencode/daemon.go — daemon lifecycle (PID file, health check, start/stop)
+- @code/internal/storage/manager.go — multi-store manager (lazy load, switch, cleanup)
+- @code/internal/server/routes/workspace.go — workspace API endpoints
 
 ### Key implementation details
 - Port fix: use `net.Listen` first, then `srv.Serve(listener)` instead of `srv.ListenAndServe`
@@ -143,11 +143,10 @@ Hub Mode transforms Knowns from a per-project CLI tool into a standalone applica
 ### Implementation Phases
 | Phase | Scope | Risk |
 |-------|-------|------|
-| 1. Fix Port Bugs | `server.go`, `browser.go` | Low — isolated fixes |
-| 2. OpenCode Daemon | `opencode/daemon.go` | Medium — process management |
-| 3. Project Registry | `registry/`, API routes | Low — new code, no breaking changes |
+| 1. Fix Port Bugs | @code/internal/server/server.go, @code/internal/cli/browser.go | Low — isolated fixes |
+| 2. OpenCode Daemon | @code/internal/agents/opencode/daemon.go | Medium — process management |
+| 3. Project Registry | @code/internal/registry, workspace API routes | Low — new code, no breaking changes |
 | 4. UI Workspace Switcher | React components, API integration | Medium — UX design needed |
-
 ## Open Questions
 
 - [ ] Should the daemon port be configurable globally (`~/.knowns/config.json`) or always derived from a fixed default?

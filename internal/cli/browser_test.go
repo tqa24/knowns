@@ -1,9 +1,12 @@
 package cli
 
 import (
+	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/howznguyen/knowns/internal/registry"
 	"github.com/spf13/cobra"
@@ -21,6 +24,7 @@ func TestResolveProjectFromFlag(t *testing.T) {
 	tmpDir := t.TempDir()
 	projDir := filepath.Join(tmpDir, "my-proj")
 	os.MkdirAll(filepath.Join(projDir, ".knowns"), 0755)
+	os.WriteFile(filepath.Join(projDir, ".knowns", "config.json"), []byte(`{"name":"my-proj"}`), 0644)
 
 	cmd := newTestCmd()
 	cmd.Flags().Set("project", projDir)
@@ -41,6 +45,7 @@ func TestResolveProjectFromRegistry(t *testing.T) {
 	tmpDir := t.TempDir()
 	projDir := filepath.Join(tmpDir, "reg-proj")
 	os.MkdirAll(filepath.Join(projDir, ".knowns"), 0755)
+	os.WriteFile(filepath.Join(projDir, ".knowns", "config.json"), []byte(`{"name":"reg-proj"}`), 0644)
 
 	// Set up a registry with one project
 	regFile := filepath.Join(tmpDir, "registry.json")
@@ -88,6 +93,7 @@ func TestResolveProjectFromCwd(t *testing.T) {
 	// Resolve symlinks (macOS /private/var vs /var)
 	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
 	os.MkdirAll(filepath.Join(tmpDir, ".knowns"), 0755)
+	os.WriteFile(filepath.Join(tmpDir, ".knowns", "config.json"), []byte(`{"name":"test"}`), 0644)
 
 	origDir, _ := os.Getwd()
 	os.Chdir(tmpDir)
@@ -101,5 +107,60 @@ func TestResolveProjectFromCwd(t *testing.T) {
 	}
 	if root != tmpDir {
 		t.Fatalf("root = %q, want %q", root, tmpDir)
+	}
+}
+
+func TestBindBrowserPortReturnsRequestedPortWhenFree(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	listener.Close()
+
+	ln, got, err := bindBrowserPort(port, 3)
+	if err != nil {
+		t.Fatalf("bindBrowserPort returned error: %v", err)
+	}
+	ln.Close()
+	if got != port {
+		t.Fatalf("bindBrowserPort(%d, 3) = %d, want %d", port, got, port)
+	}
+}
+
+func TestBindBrowserPortFallsForwardWhenBusy(t *testing.T) {
+	first, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen first: %v", err)
+	}
+	startPort := first.Addr().(*net.TCPAddr).Port
+	defer first.Close()
+
+	busyNext, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", startPort+1))
+	if err != nil {
+		t.Skipf("could not reserve consecutive port %d: %v", startPort+1, err)
+	}
+	defer busyNext.Close()
+
+	ln, got, err := bindBrowserPort(startPort, 3)
+	if err != nil {
+		t.Fatalf("bindBrowserPort returned error: %v", err)
+	}
+	ln.Close()
+	if got != startPort+2 {
+		t.Fatalf("bindBrowserPort(%d, 3) = %d, want %d", startPort, got, startPort+2)
+	}
+}
+
+func TestWaitForHTTPServer(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer listener.Close()
+
+	port := listener.Addr().(*net.TCPAddr).Port
+	if err := waitForHTTPServer(port, time.Second); err != nil {
+		t.Fatalf("waitForHTTPServer returned error: %v", err)
 	}
 }

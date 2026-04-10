@@ -15,7 +15,7 @@ import (
 // SearchOptions configures a search query.
 type SearchOptions struct {
 	Query    string
-	Type     string // "all", "task", "doc"
+	Type     string // "all", "task", "doc", "memory"
 	Mode     string // "keyword", "semantic", "hybrid"
 	Status   string
 	Priority string
@@ -28,8 +28,8 @@ type SearchOptions struct {
 // Engine provides keyword, semantic, and hybrid search across tasks and docs.
 type Engine struct {
 	store    *storage.Store
-	embedder *Embedder    // nil if semantic not available
-	vecStore VectorStore  // nil if semantic not available
+	embedder *Embedder   // nil if semantic not available
+	vecStore VectorStore // nil if semantic not available
 }
 
 // NewEngine creates a search engine backed by the given store.
@@ -88,6 +88,8 @@ func (e *Engine) Search(opts SearchOptions) ([]models.SearchResult, error) {
 		return nil, err
 	}
 
+	results = filterSearchResultsByType(results, opts.Type)
+
 	// Sort by score descending.
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].Score > results[j].Score
@@ -99,6 +101,435 @@ func (e *Engine) Search(opts SearchOptions) ([]models.SearchResult, error) {
 
 	return results, nil
 }
+
+// Retrieve executes mixed-source retrieval and assembles a context pack.
+func (e *Engine) Retrieve(opts models.RetrievalOptions) (*models.RetrievalResponse, error) {
+	searchOpts := SearchOptions{
+		Query:    opts.Query,
+		Mode:     opts.Mode,
+		Limit:    opts.Limit,
+		Tag:      opts.Tag,
+		Status:   opts.Status,
+		Priority: opts.Priority,
+		Assignee: opts.Assignee,
+		Label:    opts.Label,
+		Type:     typeFilterFromSources(opts.SourceTypes),
+	}
+
+	results, err := e.Search(searchOpts)
+	if err != nil {
+		return nil, err
+	}
+
+	filtered := filterBySourceTypes(results, opts.SourceTypes)
+	candidates := e.buildCandidates(filtered)
+	if opts.ExpandReferences {
+		expanded := e.expandCandidateReferences(candidates, opts)
+		candidates = mergeCandidates(candidates, expanded)
+	}
+
+	response := &models.RetrievalResponse{
+		Query:      strings.TrimSpace(opts.Query),
+		Mode:       effectiveMode(searchOpts.Mode, e.SemanticAvailable()),
+		Candidates: candidates,
+		ContextPack: models.ContextPack{
+			Items: e.buildContextPack(candidates),
+			Mode:  "docs-first",
+		},
+	}
+	if response.Candidates == nil {
+		response.Candidates = []models.RetrievalCandidate{}
+	}
+	if response.ContextPack.Items == nil {
+		response.ContextPack.Items = []models.ContextItem{}
+	}
+	return response, nil
+}
+
+func effectiveMode(mode string, semanticAvailable bool) string {
+	if mode == "" {
+		if semanticAvailable {
+			return string(ModeHybrid)
+		}
+		return string(ModeKeyword)
+	}
+	if mode != string(ModeKeyword) && !semanticAvailable {
+		return string(ModeKeyword)
+	}
+	return mode
+}
+
+func filterSearchResultsByType(results []models.SearchResult, searchType string) []models.SearchResult {
+	if searchType == "" || searchType == "all" {
+		return results
+	}
+
+	filtered := make([]models.SearchResult, 0, len(results))
+	for _, result := range results {
+		if result.Type == searchType {
+			filtered = append(filtered, result)
+		}
+	}
+	return filtered
+}
+
+func typeFilterFromSources(sourceTypes []string) string {
+	if len(sourceTypes) == 1 {
+		switch sourceTypes[0] {
+		case "task", "doc", "memory":
+			return sourceTypes[0]
+		}
+	}
+	return "all"
+}
+
+func filterBySourceTypes(results []models.SearchResult, sourceTypes []string) []models.SearchResult {
+	allowed := allowedSourceSet(sourceTypes)
+	filtered := make([]models.SearchResult, 0, len(results))
+	for _, result := range results {
+		if allowed[result.Type] {
+			filtered = append(filtered, result)
+		}
+	}
+	return filtered
+}
+
+func (e *Engine) buildCandidates(results []models.SearchResult) []models.RetrievalCandidate {
+	candidates := make([]models.RetrievalCandidate, 0, len(results))
+	for _, result := range results {
+		candidate := models.RetrievalCandidate{
+			Type:             result.Type,
+			ID:               result.ID,
+			Title:            result.Title,
+			Path:             result.Path,
+			Score:            result.Score,
+			MatchedBy:        result.MatchedBy,
+			Snippet:          result.Snippet,
+			Citation:         citationFromResult(result),
+			DirectMatch:      true,
+			Status:           result.Status,
+			Priority:         result.Priority,
+			Tags:             result.Tags,
+			MemoryLayer:      result.MemoryLayer,
+			Category:         result.Category,
+			SourcePreference: sourcePreference(result.Type),
+		}
+		candidate.Metadata = e.sourceRecord(result)
+		candidate.UpdatedAt = candidate.Metadata.UpdatedAt
+		candidates = append(candidates, candidate)
+	}
+	sortRetrievalCandidates(candidates)
+	return candidates
+}
+
+func sortRetrievalCandidates(candidates []models.RetrievalCandidate) {
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].SourcePreference != candidates[j].SourcePreference {
+			return candidates[i].SourcePreference < candidates[j].SourcePreference
+		}
+		if candidates[i].Score != candidates[j].Score {
+			return candidates[i].Score > candidates[j].Score
+		}
+		return candidates[i].Title < candidates[j].Title
+	})
+}
+
+func mergeCandidates(primary []models.RetrievalCandidate, expanded []models.RetrievalCandidate) []models.RetrievalCandidate {
+	merged := append([]models.RetrievalCandidate{}, primary...)
+	byKey := make(map[string]int, len(primary))
+	for i, candidate := range primary {
+		byKey[candidate.Type+":"+candidate.ID] = i
+	}
+	for _, candidate := range expanded {
+		key := candidate.Type + ":" + candidate.ID
+		if idx, ok := byKey[key]; ok {
+			merged[idx].ExpandedFrom = appendUnique(merged[idx].ExpandedFrom, candidate.ExpandedFrom...)
+			merged[idx].DirectMatch = merged[idx].DirectMatch || candidate.DirectMatch
+			continue
+		}
+		merged = append(merged, candidate)
+		byKey[key] = len(merged) - 1
+	}
+	sortRetrievalCandidates(merged)
+	return merged
+}
+
+func appendUnique(existing []string, values ...string) []string {
+	seen := make(map[string]bool, len(existing))
+	for _, value := range existing {
+		seen[value] = true
+	}
+	for _, value := range values {
+		if value == "" || seen[value] {
+			continue
+		}
+		existing = append(existing, value)
+		seen[value] = true
+	}
+	return existing
+}
+
+func (e *Engine) buildContextPack(candidates []models.RetrievalCandidate) []models.ContextItem {
+	ordered := append([]models.RetrievalCandidate{}, candidates...)
+	sortRetrievalCandidates(ordered)
+
+	items := make([]models.ContextItem, 0, len(ordered))
+	for _, candidate := range ordered {
+		item := models.ContextItem{
+			Type:         candidate.Type,
+			ID:           candidate.ID,
+			Title:        candidate.Title,
+			Content:      e.contextContent(candidate),
+			Snippet:      candidate.Snippet,
+			DirectMatch:  candidate.DirectMatch,
+			ExpandedFrom: candidate.ExpandedFrom,
+			Citation:     candidate.Citation,
+			Metadata:     candidate.Metadata,
+		}
+		items = append(items, item)
+	}
+	return items
+}
+
+func (e *Engine) contextContent(candidate models.RetrievalCandidate) string {
+	switch candidate.Type {
+	case "doc":
+		doc, err := e.store.Docs.Get(candidate.ID)
+		if err != nil {
+			return candidate.Snippet
+		}
+		return strings.TrimSpace(strings.Join([]string{doc.Title, doc.Description, doc.Content}, "\n\n"))
+	case "task":
+		task, err := e.store.Tasks.Get(candidate.ID)
+		if err != nil {
+			return candidate.Snippet
+		}
+		parts := []string{task.Title, task.Description}
+		if task.ImplementationPlan != "" {
+			parts = append(parts, task.ImplementationPlan)
+		}
+		if task.ImplementationNotes != "" {
+			parts = append(parts, task.ImplementationNotes)
+		}
+		return strings.TrimSpace(strings.Join(parts, "\n\n"))
+	case "memory":
+		entry, err := e.store.Memory.Get(candidate.ID)
+		if err != nil {
+			return candidate.Snippet
+		}
+		parts := []string{entry.Title, entry.Content}
+		if entry.Category != "" {
+			parts = append([]string{entry.Title + " [" + entry.Category + "]"}, entry.Content)
+		}
+		return strings.TrimSpace(strings.Join(parts, "\n\n"))
+	default:
+		return candidate.Snippet
+	}
+}
+
+func citationFromResult(result models.SearchResult) models.Citation {
+	citation := models.Citation{Type: result.Type, ID: result.ID}
+	if result.Type == "doc" {
+		citation.Path = result.Path
+		citation.Section = result.Snippet
+	}
+	return citation
+}
+
+func sourcePreference(sourceType string) int {
+	switch sourceType {
+	case "doc":
+		return 0
+	case "task":
+		return 1
+	case "memory":
+		return 2
+	default:
+		return 3
+	}
+}
+
+func (e *Engine) sourceRecord(result models.SearchResult) models.SourceRecord {
+	record := models.SourceRecord{
+		Type:        result.Type,
+		ID:          result.ID,
+		Path:        result.Path,
+		Tags:        result.Tags,
+		Status:      result.Status,
+		Priority:    result.Priority,
+		MemoryLayer: result.MemoryLayer,
+		Category:    result.Category,
+	}
+	switch result.Type {
+	case "doc":
+		if doc, err := e.store.Docs.Get(result.ID); err == nil {
+			record.Path = doc.Path
+			record.Imported = doc.IsImported
+			record.Source = doc.ImportSource
+			record.UpdatedAt = timePtr(doc.UpdatedAt)
+		}
+	case "task":
+		if task, err := e.store.Tasks.Get(result.ID); err == nil {
+			record.UpdatedAt = timePtr(task.UpdatedAt)
+		}
+	case "memory":
+		if entry, err := e.store.Memory.Get(result.ID); err == nil {
+			record.UpdatedAt = timePtr(entry.UpdatedAt)
+		}
+	}
+	return record
+}
+
+func timePtr(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	copy := t
+	return &copy
+}
+
+func (e *Engine) expandCandidateReferences(candidates []models.RetrievalCandidate, opts models.RetrievalOptions) []models.RetrievalCandidate {
+	allowed := allowedSourceSet(opts.SourceTypes)
+	expanded := []models.RetrievalCandidate{}
+	seen := map[string]bool{}
+	for _, candidate := range candidates {
+		content := e.referenceContent(candidate)
+		for _, expandedCandidate := range e.extractReferenceCandidates(content, candidate, allowed) {
+			key := expandedCandidate.Type + ":" + expandedCandidate.ID
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			expanded = append(expanded, expandedCandidate)
+		}
+	}
+	return expanded
+}
+
+func allowedSourceSet(sourceTypes []string) map[string]bool {
+	if len(sourceTypes) == 0 {
+		return map[string]bool{"doc": true, "task": true, "memory": true}
+	}
+	allowed := make(map[string]bool, len(sourceTypes))
+	for _, sourceType := range sourceTypes {
+		allowed[sourceType] = true
+	}
+	return allowed
+}
+
+func (e *Engine) referenceContent(candidate models.RetrievalCandidate) string {
+	switch candidate.Type {
+	case "doc":
+		if doc, err := e.store.Docs.Get(candidate.ID); err == nil {
+			return doc.Content
+		}
+	case "task":
+		if task, err := e.store.Tasks.Get(candidate.ID); err == nil {
+			return strings.Join([]string{task.Description, task.ImplementationPlan, task.ImplementationNotes}, "\n")
+		}
+	case "memory":
+		if entry, err := e.store.Memory.Get(candidate.ID); err == nil {
+			return entry.Content
+		}
+	}
+	return ""
+}
+
+func (e *Engine) extractReferenceCandidates(content string, source models.RetrievalCandidate, allowed map[string]bool) []models.RetrievalCandidate {
+	var expanded []models.RetrievalCandidate
+	for _, ref := range taskRefRE.FindAllStringSubmatch(content, -1) {
+		if !allowed["task"] {
+			continue
+		}
+		if task, err := e.store.Tasks.Get(ref[1]); err == nil {
+			expanded = append(expanded, models.RetrievalCandidate{
+				Type:             "task",
+				ID:               task.ID,
+				Title:            task.Title,
+				Score:            source.Score * 0.5,
+				Snippet:          truncateStr(task.Description, 150),
+				Citation:         models.Citation{Type: "task", ID: task.ID},
+				DirectMatch:      false,
+				ExpandedFrom:     []string{source.Type + ":" + source.ID},
+				Status:           task.Status,
+				Priority:         task.Priority,
+				SourcePreference: sourcePreference("task"),
+				Metadata: models.SourceRecord{
+					Type:      "task",
+					ID:        task.ID,
+					Status:    task.Status,
+					Priority:  task.Priority,
+					UpdatedAt: timePtr(task.UpdatedAt),
+				},
+			})
+		}
+	}
+	for _, ref := range docRefRE.FindAllStringSubmatch(content, -1) {
+		if !allowed["doc"] {
+			continue
+		}
+		if doc, err := e.store.Docs.Get(ref[1]); err == nil {
+			expanded = append(expanded, models.RetrievalCandidate{
+				Type:             "doc",
+				ID:               doc.Path,
+				Title:            doc.Title,
+				Path:             doc.Path,
+				Score:            source.Score * 0.5,
+				Snippet:          truncateStr(doc.Description, 150),
+				Citation:         models.Citation{Type: "doc", ID: doc.Path, Path: doc.Path},
+				DirectMatch:      false,
+				ExpandedFrom:     []string{source.Type + ":" + source.ID},
+				Tags:             doc.Tags,
+				SourcePreference: sourcePreference("doc"),
+				Metadata: models.SourceRecord{
+					Type:      "doc",
+					ID:        doc.Path,
+					Path:      doc.Path,
+					Tags:      doc.Tags,
+					UpdatedAt: timePtr(doc.UpdatedAt),
+					Imported:  doc.IsImported,
+					Source:    doc.ImportSource,
+				},
+			})
+		}
+	}
+	for _, ref := range memoryRefRE.FindAllStringSubmatch(content, -1) {
+		if !allowed["memory"] {
+			continue
+		}
+		if entry, err := e.store.Memory.Get(ref[1]); err == nil {
+			expanded = append(expanded, models.RetrievalCandidate{
+				Type:             "memory",
+				ID:               entry.ID,
+				Title:            entry.Title,
+				Score:            source.Score * 0.5,
+				Snippet:          truncateStr(entry.Content, 150),
+				Citation:         models.Citation{Type: "memory", ID: entry.ID},
+				DirectMatch:      false,
+				ExpandedFrom:     []string{source.Type + ":" + source.ID},
+				Tags:             entry.Tags,
+				MemoryLayer:      entry.Layer,
+				Category:         entry.Category,
+				SourcePreference: sourcePreference("memory"),
+				Metadata: models.SourceRecord{
+					Type:        "memory",
+					ID:          entry.ID,
+					Tags:        entry.Tags,
+					MemoryLayer: entry.Layer,
+					Category:    entry.Category,
+					UpdatedAt:   timePtr(entry.UpdatedAt),
+				},
+			})
+		}
+	}
+	return expanded
+}
+
+var (
+	taskRefRE   = regexp.MustCompile(`@task-([a-z0-9\.]+)`)
+	docRefRE    = regexp.MustCompile(`@doc/([^\s\)]+)`)
+	memoryRefRE = regexp.MustCompile(`@memory-([a-z0-9]+)`)
+)
 
 // ─── keyword search (existing logic) ─────────────────────────────────
 
@@ -247,6 +678,63 @@ func (e *Engine) keywordSearchMemories(query string, words []string, opts Search
 			Category:    entry.Category,
 			Tags:        entry.Tags,
 			MatchedBy:   []string{"keyword"},
+		})
+	}
+	return results, nil
+}
+
+// keywordSearchCode searches code chunks stored in SQLite for keyword matches.
+// This is used when type="code" or type="all" in keyword-only mode.
+func (e *Engine) keywordSearchCode(queryLower string, words []string, opts SearchOptions) ([]models.SearchResult, error) {
+	db := e.store.SemanticDB()
+	if db == nil {
+		return nil, nil
+	}
+	defer db.Close()
+
+	// Check if code index exists
+	var count int
+	if err := db.QueryRow("SELECT COUNT(*) FROM chunks WHERE type = 'code'").Scan(&count); err != nil || count == 0 {
+		return nil, nil
+	}
+
+	rows, err := db.Query(`
+		SELECT id, doc_path, field, content
+		FROM chunks
+		WHERE type = 'code'
+		LIMIT 500
+	`)
+	if err != nil {
+		return nil, nil
+	}
+	defer rows.Close()
+
+	var results []models.SearchResult
+	for rows.Next() {
+		var id, docPath, field, content string
+		if err := rows.Scan(&id, &docPath, &field, &content); err != nil {
+			continue
+		}
+		// Keyword match on content
+		contentLower := strings.ToLower(content)
+		score := float64(0)
+		for _, word := range words {
+			if strings.Contains(contentLower, word) {
+				score += 0.1
+			}
+		}
+		if score <= 0 {
+			continue
+		}
+		snippet := extractSnippet(content, queryLower, 150)
+		results = append(results, models.SearchResult{
+			Type:      "code",
+			ID:        id,
+			Title:     field,
+			Score:     score,
+			Path:      docPath,
+			Snippet:   snippet,
+			MatchedBy: []string{"keyword"},
 		})
 	}
 	return results, nil
@@ -402,7 +890,7 @@ func (e *Engine) scoredChunksToResults(scored []ScoredChunk, opts SearchOptions,
 			if opts.Label != "" && !containsStr(sc.Labels, opts.Label) {
 				continue
 			}
-			if opts.Type == "doc" {
+			if opts.Type != "" && opts.Type != "all" && opts.Type != "task" {
 				continue
 			}
 
@@ -431,7 +919,7 @@ func (e *Engine) scoredChunksToResults(scored []ScoredChunk, opts SearchOptions,
 					continue
 				}
 			}
-			if opts.Type == "task" || opts.Type == "memory" {
+			if opts.Type != "" && opts.Type != "all" && opts.Type != "doc" {
 				continue
 			}
 
@@ -456,7 +944,7 @@ func (e *Engine) scoredChunksToResults(scored []ScoredChunk, opts SearchOptions,
 		case ChunkTypeMemory:
 			key = "memory:" + sc.MemoryID
 
-			if opts.Type == "task" || opts.Type == "doc" {
+			if opts.Type != "" && opts.Type != "all" && opts.Type != "memory" {
 				continue
 			}
 
@@ -480,6 +968,9 @@ func (e *Engine) scoredChunksToResults(scored []ScoredChunk, opts SearchOptions,
 				Tags:        tags,
 				MatchedBy:   []string{method},
 			}
+
+		case ChunkTypeCode:
+			continue
 
 		default:
 			continue

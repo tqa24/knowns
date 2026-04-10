@@ -149,7 +149,7 @@ claude-opus-4 • 43k/200k tokens (22%)
 ## Technical Notes
 
 ### Component Structure
-- `ui/src/components/organisms/ChatPage/ContextUsageIndicator.tsx` — main component
+- @code/ui/src/components/organisms/ChatPage/ContextUsageIndicator.tsx — main component
 - Placed in ChatInput toolbar, between model selector and send button area
 
 ### Heatmap Grid
@@ -169,8 +169,8 @@ claude-opus-4 • 43k/200k tokens (22%)
 - Fallback: show absolute token count
 
 ### Reusable Components
-- Create mini `ArcIndicator` SVG (single arc segment, simpler than DonutChart)
-- Use `Popover` from `ui/src/components/ui/popover.tsx`
+- Create mini @code/ui/src/components/organisms/ChatPage/ArcIndicator.tsx SVG (single arc segment, simpler than DonutChart)
+- Use `Popover` from @code/ui/src/components/ui/popover.tsx
 
 ## Open Questions
 

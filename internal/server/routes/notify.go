@@ -12,7 +12,15 @@ import (
 // from MCP tools and relay them as SSE events to connected UI clients.
 type NotifyRoutes struct {
 	store *storage.Store
+	mgr   *storage.Manager
 	sse   Broadcaster
+}
+
+func (nr *NotifyRoutes) getStore() *storage.Store {
+	if nr.mgr != nil {
+		return nr.mgr.GetStore()
+	}
+	return nr.store
 }
 
 // Register wires the notify routes onto r.
@@ -29,7 +37,7 @@ func (nr *NotifyRoutes) Register(r chi.Router) {
 // POST /api/notify/task/{id}
 func (nr *NotifyRoutes) notifyTask(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	task, err := nr.store.Tasks.Get(id)
+	task, err := nr.getStore().Tasks.Get(id)
 	if err != nil {
 		// Task not found — broadcast a full refresh instead.
 		nr.sse.Broadcast(SSEEvent{Type: "tasks:refresh", Data: map[string]interface{}{}})
@@ -54,7 +62,7 @@ func (nr *NotifyRoutes) notifyDoc(w http.ResponseWriter, r *http.Request) {
 //
 // POST /api/notify/time
 func (nr *NotifyRoutes) notifyTime(w http.ResponseWriter, r *http.Request) {
-	state, err := nr.store.Time.GetState()
+	state, err := nr.getStore().Time.GetState()
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return

@@ -8,28 +8,10 @@ interface ThemeToggleProps {
 	className?: string;
 }
 
-const sizeClasses = {
-	sm: "w-12 h-6",
-	md: "w-14 h-7",
-	lg: "w-16 h-8",
-};
-
-const circleClasses = {
-	sm: "w-5 h-5",
-	md: "w-6 h-6",
-	lg: "w-7 h-7",
-};
-
-const iconClasses = {
-	sm: "w-3 h-3",
-	md: "w-3.5 h-3.5",
-	lg: "w-4 h-4",
-};
-
-const translateClasses = {
-	sm: "translate-x-6",
-	md: "translate-x-7",
-	lg: "translate-x-8",
+const sizeMap = {
+	sm: { track: "w-11 h-6", thumb: "w-5 h-5", icon: "w-3 h-3",     translate: "translate-x-5",  gap: "translate-x-0" },
+	md: { track: "w-14 h-7", thumb: "w-6 h-6", icon: "w-3.5 h-3.5", translate: "translate-x-7",  gap: "translate-x-0" },
+	lg: { track: "w-16 h-8", thumb: "w-7 h-7", icon: "w-4 h-4",     translate: "translate-x-8",  gap: "translate-x-0" },
 };
 
 export function ThemeToggle({
@@ -38,6 +20,8 @@ export function ThemeToggle({
 	size = "md",
 	className,
 }: ThemeToggleProps) {
+	const s = sizeMap[size];
+
 	return (
 		<button
 			type="button"
@@ -46,75 +30,62 @@ export function ThemeToggle({
 			aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
 			onClick={onToggle}
 			className={cn(
-				"relative inline-flex shrink-0 cursor-pointer rounded-full border-2 border-transparent",
-				"transition-colors duration-300 ease-in-out",
+				"relative inline-flex items-center shrink-0 cursor-pointer rounded-full border-2 border-transparent",
+				"transition-all duration-500 ease-in-out",
 				"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
 				isDark
-					? "bg-slate-700"
-					: "bg-gradient-to-r from-sky-400 to-blue-500",
-				sizeClasses[size],
+					? "bg-indigo-950"
+					: "bg-sky-400",
+				s.track,
 				className,
 			)}
 		>
-			{/* Track decoration - stars/clouds */}
-			<span
-				className={cn(
-					"absolute inset-0 flex items-center justify-between px-1.5 pointer-events-none",
-					"transition-opacity duration-300",
-				)}
-			>
-				{/* Stars (visible in dark mode) */}
-				<span
-					className={cn(
-						"flex gap-0.5 transition-opacity duration-300",
-						isDark ? "opacity-100" : "opacity-0",
-					)}
-				>
-					<span className="w-0.5 h-0.5 rounded-full bg-white/80" />
-					<span className="w-1 h-1 rounded-full bg-white/60" />
-					<span className="w-0.5 h-0.5 rounded-full bg-white/80" />
-				</span>
-				{/* Clouds (visible in light mode) */}
-				<span
-					className={cn(
-						"flex gap-0.5 transition-opacity duration-300",
-						isDark ? "opacity-0" : "opacity-100",
-					)}
-				>
-					<span className="w-1.5 h-1 rounded-full bg-white/70" />
-					<span className="w-1 h-0.5 rounded-full bg-white/50" />
-				</span>
+			{/* Stars — dark mode */}
+			<span className="absolute inset-0 overflow-hidden rounded-full pointer-events-none">
+				{[
+					{ top: "20%", left: "18%", size: "w-0.5 h-0.5", delay: "0ms" },
+					{ top: "55%", left: "25%", size: "w-1 h-1",     delay: "80ms" },
+					{ top: "30%", left: "35%", size: "w-0.5 h-0.5", delay: "160ms" },
+				].map((star, i) => (
+					<span
+						key={i}
+						className={cn(
+							"absolute rounded-full bg-white transition-all duration-500",
+							star.size,
+							isDark ? "opacity-80 scale-100" : "opacity-0 scale-0",
+						)}
+						style={{ top: star.top, left: star.left, transitionDelay: isDark ? star.delay : "0ms" }}
+					/>
+				))}
 			</span>
 
-			{/* Moving circle with sun/moon */}
+			{/* Thumb */}
 			<span
 				className={cn(
-					"pointer-events-none inline-flex items-center justify-center rounded-full shadow-lg",
-					"transform transition-all duration-300 ease-in-out",
+					"relative inline-flex items-center justify-center rounded-full shadow-md",
+					"transition-all duration-500 ease-in-out",
 					isDark
-						? cn(translateClasses[size], "bg-slate-900")
-						: "translate-x-0.5 bg-gradient-to-br from-yellow-300 to-orange-400",
-					circleClasses[size],
+						? cn(s.translate, "bg-slate-800")
+						: cn(s.gap, "bg-white"),
+					s.thumb,
 				)}
 			>
-				{/* Sun icon */}
 				<Sun
 					className={cn(
-						"absolute transition-all duration-300",
-						iconClasses[size],
+						"absolute transition-all duration-500",
+						s.icon,
 						isDark
-							? "opacity-0 rotate-90 scale-0 text-yellow-500"
-							: "opacity-100 rotate-0 scale-100 text-yellow-600",
+							? "opacity-0 rotate-90 scale-0 text-amber-400"
+							: "opacity-100 rotate-0 scale-100 text-amber-500",
 					)}
 				/>
-				{/* Moon icon */}
 				<Moon
 					className={cn(
-						"absolute transition-all duration-300",
-						iconClasses[size],
+						"absolute transition-all duration-500",
+						s.icon,
 						isDark
 							? "opacity-100 rotate-0 scale-100 text-slate-300"
-							: "opacity-0 -rotate-90 scale-0 text-slate-600",
+							: "opacity-0 -rotate-90 scale-0 text-slate-400",
 					)}
 				/>
 			</span>

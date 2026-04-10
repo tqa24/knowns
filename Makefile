@@ -1,6 +1,6 @@
 MODULE := github.com/howznguyen/knowns
 BINARY := knowns
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || node -p "require('../knowns/package.json').version" 2>/dev/null || echo "dev")
+VERSION ?= $(shell git describe --tags 2>/dev/null || node -p "require('../knowns/package.json').version" 2>/dev/null || echo "dev")
 LDFLAGS := -s -w -X $(MODULE)/internal/util.Version=$(VERSION)
 BUILD_DIR := bin
 

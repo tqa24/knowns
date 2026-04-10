@@ -72,9 +72,12 @@ func (m *Manager) Switch(projectPath string) (*Store, error) {
 }
 
 // ActiveProjectRoot returns the project root (parent of .knowns/) for the
-// currently active store.
+// currently active store. Returns empty string when no store is active.
 func (m *Manager) ActiveProjectRoot() string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	if m.active == nil {
+		return ""
+	}
 	return filepath.Dir(m.active.Root)
 }

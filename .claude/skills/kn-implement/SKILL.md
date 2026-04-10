@@ -162,6 +162,17 @@ ACs: Y/Z verified
 
 If patterns discovered: `/kn-extract`
 
+If a quick insight is worth remembering but doesn't warrant a full doc:
+```json
+mcp__knowns__add_memory({
+  "title": "<insight>",
+  "content": "<2-3 sentence summary>",
+  "layer": "project",
+  "category": "<pattern|decision|convention>",
+  "tags": ["<domain>"]
+})
+```
+
 ## Final Response Contract
 
 All built-in skills in scope must end with the same user-facing information order: `kn-init`, `kn-spec`, `kn-plan`, `kn-research`, `kn-implement`, `kn-verify`, `kn-doc`, `kn-template`, `kn-extract`, and `kn-commit`.

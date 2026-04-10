@@ -18,9 +18,11 @@ interface ChatThreadProps {
 	onSubmitQuestion?: (messageId: string, blockId: string, answers: string[][]) => Promise<void> | void;
 	onRejectQuestion?: (messageId: string, blockId: string) => Promise<void> | void;
 	onRevert?: (messageId: string) => void;
+	onFork?: (messageId: string) => void;
 	onPreviewTask?: (taskId: string) => void;
 	onPreviewDoc?: (docPath: string) => void;
 	compact?: boolean;
+	focusedMessageId?: string | null;
 }
 
 function isExplorationOnlyMessage(message: ChatMessage): boolean {
@@ -144,9 +146,11 @@ export function ChatThread({
 	onSubmitQuestion,
 	onRejectQuestion,
 	onRevert,
+	onFork,
 	onPreviewTask,
 	onPreviewDoc,
 	compact = false,
+	focusedMessageId = null,
 }: ChatThreadProps) {
 	const bottomRef = useRef<HTMLDivElement>(null);
 	const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -302,6 +306,13 @@ export function ChatThread({
 		bottomRef.current?.scrollIntoView({ behavior: "smooth" });
 	};
 
+	useEffect(() => {
+		if (!focusedMessageId) return;
+		const el = document.getElementById(`chat-message-${focusedMessageId}`);
+		if (!el) return;
+		el.scrollIntoView({ behavior: "smooth", block: "center" });
+	}, [focusedMessageId]);
+
 	return (
 		<div className={compact ? "" : "relative min-h-0 flex-1"}>
 			{/* Search bar */}
@@ -384,7 +395,7 @@ export function ChatThread({
 						const isGroupedAssistant = message.role === "assistant" && !isLastAssistantMessageInGroup(session.messages, index);
 						const showMetadata = !isStreamingAssistant && !isGroupedAssistant;
 						return (
-							<div key={message.id} className="space-y-3">
+							<div key={message.id} id={`chat-message-${message.id}`} className="space-y-3 scroll-mt-24">
 								<MessageBubble
 									message={message}
 									parentSessionId={session.id}
@@ -393,6 +404,7 @@ export function ChatThread({
 									onSubmitQuestion={onSubmitQuestion}
 									onRejectQuestion={onRejectQuestion}
 									onRevert={onRevert}
+									onFork={onFork}
 									onPreviewTask={onPreviewTask}
 									onPreviewDoc={onPreviewDoc}
 								/>

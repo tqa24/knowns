@@ -182,14 +182,14 @@ Layout chi tiết và mockups nằm trong từng task implementation. Xem tasks 
 ## Implementation Phases
 
 ### Phase 1: Foundation (Backend)
-- Data model (`src/models/workspace.ts`)
-- Workspace store (`src/server/workspace/workspace-store.ts`)
-- Git worktree manager (`src/server/workspace/worktree-manager.ts`)
+- Data model (legacy spec path under old TS layout)
+- Workspace store (legacy spec path under old TS layout)
+- Git worktree manager (legacy spec path under old TS layout)
 - Executor abstraction + Claude/Gemini executors
 - Process manager with PTY + output buffer
 
 ### Phase 2: Server Integration
-- REST API routes (`src/server/routes/workspaces.ts`)
+- REST API routes (legacy spec path under old TS layout)
 - WebSocket server on `/ws/terminal`
 - SSE event types for workspace status
 - Graceful shutdown handling
@@ -253,6 +253,8 @@ src/ui/App.tsx                            → Route, provider, lazy import
 src/ui/components/organisms/AppSidebar.tsx → Nav item
 src/ui/api/client.ts                      → workspaceApi
 ```
+
+Current repo note: this spec predates the Go rewrite and still references the old `src/...` layout. Equivalent current surfaces include @code/ui/src/api/client.ts and route/server files under @code/internal/server/.
 
 ---
 

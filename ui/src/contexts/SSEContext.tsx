@@ -32,7 +32,8 @@ export type SSEEventType =
 	| "chats:updated"
 	| "chats:deleted"
 	| "chats:message"
-	| "opencode:event";
+	| "opencode:event"
+	| "opencode:status";
 
 // Event payload types
 export interface SSEEventPayloads {
@@ -52,6 +53,7 @@ export interface SSEEventPayloads {
 	"chats:deleted": { chatId: string };
 	"chats:message": { chatId: string; message: ChatMessage };
 	"opencode:event": Record<string, unknown>;
+	"opencode:status": Record<string, unknown>;
 }
 
 // Callback type for event listeners
@@ -315,6 +317,11 @@ export function SSEProvider({ children }: { children: ReactNode }) {
 			addHandler(eventSource, "opencode:event", (e) => {
 				const data = JSON.parse(e.data);
 				emit("opencode:event", data);
+			});
+
+			addHandler(eventSource, "opencode:status", (e) => {
+				const data = JSON.parse(e.data);
+				emit("opencode:status", data);
 			});
 		};
 

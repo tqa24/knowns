@@ -25,6 +25,7 @@ import { isTaskAgentToolCall, toTaskAgentItem } from "../organisms/ChatPage/help
 import { AnimatedCollapse } from "../ui/animatedCollapse";
 import { DiffViewer } from "../ui/DiffViewer";
 import { TaskSubAgentBlock } from "./TaskSubAgentBlock";
+import { renderToolDetails } from "./toolRenderers";
 
 interface ToolCallBlockProps {
 	toolName: string;
@@ -628,8 +629,11 @@ export const ToolCallBlock = memo(function ToolCallBlock({
 		() => buildPresentation(toolName, deferredToolArgs, metadata, subtitle || title, command),
 		[toolName, deferredToolArgs, metadata, subtitle, title, command],
 	);
-	const isReadTool = /^(read|read_file|grep|search)$/i.test(toolName);
 	const isEditTool = /^(edit|replace|write|patch|apply_patch)$/i.test(toolName);
+	const specializedDetails = useMemo(
+		() => renderToolDetails({ toolName, toolArgs: deferredToolArgs, result: deferredResult, metadata, command, status }),
+		[command, deferredResult, deferredToolArgs, metadata, status, toolName],
+	);
 
 	// Returns array of { path, old, next } — one per file changed
 	const editFiles = useMemo(() => {
@@ -659,16 +663,14 @@ export const ToolCallBlock = memo(function ToolCallBlock({
 		return [{ path: undefined, old, next }];
 	}, [isEditTool, deferredToolArgs, metadata]);
 
-	const hasDetails = isEditTool
-		? editFiles.length > 0
-		: isReadTool
-			? false
-			: Boolean(
-					(!isQuestionTool && (questionDetails.question || questionDetails.answer)) ||
-					command ||
-					deferredResult ||
-					(deferredToolArgs && Object.keys(deferredToolArgs).length > 0),
-				);
+	const hasDetails = Boolean(
+		specializedDetails ||
+		(isEditTool && editFiles.length > 0) ||
+		(!isQuestionTool && (questionDetails.question || questionDetails.answer)) ||
+		command ||
+		deferredResult ||
+		(deferredToolArgs && Object.keys(deferredToolArgs).length > 0),
+	);
 	const tone = toneClasses(presentation.tone);
 
 	// Delegate skill calls to the Notion-style toggle
@@ -748,7 +750,8 @@ export const ToolCallBlock = memo(function ToolCallBlock({
 			</button>
 
 			<AnimatedCollapse open={expanded && hasDetails && !taskAgent} innerClassName="ml-5 mt-1 space-y-2 border-l border-border/60 pl-2 text-xs sm:ml-8 sm:pl-3">
-					{isEditTool && editFiles.map((f, i) => (
+					{specializedDetails}
+					{isEditTool && !specializedDetails && editFiles.map((f, i) => (
 						<div key={i} className="space-y-0.5">
 							{f.path && (
 								<div className="truncate px-1 font-mono text-[10px] text-muted-foreground">{f.path}</div>
@@ -758,21 +761,21 @@ export const ToolCallBlock = memo(function ToolCallBlock({
 							</div>
 						</div>
 					))}
-					{command && !isQuestionTool && !isEditTool && (
+					{command && !isQuestionTool && !specializedDetails && (
 						<div className="rounded-md bg-muted/25 px-2.5 py-2">
 							<div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Command</div>
 							<pre className="whitespace-pre-wrap break-all font-mono text-xs text-foreground/90">{command}</pre>
 						</div>
 					)}
 
-					{deferredToolArgs && Object.keys(deferredToolArgs).length > 0 && !command && !isQuestionTool && !isEditTool && (
+					{deferredToolArgs && Object.keys(deferredToolArgs).length > 0 && !command && !isQuestionTool && !specializedDetails && (
 						<div className="rounded-md bg-muted/25 px-2.5 py-2">
 							<div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Arguments</div>
 							<pre className="whitespace-pre-wrap break-all font-mono text-xs text-foreground/80">{JSON.stringify(deferredToolArgs, null, 2)}</pre>
 						</div>
 					)}
 
-					{deferredResult && !isQuestionTool && (
+					{deferredResult && !isQuestionTool && !specializedDetails && (
 						<div className="rounded-md bg-muted/25 px-2.5 py-2">
 							<div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Output</div>
 							<pre className="max-h-80 overflow-y-auto whitespace-pre-wrap break-all font-mono text-xs text-foreground/90">{deferredResult}</pre>

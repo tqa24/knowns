@@ -96,8 +96,12 @@ mcp__knowns__update_task({
 mcp__knowns__start_time({ "taskId": "<id>" })
 ```
 
-- Research context: follow refs, search related docs, check templates
+- Research context: follow refs, search related docs/memories, check templates
 - Draft and save plan directly (no approval gate)
+
+```json
+mcp__knowns__search({ "query": "<task keywords>", "type": "memory" })
+```
 
 ```json
 mcp__knowns__update_task({

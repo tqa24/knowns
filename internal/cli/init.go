@@ -586,9 +586,9 @@ var execLookPath = exec.LookPath
 // defaultExecLookPath is the original value of execLookPath for test cleanup.
 var defaultExecLookPath = exec.LookPath
 
-// mcpCommand returns the command and args for starting the Knowns MCP server.
-// If the "knowns" binary is found in PATH, it uses it directly for faster startup.
-// Otherwise it falls back to "npx -y knowns" which downloads on demand.
+// mcpCommand returns the command and args for starting the Knowns MCP server
+// in generated project configs. Uses the local knowns binary if available,
+// otherwise falls back to npx so configs work on machines without a global install.
 func mcpCommand() (command string, args []string) {
 	if _, err := execLookPath("knowns"); err == nil {
 		return "knowns", []string{"mcp", "--stdio"}
@@ -910,7 +910,10 @@ func renderCanonicalInstructionContent() string {
 	sb.WriteString("- Use Knowns MCP tools first for tasks, docs, templates, validation, and time tracking.\n")
 	sb.WriteString("- Use file reading and search tools for local code and text inspection.\n")
 	sb.WriteString("- Use shell commands for git, tests, builds, generators, and other terminal operations.\n")
-	sb.WriteString("- Prefer targeted retrieval over loading large files in full.\n\n")
+	sb.WriteString("- Prefer targeted retrieval over loading large files in full.\n")
+	sb.WriteString("- Use `knowns search` for discovery and quick relevance checks.\n")
+	sb.WriteString("- Use `knowns retrieve` when a workflow needs structured context with citations and context-pack assembly.\n")
+	sb.WriteString("- Prefer `--plain` for human-facing inspection. Prefer `--json` for `retrieve` when output will be consumed by an agent, script, or workflow.\n\n")
 	sb.WriteString("### Preferred Tool Matrix\n\n")
 	sb.WriteString("- `knowns_*`: canonical operations on tasks, docs, templates, validation, and time.\n")
 	sb.WriteString("- `read`: inspect a known file.\n")
@@ -968,9 +971,11 @@ func renderCanonicalInstructionContent() string {
 	sb.WriteString("- In `doc edit`, `-a` means `--append`.\n")
 	sb.WriteString("- Use raw task IDs where a command expects an ID value rather than a mention.\n")
 	sb.WriteString("- Use `--plain` for read, list, and search commands, not for create or edit commands.\n")
+	sb.WriteString("- Use `--json` for `retrieve` when the result will be parsed or fed into an agent workflow; use `--plain` when inspecting manually.\n")
 	sb.WriteString("- Use `--smart` when reading docs through the CLI.\n\n")
 	sb.WriteString("### Retrieval Pitfalls\n\n")
 	sb.WriteString("- Do not read every doc hoping to find the answer; search first.\n")
+	sb.WriteString("- Do not replace discovery-oriented `search` with `retrieve` by default; use `retrieve` only when you need assembled context, citations, or expansion metadata.\n")
 	sb.WriteString("- Do not repeatedly list the same tasks or docs if the needed context is already loaded.\n")
 	sb.WriteString("- Do not quote large file contents when a concise summary is enough.\n\n")
 	sb.WriteString("## Recommended File Roles\n\n")
@@ -1012,6 +1017,8 @@ func renderCompatibilityInstructionContent(relativePath, platform, projectRoot s
 	sb.WriteString("- Use Knowns as the canonical system for tasks, docs, templates, and workflow state.\n")
 	sb.WriteString("- Never manually edit Knowns-managed task or doc markdown.\n")
 	sb.WriteString("- Search first, then read only relevant docs and code.\n")
+	sb.WriteString("- Use `knowns search` for discovery; use `knowns retrieve` when a workflow needs structured context with citations.\n")
+	sb.WriteString("- For code context retrieval, prefer MCP tools over CLI: use `code_search` first, then `code_symbols`, then `code_deps`. Treat CLI `knowns code ...` as fallback for manual inspection or debugging.\n")
 	sb.WriteString("- Plan before implementation unless the user explicitly overrides that workflow.\n")
 	sb.WriteString("- Validate before considering work complete.\n")
 	sb.WriteString("- Use memory tools: `list_memories` at session start, `add_memory` after tasks for reusable knowledge, `add_working_memory` for session cache.\n\n")
@@ -1022,6 +1029,7 @@ func renderCompatibilityInstructionContent(relativePath, platform, projectRoot s
 	sb.WriteString("knowns task <id> --plain              # View task\n")
 	sb.WriteString("knowns doc \"<path>\" --plain --smart  # View doc\n")
 	sb.WriteString("knowns search \"query\" --plain        # Search docs/tasks\n")
+	sb.WriteString("knowns retrieve \"query\" --json      # Retrieve structured context pack\n")
 	sb.WriteString("knowns guidelines --plain             # Full workflow reference\n")
 	sb.WriteString("```\n\n")
 	sb.WriteString("<!-- KNOWNS GUIDELINES END -->\n")

@@ -8,37 +8,37 @@ import (
 
 func TestValidateTask_NoTitle(t *testing.T) {
 	task := &models.Task{ID: "abc123", Status: "todo", Priority: "medium"}
-	issues := validateTask(task, map[string]bool{"abc123": true}, nil, nil, nil, Options{})
+	issues := validateTask(task, map[string]bool{"abc123": true}, nil, nil, nil, Options{}, nil)
 	assertHasCode(t, issues, "TASK_NO_TITLE")
 }
 
 func TestValidateTask_InvalidStatus(t *testing.T) {
 	task := &models.Task{ID: "abc123", Title: "Test", Status: "invalid", Priority: "medium"}
-	issues := validateTask(task, map[string]bool{"abc123": true}, nil, nil, nil, Options{})
+	issues := validateTask(task, map[string]bool{"abc123": true}, nil, nil, nil, Options{}, nil)
 	assertHasCode(t, issues, "TASK_INVALID_STATUS")
 }
 
 func TestValidateTask_NoStatus(t *testing.T) {
 	task := &models.Task{ID: "abc123", Title: "Test", Priority: "medium"}
-	issues := validateTask(task, map[string]bool{"abc123": true}, nil, nil, nil, Options{})
+	issues := validateTask(task, map[string]bool{"abc123": true}, nil, nil, nil, Options{}, nil)
 	assertHasCode(t, issues, "TASK_NO_STATUS")
 }
 
 func TestValidateTask_InvalidPriority(t *testing.T) {
 	task := &models.Task{ID: "abc123", Title: "Test", Status: "todo", Priority: "critical"}
-	issues := validateTask(task, map[string]bool{"abc123": true}, nil, nil, nil, Options{})
+	issues := validateTask(task, map[string]bool{"abc123": true}, nil, nil, nil, Options{}, nil)
 	assertHasCode(t, issues, "TASK_INVALID_PRIORITY")
 }
 
 func TestValidateTask_NoPriority(t *testing.T) {
 	task := &models.Task{ID: "abc123", Title: "Test", Status: "todo"}
-	issues := validateTask(task, map[string]bool{"abc123": true}, nil, nil, nil, Options{})
+	issues := validateTask(task, map[string]bool{"abc123": true}, nil, nil, nil, Options{}, nil)
 	assertHasCode(t, issues, "TASK_NO_PRIORITY")
 }
 
 func TestValidateTask_BrokenParentRef(t *testing.T) {
 	task := &models.Task{ID: "abc123", Title: "Test", Status: "todo", Priority: "medium", Parent: "nonexist"}
-	issues := validateTask(task, map[string]bool{"abc123": true}, nil, nil, map[string]string{"abc123": "nonexist"}, Options{})
+	issues := validateTask(task, map[string]bool{"abc123": true}, nil, nil, map[string]string{"abc123": "nonexist"}, Options{}, nil)
 	assertHasCode(t, issues, "BROKEN_TASK_REF")
 }
 
@@ -49,7 +49,7 @@ func TestValidateTask_CircularParent(t *testing.T) {
 	}
 	taskIDs := map[string]bool{"aaa": true, "bbb": true}
 	task := &models.Task{ID: "aaa", Title: "A", Status: "todo", Priority: "medium", Parent: "bbb"}
-	issues := validateTask(task, taskIDs, nil, nil, parentMap, Options{})
+	issues := validateTask(task, taskIDs, nil, nil, parentMap, Options{}, nil)
 	assertHasCode(t, issues, "TASK_CIRCULAR_PARENT")
 }
 
@@ -61,7 +61,7 @@ func TestValidateTask_CircularParent_ThreeWay(t *testing.T) {
 	}
 	taskIDs := map[string]bool{"aaa": true, "bbb": true, "ccc": true}
 	task := &models.Task{ID: "aaa", Title: "A", Status: "todo", Priority: "medium", Parent: "bbb"}
-	issues := validateTask(task, taskIDs, nil, nil, parentMap, Options{})
+	issues := validateTask(task, taskIDs, nil, nil, parentMap, Options{}, nil)
 	assertHasCode(t, issues, "TASK_CIRCULAR_PARENT")
 }
 
@@ -71,7 +71,7 @@ func TestValidateTask_NoCircularParent(t *testing.T) {
 	}
 	taskIDs := map[string]bool{"aaa": true, "bbb": true}
 	task := &models.Task{ID: "bbb", Title: "B", Status: "todo", Priority: "medium", Parent: "aaa"}
-	issues := validateTask(task, taskIDs, nil, nil, parentMap, Options{})
+	issues := validateTask(task, taskIDs, nil, nil, parentMap, Options{}, nil)
 	assertNoCode(t, issues, "TASK_CIRCULAR_PARENT")
 }
 
@@ -80,7 +80,7 @@ func TestValidateTask_FulfillsWithoutSpec(t *testing.T) {
 		ID: "abc123", Title: "Test", Status: "todo", Priority: "medium",
 		Fulfills: []string{"AC-1"},
 	}
-	issues := validateTask(task, map[string]bool{"abc123": true}, nil, nil, nil, Options{})
+	issues := validateTask(task, map[string]bool{"abc123": true}, nil, nil, nil, Options{}, nil)
 	assertHasCode(t, issues, "TASK_FULFILLS_NO_SPEC")
 }
 
@@ -90,7 +90,7 @@ func TestValidateTask_FulfillsWithSpec(t *testing.T) {
 		Spec: "specs/auth", Fulfills: []string{"AC-1"},
 	}
 	docPaths := map[string]bool{"specs/auth": true}
-	issues := validateTask(task, map[string]bool{"abc123": true}, docPaths, nil, nil, Options{})
+	issues := validateTask(task, map[string]bool{"abc123": true}, docPaths, nil, nil, Options{}, nil)
 	assertNoCode(t, issues, "TASK_FULFILLS_NO_SPEC")
 }
 
@@ -99,7 +99,7 @@ func TestValidateTask_DuplicateLabels(t *testing.T) {
 		ID: "abc123", Title: "Test", Status: "todo", Priority: "medium",
 		Labels: []string{"bug", "feature", "bug"},
 	}
-	issues := validateTask(task, map[string]bool{"abc123": true}, nil, nil, nil, Options{})
+	issues := validateTask(task, map[string]bool{"abc123": true}, nil, nil, nil, Options{}, nil)
 	assertHasCode(t, issues, "TASK_DUPLICATE_LABELS")
 }
 
@@ -111,7 +111,7 @@ func TestValidateTask_DoneUncheckedAC(t *testing.T) {
 			{Text: "Second", Completed: false},
 		},
 	}
-	issues := validateTask(task, map[string]bool{"abc123": true}, nil, nil, nil, Options{})
+	issues := validateTask(task, map[string]bool{"abc123": true}, nil, nil, nil, Options{}, nil)
 	assertHasCode(t, issues, "TASK_DONE_UNCHECKED_AC")
 }
 
@@ -123,7 +123,7 @@ func TestValidateTask_DoneAllACChecked(t *testing.T) {
 			{Text: "Second", Completed: true},
 		},
 	}
-	issues := validateTask(task, map[string]bool{"abc123": true}, nil, nil, nil, Options{})
+	issues := validateTask(task, map[string]bool{"abc123": true}, nil, nil, nil, Options{}, nil)
 	assertNoCode(t, issues, "TASK_DONE_UNCHECKED_AC")
 }
 
@@ -132,7 +132,7 @@ func TestValidateTask_BrokenInlineTaskRef(t *testing.T) {
 		ID: "abc123", Title: "Test", Status: "todo", Priority: "medium",
 		Description: "See @task-nonexist for details",
 	}
-	issues := validateTask(task, map[string]bool{"abc123": true}, nil, nil, nil, Options{})
+	issues := validateTask(task, map[string]bool{"abc123": true}, nil, nil, nil, Options{}, nil)
 	assertHasCode(t, issues, "BROKEN_TASK_REF")
 }
 
@@ -141,7 +141,7 @@ func TestValidateTask_BrokenInlineDocRef(t *testing.T) {
 		ID: "abc123", Title: "Test", Status: "todo", Priority: "medium",
 		Description: "See @doc/guides/missing for details",
 	}
-	issues := validateTask(task, map[string]bool{"abc123": true}, nil, nil, nil, Options{})
+	issues := validateTask(task, map[string]bool{"abc123": true}, nil, nil, nil, Options{}, nil)
 	assertHasCode(t, issues, "BROKEN_DOC_REF")
 }
 
@@ -152,7 +152,7 @@ func TestValidateTask_ValidInlineRefs(t *testing.T) {
 	}
 	taskIDs := map[string]bool{"abc123": true, "xyz789": true}
 	docPaths := map[string]bool{"guides/setup": true}
-	issues := validateTask(task, taskIDs, docPaths, nil, nil, Options{})
+	issues := validateTask(task, taskIDs, docPaths, nil, nil, Options{}, nil)
 	assertNoCode(t, issues, "BROKEN_TASK_REF")
 	assertNoCode(t, issues, "BROKEN_DOC_REF")
 }
@@ -163,7 +163,7 @@ func TestValidateTask_SDD_NoAC(t *testing.T) {
 		Spec: "specs/auth",
 	}
 	docPaths := map[string]bool{"specs/auth": true}
-	issues := validateTask(task, map[string]bool{"abc123": true}, docPaths, nil, nil, Options{Scope: "sdd"})
+	issues := validateTask(task, map[string]bool{"abc123": true}, docPaths, nil, nil, Options{Scope: "sdd"}, nil)
 	assertHasCode(t, issues, "SDD_NO_AC")
 }
 
@@ -171,7 +171,7 @@ func TestValidateTask_ValidTask(t *testing.T) {
 	task := &models.Task{
 		ID: "abc123", Title: "Good task", Status: "todo", Priority: "medium",
 	}
-	issues := validateTask(task, map[string]bool{"abc123": true}, nil, nil, nil, Options{})
+	issues := validateTask(task, map[string]bool{"abc123": true}, nil, nil, nil, Options{}, nil)
 	if len(issues) > 0 {
 		t.Errorf("expected no issues for valid task, got %d: %v", len(issues), issues)
 	}
@@ -181,19 +181,19 @@ func TestValidateTask_ValidTask(t *testing.T) {
 
 func TestValidateDoc_NoTitle(t *testing.T) {
 	doc := &models.Doc{Path: "readme", Content: "some content", Description: "desc"}
-	issues := validateDoc(doc, nil, nil, nil)
+	issues := validateDoc(doc, nil, nil, nil, nil)
 	assertHasCode(t, issues, "DOC_NO_TITLE")
 }
 
 func TestValidateDoc_NoDescription(t *testing.T) {
 	doc := &models.Doc{Path: "readme", Title: "README", Content: "content"}
-	issues := validateDoc(doc, nil, nil, nil)
+	issues := validateDoc(doc, nil, nil, nil, nil)
 	assertHasCode(t, issues, "DOC_NO_DESCRIPTION")
 }
 
 func TestValidateDoc_NoContent(t *testing.T) {
 	doc := &models.Doc{Path: "readme", Title: "README", Description: "desc"}
-	issues := validateDoc(doc, nil, nil, nil)
+	issues := validateDoc(doc, nil, nil, nil, nil)
 	assertHasCode(t, issues, "DOC_NO_CONTENT")
 }
 
@@ -202,7 +202,7 @@ func TestValidateDoc_BrokenRefs(t *testing.T) {
 		Path: "readme", Title: "README", Description: "desc",
 		Content: "See @task-nonexist and @doc/missing/doc for details",
 	}
-	issues := validateDoc(doc, nil, nil, nil)
+	issues := validateDoc(doc, nil, nil, nil, nil)
 	assertHasCode(t, issues, "BROKEN_TASK_REF")
 	assertHasCode(t, issues, "BROKEN_DOC_REF")
 }
@@ -212,7 +212,7 @@ func TestValidateDoc_ValidDoc(t *testing.T) {
 		Path: "readme", Title: "README", Description: "desc",
 		Content: "Hello world",
 	}
-	issues := validateDoc(doc, nil, nil, nil)
+	issues := validateDoc(doc, nil, nil, nil, nil)
 	if len(issues) > 0 {
 		t.Errorf("expected no issues for valid doc, got %d: %v", len(issues), issues)
 	}
@@ -273,7 +273,7 @@ func TestDetectCircularParent(t *testing.T) {
 func TestStrictMode(t *testing.T) {
 	// A task with warning-level issue (no status)
 	task := &models.Task{ID: "abc123", Title: "Test", Priority: "medium"}
-	issues := validateTask(task, map[string]bool{"abc123": true}, nil, nil, nil, Options{})
+	issues := validateTask(task, map[string]bool{"abc123": true}, nil, nil, nil, Options{}, nil)
 	assertHasLevel(t, issues, "warning")
 
 	// Simulate strict mode: warnings become errors

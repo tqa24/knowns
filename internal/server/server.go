@@ -5,6 +5,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -14,7 +15,6 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strconv"
@@ -32,6 +32,7 @@ import (
 	"github.com/howznguyen/knowns/internal/registry"
 	"github.com/howznguyen/knowns/internal/server/routes"
 	"github.com/howznguyen/knowns/internal/storage"
+	"github.com/howznguyen/knowns/internal/util"
 	ui "github.com/howznguyen/knowns/ui"
 	"github.com/rs/cors"
 )
@@ -48,26 +49,32 @@ type Options struct {
 
 // Server is the top-level HTTP server.
 type Server struct {
-	store           *storage.Store
-	manager         *storage.Manager // Multi-project store manager (may be nil)
-	router          chi.Router
-	sse             *SSEBroker
-	port            int
-	projectRoot     string
-	opts            Options
-	opencodeDaemon  *opencode.Daemon // Shared OpenCode daemon (may be nil if not configured)
-	runtimeOpenCode *opencode.Config
-	opencodeProxy   *httputil.ReverseProxy // Shared proxy singleton — reused across requests
-	opencodeProxyMu sync.RWMutex
-	shutdownCh      chan struct{} // Signals graceful shutdown from /api/shutdown endpoint
-	cancelSSEFwd    context.CancelFunc     // Cancels the OpenCode SSE forwarder goroutine
+	store            *storage.Store
+	manager          *storage.Manager // Multi-project store manager (may be nil)
+	router           chi.Router
+	sse              *SSEBroker
+	port             int
+	projectRoot      string
+	opts             Options
+	opencodeDaemon   *opencode.Daemon // Shared OpenCode daemon (may be nil if not configured)
+	runtimeOpenCode  *opencode.Config
+	opencodeProxy    *httputil.ReverseProxy // Shared proxy singleton — reused across requests
+	opencodeProxyMu  sync.RWMutex
+	runtimeStatus    opencode.RuntimeStatus
+	runtimeStatusMu  sync.RWMutex
+	shutdownCh       chan struct{}      // Signals graceful shutdown from /api/shutdown endpoint
+	cancelSSEFwd     context.CancelFunc // Cancels the OpenCode SSE forwarder goroutine
+	cancelRuntimeMon context.CancelFunc
 }
 
 type openCodeConfigResolution struct {
 	cfg          opencode.Config
 	configured   bool
 	explicitPort bool
+	mode         opencode.RuntimeMode
 }
+
+const openCodeHealthMonitorInterval = 15 * time.Second
 
 func deriveOpenCodePortCandidates(browserPort int, defaultPort int) []int {
 	seen := make(map[int]struct{})
@@ -101,7 +108,9 @@ func deriveOpenCodePortCandidates(browserPort int, defaultPort int) []int {
 
 func resolveOpenCodeConfig(browserPort int, stored *models.OpenCodeServerConfig) openCodeConfigResolution {
 	cfg := opencode.DefaultConfig()
+	mode := opencode.RuntimeModeManaged
 	if stored != nil {
+		mode = opencode.NormalizeRuntimeMode(stored.Mode)
 		if stored.Host != "" {
 			cfg.Host = stored.Host
 		}
@@ -112,6 +121,7 @@ func resolveOpenCodeConfig(browserPort int, stored *models.OpenCodeServerConfig)
 				cfg:          cfg,
 				configured:   true,
 				explicitPort: true,
+				mode:         mode,
 			}
 		}
 	}
@@ -123,7 +133,114 @@ func resolveOpenCodeConfig(browserPort int, stored *models.OpenCodeServerConfig)
 	return openCodeConfigResolution{
 		cfg:        cfg,
 		configured: true,
+		mode:       mode,
 	}
+}
+
+func newRuntimeStatus(cfg opencode.Config, configured bool, mode opencode.RuntimeMode, agentStatus *opencode.AgentStatus) opencode.RuntimeStatus {
+	status := opencode.RuntimeStatus{
+		Configured: configured,
+		Mode:       mode,
+		State:      opencode.RuntimeStateUnavailable,
+		Host:       cfg.Host,
+		Port:       cfg.Port,
+		MinVersion: opencode.MinOpenCodeVersion,
+	}
+	if agentStatus != nil {
+		status.CLIInstalled = agentStatus.Installed
+		status.Compatible = agentStatus.Compatible
+		status.Version = agentStatus.Version
+		status.MinVersion = agentStatus.MinVersion
+	}
+	return status
+}
+
+func applyRuntimeReadiness(status *opencode.RuntimeStatus, readiness opencode.RuntimeReadiness) {
+	status.Readiness = readiness
+	status.Available = readiness.Healthy
+	status.Ready = readiness.Ready
+	if readiness.Version != "" {
+		status.Version = readiness.Version
+	}
+	if readiness.Ready {
+		status.State = opencode.RuntimeStateReady
+		status.LastError = ""
+		now := time.Now().UTC()
+		status.LastHealthyAt = &now
+		return
+	}
+	status.State = opencode.RuntimeStateDegraded
+	if readiness.Error != "" {
+		status.LastError = readiness.Error
+	}
+}
+
+func initializeOpenCodeRuntime(store *storage.Store, browserPort int) (*opencode.Config, *opencode.Daemon, opencode.RuntimeStatus) {
+	defaultCfg := opencode.DefaultConfig()
+	agentStatus := opencode.DetectOpenCode()
+	if store == nil {
+		return nil, nil, newRuntimeStatus(defaultCfg, false, opencode.RuntimeModeManaged, agentStatus)
+	}
+
+	resolution := resolveOpenCodeConfig(browserPort, store.Config.GetOpenCodeServerConfig())
+	status := newRuntimeStatus(resolution.cfg, resolution.configured, resolution.mode, agentStatus)
+	if !resolution.configured {
+		status.LastError = "OpenCode server is not configured"
+		return nil, nil, status
+	}
+
+	cfg := resolution.cfg
+	if resolution.mode == opencode.RuntimeModeExternal {
+		readiness := opencode.NewClient(cfg).Readiness()
+		applyRuntimeReadiness(&status, readiness)
+		if !readiness.Ready && status.LastError == "" {
+			status.LastError = "Configured external OpenCode runtime is not ready"
+		}
+		if !readiness.Ready {
+			return nil, nil, status
+		}
+		cfgCopy := cfg
+		return &cfgCopy, nil, status
+	}
+
+	if !agentStatus.Installed {
+		status.LastError = "OpenCode CLI not installed"
+		return nil, nil, status
+	}
+	if !agentStatus.Compatible {
+		status.LastError = fmt.Sprintf("OpenCode version %s is below minimum %s", agentStatus.Version, agentStatus.MinVersion)
+		return nil, nil, status
+	}
+
+	if !resolution.explicitPort {
+		for _, candidate := range deriveOpenCodePortCandidates(browserPort, cfg.Port) {
+			candidateCfg := cfg
+			candidateCfg.Port = candidate
+			if opencode.NewClient(candidateCfg).Readiness().Ready {
+				cfg = candidateCfg
+				status.Host = candidateCfg.Host
+				status.Port = candidateCfg.Port
+				break
+			}
+		}
+	}
+
+	daemon := opencode.NewDaemon(cfg.Host, cfg.Port)
+	if err := daemon.EnsureRunning(); err != nil {
+		status.LastError = err.Error()
+		return nil, nil, status
+	}
+
+	readiness := opencode.NewClient(cfg).Readiness()
+	applyRuntimeReadiness(&status, readiness)
+	if !readiness.Ready && status.LastError == "" {
+		status.LastError = "Managed OpenCode runtime is not ready"
+	}
+	cfgCopy := cfg
+	if !readiness.Ready {
+		return nil, daemon, status
+	}
+	return &cfgCopy, daemon, status
 }
 
 // buildOpenCodeProxy creates a shared reverse proxy for the OpenCode server.
@@ -170,50 +287,24 @@ func buildOpenCodeProxy(cfg opencode.Config) *httputil.ReverseProxy {
 // projectRoot is the directory that contains the .knowns/ folder.
 // port is the TCP port to listen on (e.g. 3737).
 func NewServer(store *storage.Store, projectRoot string, port int, opts Options) *Server {
-	var runtimeOpenCode *opencode.Config
-	var daemon *opencode.Daemon
-
-	// Initialize OpenCode daemon if configured (only when a project is loaded).
-	if store != nil {
-		// Gate on version compatibility before attempting daemon spawn.
-		agentStatus := opencode.DetectOpenCode()
-		if !agentStatus.Installed {
-			log.Printf("[server] OpenCode CLI not installed — chat features disabled")
-		} else if !agentStatus.Compatible {
-			log.Printf("[server] OpenCode version %s is below minimum %s — chat features disabled",
-				agentStatus.Version, agentStatus.MinVersion)
-		} else if resolution := resolveOpenCodeConfig(port, store.Config.GetOpenCodeServerConfig()); resolution.configured {
-			cfg := resolution.cfg
-
-			// For non-explicit ports, scan candidates to find one already running.
-			if !resolution.explicitPort {
-				for _, candidate := range deriveOpenCodePortCandidates(port, cfg.Port) {
-					candidateCfg := cfg
-					candidateCfg.Port = candidate
-					if opencode.NewClient(candidateCfg).IsServerAvailable() {
-						cfg = candidateCfg
-						break
-					}
-				}
-			}
-
-			// Use the shared daemon to ensure exactly one OpenCode process.
-			daemon = opencode.NewDaemon(cfg.Host, cfg.Port)
-			if err := daemon.EnsureRunning(); err != nil {
-				log.Printf("[server] OpenCode daemon not available: %v, chat features disabled", err)
-				daemon = nil
-			} else {
-				// Only set runtime config when daemon is actually running.
-				cfgCopy := cfg
-				runtimeOpenCode = &cfgCopy
-				log.Printf("[server] OpenCode v%s running on %s:%d", agentStatus.Version, cfg.Host, cfg.Port)
-			}
-		}
-	}
-
 	// Silence standard log output unless dev mode is enabled.
+	// Must be set before initializeOpenCodeRuntime so daemon/runtime logs are also suppressed.
 	if !opts.Dev {
 		log.SetOutput(io.Discard)
+	}
+
+	runtimeOpenCode, daemon, runtimeStatus := initializeOpenCodeRuntime(store, port)
+	if opts.Dev && runtimeStatus.Configured {
+		switch runtimeStatus.State {
+		case opencode.RuntimeStateReady:
+			log.Printf("[server] OpenCode runtime %s ready on %s:%d", runtimeStatus.Mode, runtimeStatus.Host, runtimeStatus.Port)
+		case opencode.RuntimeStateDegraded:
+			log.Printf("[server] OpenCode runtime %s degraded: %s", runtimeStatus.Mode, runtimeStatus.LastError)
+		default:
+			if runtimeStatus.LastError != "" {
+				log.Printf("[server] OpenCode unavailable: %s", runtimeStatus.LastError)
+			}
+		}
 	}
 
 	s := &Server{
@@ -224,6 +315,7 @@ func NewServer(store *storage.Store, projectRoot string, port int, opts Options)
 		opts:            opts,
 		opencodeDaemon:  daemon,
 		runtimeOpenCode: runtimeOpenCode,
+		runtimeStatus:   runtimeStatus,
 		shutdownCh:      make(chan struct{}, 1),
 	}
 
@@ -260,22 +352,31 @@ func NewServer(store *storage.Store, projectRoot string, port int, opts Options)
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancelSSEFwd = cancel
 	s.startOpenCodeSSEForwarder(ctx)
+	monitorCtx, monitorCancel := context.WithCancel(context.Background())
+	s.cancelRuntimeMon = monitorCancel
+	s.startOpenCodeRuntimeMonitor(monitorCtx)
 
 	return s
 }
 
-// Start listens on the configured port and serves HTTP.
-// It binds the port first, then writes the port file only after a successful bind.
+// Start binds the configured port and serves HTTP.
 func (s *Server) Start() error {
 	addr := ":" + strconv.Itoa(s.port)
-
-	// 1. Bind FIRST — fail fast if port is unavailable.
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("failed to listen on %s: %w", addr, err)
 	}
+	return s.serve(listener)
+}
 
-	// 2. Port is bound — now safe to write the port file.
+// StartWithListener serves HTTP on an already-bound listener.
+// Use this when the caller has pre-bound the port (avoids TOCTOU race).
+func (s *Server) StartWithListener(listener net.Listener) error {
+	return s.serve(listener)
+}
+
+func (s *Server) serve(listener net.Listener) error {
+	// Port is bound — now safe to write the port file.
 	if err := s.writePortFile(); err != nil {
 		fmt.Fprintf(os.Stderr, "warn: could not write .server-port: %v\n", err)
 	}
@@ -285,7 +386,6 @@ func (s *Server) Start() error {
 
 	srv := &http.Server{Handler: s.router}
 
-	// 3. Serve on the already-bound listener.
 	serverErr := make(chan error, 1)
 	go func() {
 		if err := srv.Serve(listener); err != nil && err != http.ErrServerClosed {
@@ -293,7 +393,6 @@ func (s *Server) Start() error {
 		}
 	}()
 
-	// 4. Wait for shutdown signal, server error, or remote shutdown request.
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
@@ -307,17 +406,18 @@ func (s *Server) Start() error {
 		log.Printf("[server] Remote shutdown requested")
 	}
 
-	// 5. Graceful shutdown.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Printf("[server] HTTP server shutdown error: %v", err)
 	}
 
-	// 6. Cleanup port file + OpenCode.
 	s.cleanupPortFile()
 	if s.cancelSSEFwd != nil {
 		s.cancelSSEFwd()
+	}
+	if s.cancelRuntimeMon != nil {
+		s.cancelRuntimeMon()
 	}
 	s.cleanupOpenCodeServer()
 
@@ -325,13 +425,126 @@ func (s *Server) Start() error {
 	return nil
 }
 
-// cleanupOpenCodeServer stops the OpenCode daemon if we started it.
+// reinitOpenCode tears down the existing OpenCode runtime and starts a fresh
+// one for the newly active project. Called after a workspace switch.
+func (s *Server) reinitOpenCode(projectPath string) {
+	// Stop the old daemon if we started it.
+	s.cleanupOpenCodeServer()
+	if s.cancelSSEFwd != nil {
+		s.cancelSSEFwd()
+	}
+	if s.cancelRuntimeMon != nil {
+		s.cancelRuntimeMon()
+	}
+
+	store := s.manager.GetStore()
+	runtimeOpenCode, daemon, runtimeStatus := initializeOpenCodeRuntime(store, s.port)
+
+	s.opencodeProxyMu.Lock()
+	s.opencodeDaemon = daemon
+	s.runtimeOpenCode = runtimeOpenCode
+	s.opencodeProxy = nil // force rebuild on next request
+	if runtimeOpenCode != nil {
+		s.opencodeProxy = buildOpenCodeProxy(*runtimeOpenCode)
+	}
+	s.opencodeProxyMu.Unlock()
+	s.setRuntimeStatus(runtimeStatus)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	s.cancelSSEFwd = cancel
+	s.startOpenCodeSSEForwarder(ctx)
+
+	monCtx, monCancel := context.WithCancel(context.Background())
+	s.cancelRuntimeMon = monCancel
+	s.startOpenCodeRuntimeMonitor(monCtx)
+
+	// Broadcast updated runtime status so the UI reflects the new state
+	// without requiring a full page reload.
+	s.sse.Broadcast(routes.SSEEvent{
+		Type: "opencode:status",
+		Data: runtimeStatus,
+	})
+}
+
+
 func (s *Server) cleanupOpenCodeServer() {
 	if s.opencodeDaemon != nil && s.opencodeDaemon.StartedByUs() {
 		if err := s.opencodeDaemon.Stop(); err != nil {
 			log.Printf("[server] Failed to stop OpenCode daemon: %v", err)
 		}
 	}
+}
+
+func (s *Server) setRuntimeStatus(status opencode.RuntimeStatus) {
+	s.runtimeStatusMu.Lock()
+	s.runtimeStatus = status
+	s.runtimeStatusMu.Unlock()
+}
+
+func (s *Server) updateRuntimeStatus(mut func(*opencode.RuntimeStatus)) opencode.RuntimeStatus {
+	s.runtimeStatusMu.Lock()
+	defer s.runtimeStatusMu.Unlock()
+	mut(&s.runtimeStatus)
+	return s.runtimeStatus
+}
+
+func (s *Server) runtimeStatusSnapshot() opencode.RuntimeStatus {
+	s.runtimeStatusMu.RLock()
+	defer s.runtimeStatusMu.RUnlock()
+	return s.runtimeStatus
+}
+
+func (s *Server) startOpenCodeRuntimeMonitor(ctx context.Context) {
+	status := s.runtimeStatusSnapshot()
+	if status.Mode != opencode.RuntimeModeManaged || s.opencodeDaemon == nil {
+		return
+	}
+
+	go func() {
+		ticker := time.NewTicker(openCodeHealthMonitorInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+
+			cfg, configured := s.openCodeConfig()
+			if !configured {
+				continue
+			}
+
+			readiness := opencode.NewClient(cfg).Readiness()
+			if readiness.Ready {
+				s.updateRuntimeStatus(func(status *opencode.RuntimeStatus) {
+					applyRuntimeReadiness(status, readiness)
+				})
+				continue
+			}
+
+			s.updateRuntimeStatus(func(status *opencode.RuntimeStatus) {
+				applyRuntimeReadiness(status, readiness)
+			})
+
+			if err := s.opencodeDaemon.EnsureRunning(); err != nil {
+				s.updateRuntimeStatus(func(status *opencode.RuntimeStatus) {
+					status.State = opencode.RuntimeStateDegraded
+					status.Ready = false
+					status.Available = false
+					status.LastError = err.Error()
+				})
+				continue
+			}
+
+			readiness = opencode.NewClient(cfg).Readiness()
+			s.updateRuntimeStatus(func(status *opencode.RuntimeStatus) {
+				status.RestartCount++
+				applyRuntimeReadiness(status, readiness)
+			})
+		}
+	}()
 }
 
 // startOpenCodeSSEForwarder subscribes to the OpenCode global SSE stream and
@@ -395,6 +608,9 @@ func (s *Server) startOpenCodeSSEForwarder(ctx context.Context) {
 // writePortFile saves the active port to .knowns/.server-port so CLI commands
 // can discover the running server.
 func (s *Server) writePortFile() error {
+	if s.store == nil {
+		return nil
+	}
 	portFile := filepath.Join(s.store.Root, ".server-port")
 	return os.WriteFile(portFile, []byte(strconv.Itoa(s.port)), 0644)
 }
@@ -402,8 +618,35 @@ func (s *Server) writePortFile() error {
 // cleanupPortFile removes the .server-port file on shutdown so stale port
 // references don't linger after the server exits.
 func (s *Server) cleanupPortFile() {
+	if s.store == nil {
+		return
+	}
 	portFile := filepath.Join(s.store.Root, ".server-port")
 	os.Remove(portFile)
+}
+
+// handleStatus returns whether a project is currently active.
+// GET /api/status
+func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
+	var projectName, projectPath string
+	active := s.store != nil
+	if s.manager != nil {
+		store := s.manager.GetStore()
+		active = store != nil
+		if active {
+			projectPath = filepath.Dir(store.Root)
+			projectName = filepath.Base(projectPath)
+		}
+	} else if s.store != nil {
+		projectPath = filepath.Dir(s.store.Root)
+		projectName = filepath.Base(projectPath)
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"active":      active,
+		"projectName": projectName,
+		"projectPath": projectPath,
+		"version":     util.Version,
+	})
 }
 
 // handleShutdown handles POST /api/shutdown for graceful remote stop.
@@ -419,8 +662,14 @@ func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
 // savePortToConfig persists the server port into config.json so the browser
 // and other tools can discover the running server.
 func (s *Server) savePortToConfig() error {
+	if s.store == nil {
+		return nil
+	}
 	project, err := s.store.Config.Load()
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
 		return err
 	}
 	project.Settings.ServerPort = s.port
@@ -456,9 +705,12 @@ func (s *Server) buildRouter() chi.Router {
 	// --- Shutdown endpoint (for remote graceful stop) ---
 	r.Post("/api/shutdown", s.handleShutdown)
 
+	// --- Status endpoint (project active/inactive) ---
+	r.Get("/api/status", s.handleStatus)
+
 	// --- API routes ---
 	r.Route("/api", func(r chi.Router) {
-		routes.SetupRoutes(r, s.store, s.sse, s.projectRoot, s.manager)
+		routes.SetupRoutes(r, s.store, s.sse, s.projectRoot, s.manager, s.reinitOpenCode)
 	})
 
 	// --- Agent status (CLI installation check) ---
@@ -487,8 +739,36 @@ func (s *Server) openCodeConfig() (opencode.Config, bool) {
 	if s.runtimeOpenCode != nil {
 		return *s.runtimeOpenCode, true
 	}
+	if s.store == nil {
+		return opencode.DefaultConfig(), false
+	}
 	resolution := resolveOpenCodeConfig(s.port, s.store.Config.GetOpenCodeServerConfig())
 	return resolution.cfg, resolution.configured
+}
+
+func (s *Server) refreshRuntimeStatus() opencode.RuntimeStatus {
+	status := s.runtimeStatusSnapshot()
+	if !status.Configured {
+		return status
+	}
+	if status.Mode == opencode.RuntimeModeManaged && status.State == opencode.RuntimeStateReady {
+		return status
+	}
+
+	cfg, configured := s.openCodeConfig()
+	if !configured {
+		return status
+	}
+
+	readiness := opencode.NewClient(cfg).Readiness()
+	return s.updateRuntimeStatus(func(status *opencode.RuntimeStatus) {
+		status.Host = cfg.Host
+		status.Port = cfg.Port
+		applyRuntimeReadiness(status, readiness)
+		if !readiness.Ready && status.LastError == "" {
+			status.LastError = readiness.Error
+		}
+	})
 }
 
 // handleChatWS upgrades the connection to WebSocket for chat sessions.
@@ -540,6 +820,16 @@ func (s *Server) getOrRebuildProxy(cfg opencode.Config) *httputil.ReverseProxy {
 // proxyOpenCode proxies requests to the OpenCode server using a shared
 // reverse proxy singleton so TCP connections are pooled and reused.
 func (s *Server) proxyOpenCode(w http.ResponseWriter, r *http.Request) {
+	status := s.refreshRuntimeStatus()
+	if !status.Ready {
+		message := status.LastError
+		if message == "" {
+			message = "OpenCode runtime is not ready"
+		}
+		http.Error(w, message, http.StatusServiceUnavailable)
+		return
+	}
+
 	cfg, configured := s.openCodeConfig()
 	if !configured {
 		http.Error(w, "OpenCode server is not configured", http.StatusServiceUnavailable)
@@ -556,14 +846,25 @@ func (s *Server) proxyOpenCode(w http.ResponseWriter, r *http.Request) {
 	}
 	r2.URL.RawQuery = r.URL.RawQuery
 
+	// Resolve the active project root per-request so workspace switches
+	// are reflected immediately without restarting the server.
+	activeRoot := s.projectRoot
+	if s.manager != nil && s.manager.GetStore() != nil {
+		activeRoot = s.manager.ActiveProjectRoot()
+	}
+
 	// Auto-inject directory for session listing so OpenCode only returns
 	// sessions belonging to this project (avoids cross-project leakage).
-	if r2.URL.Path == "/session" && r.Method == "GET" && s.projectRoot != "" {
+	if r2.URL.Path == "/session" && r.Method == "GET" && activeRoot != "" {
 		q := r2.URL.Query()
 		if q.Get("directory") == "" {
-			q.Set("directory", s.projectRoot)
+			q.Set("directory", activeRoot)
 			r2.URL.RawQuery = q.Encode()
 		}
+	}
+
+	if activeRoot != "" && r2.Header.Get("x-opencode-directory") == "" {
+		r2.Header.Set("x-opencode-directory", activeRoot)
 	}
 
 	proxy.ServeHTTP(w, r2)
@@ -577,38 +878,7 @@ func (s *Server) getAgentStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getOpenCodeStatus(w http.ResponseWriter, r *http.Request) {
-	cfg, configured := s.openCodeConfig()
-	cliAvailable := false
-	if _, err := exec.LookPath("opencode"); err == nil {
-		cliAvailable = true
-	}
-
-	status := map[string]any{
-		"configured":   configured,
-		"available":    false,
-		"host":         cfg.Host,
-		"port":         cfg.Port,
-		"cliAvailable": cliAvailable,
-	}
-
-	if !configured {
-		status["error"] = "OpenCode server is not configured."
-		writeJSON(w, http.StatusOK, status)
-		return
-	}
-
-	client := opencode.NewClient(cfg)
-	if client.IsServerAvailable() {
-		status["available"] = true
-		writeJSON(w, http.StatusOK, status)
-		return
-	}
-
-	message := fmt.Sprintf("Cannot reach OpenCode server at %s:%d.", cfg.Host, cfg.Port)
-	if !cliAvailable {
-		message += " The `opencode` CLI is not installed."
-	}
-	status["error"] = message
+	status := s.refreshRuntimeStatus()
 	writeJSON(w, http.StatusOK, status)
 }
 

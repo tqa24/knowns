@@ -22,8 +22,16 @@ type agentInfo struct {
 // ChatRoutes handles /api/chats endpoints.
 type ChatRoutes struct {
 	store       *storage.Store
+	mgr         *storage.Manager
 	sse         Broadcaster
 	projectRoot string
+}
+
+func (cr *ChatRoutes) getStore() *storage.Store {
+	if cr.mgr != nil {
+		return cr.mgr.GetStore()
+	}
+	return cr.store
 }
 
 // Register registers all chat routes on the given router.
@@ -42,7 +50,7 @@ func (cr *ChatRoutes) Register(r chi.Router) {
 
 // GET /api/chats — list sessions sorted by updatedAt desc
 func (cr *ChatRoutes) listSessions(w http.ResponseWriter, r *http.Request) {
-	sessions, err := cr.store.Chats.List()
+	sessions, err := cr.getStore().Chats.List()
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -91,7 +99,7 @@ func (cr *ChatRoutes) createSession(w http.ResponseWriter, r *http.Request) {
 		Messages:  []models.ChatMessage{},
 	}
 
-	if err := cr.store.Chats.Save(session); err != nil {
+	if err := cr.getStore().Chats.Save(session); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -111,7 +119,7 @@ func (cr *ChatRoutes) listAgents(w http.ResponseWriter, r *http.Request) {
 // GET /api/chats/{id} — get session
 func (cr *ChatRoutes) getSession(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	session, err := cr.store.Chats.Get(id)
+	session, err := cr.getStore().Chats.Get(id)
 	if err != nil {
 		respondError(w, http.StatusNotFound, err.Error())
 		return
@@ -129,7 +137,7 @@ func (cr *ChatRoutes) getSession(w http.ResponseWriter, r *http.Request) {
 // PATCH /api/chats/{id} — update title or model (reject agentType changes)
 func (cr *ChatRoutes) updateSession(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	session, err := cr.store.Chats.Get(id)
+	session, err := cr.getStore().Chats.Get(id)
 	if err != nil {
 		respondError(w, http.StatusNotFound, err.Error())
 		return
@@ -157,7 +165,7 @@ func (cr *ChatRoutes) updateSession(w http.ResponseWriter, r *http.Request) {
 	}
 	session.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 
-	if err := cr.store.Chats.Save(session); err != nil {
+	if err := cr.getStore().Chats.Save(session); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -170,7 +178,7 @@ func (cr *ChatRoutes) updateSession(w http.ResponseWriter, r *http.Request) {
 func (cr *ChatRoutes) deleteSession(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	if err := cr.store.Chats.Delete(id); err != nil {
+	if err := cr.getStore().Chats.Delete(id); err != nil {
 		respondError(w, http.StatusNotFound, err.Error())
 		return
 	}
@@ -185,7 +193,7 @@ const maxQueueSize = 10
 func (cr *ChatRoutes) sendMessage(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[chat] sendMessage handler called")
 	id := chi.URLParam(r, "id")
-	session, err := cr.store.Chats.Get(id)
+	session, err := cr.getStore().Chats.Get(id)
 	if err != nil {
 		respondError(w, http.StatusNotFound, err.Error())
 		return
@@ -210,7 +218,7 @@ func (cr *ChatRoutes) sendMessage(w http.ResponseWriter, r *http.Request) {
 		position := len(session.MessageQueue) + 1
 		session.MessageQueue = append(session.MessageQueue, input.Content)
 		session.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-		if err := cr.store.Chats.Save(session); err != nil {
+		if err := cr.getStore().Chats.Save(session); err != nil {
 			respondError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -229,7 +237,7 @@ func (cr *ChatRoutes) sendMessage(w http.ResponseWriter, r *http.Request) {
 func (cr *ChatRoutes) stopChat(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	session, err := cr.store.Chats.Get(id)
+	session, err := cr.getStore().Chats.Get(id)
 	if err != nil {
 		respondError(w, http.StatusNotFound, err.Error())
 		return
@@ -237,7 +245,7 @@ func (cr *ChatRoutes) stopChat(w http.ResponseWriter, r *http.Request) {
 
 	session.Status = "idle"
 	session.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-	_ = cr.store.Chats.Save(session)
+	_ = cr.getStore().Chats.Save(session)
 	cr.sse.Broadcast(SSEEvent{Type: "chats:updated", Data: map[string]interface{}{"session": session}})
 
 	respondJSON(w, http.StatusOK, map[string]string{"status": "stopped"})
@@ -246,7 +254,7 @@ func (cr *ChatRoutes) stopChat(w http.ResponseWriter, r *http.Request) {
 // GET /api/chats/{id}/queue — get queue status
 func (cr *ChatRoutes) getQueue(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	session, err := cr.store.Chats.Get(id)
+	session, err := cr.getStore().Chats.Get(id)
 	if err != nil {
 		respondError(w, http.StatusNotFound, err.Error())
 		return
@@ -267,7 +275,7 @@ func (cr *ChatRoutes) getQueue(w http.ResponseWriter, r *http.Request) {
 // POST /api/chats/{id}/process-queue — get and remove next message from queue
 func (cr *ChatRoutes) processQueue(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	session, err := cr.store.Chats.Get(id)
+	session, err := cr.getStore().Chats.Get(id)
 	if err != nil {
 		respondError(w, http.StatusNotFound, err.Error())
 		return
@@ -284,7 +292,7 @@ func (cr *ChatRoutes) processQueue(w http.ResponseWriter, r *http.Request) {
 	nextMessage := session.MessageQueue[0]
 	session.MessageQueue = session.MessageQueue[1:]
 	session.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-	if err := cr.store.Chats.Save(session); err != nil {
+	if err := cr.getStore().Chats.Save(session); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

@@ -71,6 +71,7 @@ func NewMCPServer(projectHint string) *MCPServer {
 	handlers.RegisterDocTools(s.srv, getStore)
 	handlers.RegisterTimeTools(s.srv, getStore)
 	handlers.RegisterSearchTools(s.srv, getStore)
+	handlers.RegisterCodeTools(s.srv, getStore)
 	handlers.RegisterBoardTools(s.srv, getStore)
 	handlers.RegisterTemplateTools(s.srv, getStore)
 	handlers.RegisterValidateTools(s.srv, getStore)

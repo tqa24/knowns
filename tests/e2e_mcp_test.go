@@ -592,6 +592,25 @@ func TestMCP_SemanticSearch(t *testing.T) {
 		})
 		t.Logf("task search result: %s", truncate(raw, 300))
 	})
+
+	t.Run("search rejects code type", func(t *testing.T) {
+		raw := client.CallToolRaw("search", map[string]any{
+			"query": "authentication security patterns",
+			"type":  "code",
+			"mode":  "hybrid",
+			"limit": 10,
+		})
+		if !strings.Contains(raw, "error") {
+			t.Fatalf("expected MCP error for code search type, got: %s", raw)
+		}
+	})
+
+	t.Run("code graph tool responds", func(t *testing.T) {
+		raw := client.CallToolRaw("code_graph", map[string]any{})
+		if raw == "" {
+			t.Fatal("empty code_graph result")
+		}
+	})
 }
 
 // mapKeys returns the keys of a map (for debugging).

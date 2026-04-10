@@ -74,7 +74,15 @@ func toPascalCase(s string) string {
 // TemplateRoutes handles /api/templates endpoints.
 type TemplateRoutes struct {
 	store *storage.Store
+	mgr   *storage.Manager
 	sse   Broadcaster
+}
+
+func (tr *TemplateRoutes) getStore() *storage.Store {
+	if tr.mgr != nil {
+		return tr.mgr.GetStore()
+	}
+	return tr.store
 }
 
 // Register wires the template routes onto r.
@@ -164,7 +172,7 @@ func toTemplateFiles(actions []models.TemplateAction) []templateFile {
 //
 // GET /api/templates
 func (tr *TemplateRoutes) list(w http.ResponseWriter, r *http.Request) {
-	templates, err := tr.store.Templates.List()
+	templates, err := tr.getStore().Templates.List()
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -195,7 +203,7 @@ func (tr *TemplateRoutes) list(w http.ResponseWriter, r *http.Request) {
 // GET /api/templates/{name}
 func (tr *TemplateRoutes) get(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
-	tmpl, err := tr.store.Templates.Get(name)
+	tmpl, err := tr.getStore().Templates.Get(name)
 	if err != nil {
 		respondError(w, http.StatusNotFound, err.Error())
 		return
@@ -244,12 +252,12 @@ func (tr *TemplateRoutes) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := tr.store.Templates.Create(req.Name, req.Description); err != nil {
+	if err := tr.getStore().Templates.Create(req.Name, req.Description); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	tmpl, err := tr.store.Templates.Get(req.Name)
+	tmpl, err := tr.getStore().Templates.Get(req.Name)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -282,7 +290,7 @@ func (tr *TemplateRoutes) preview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tmpl, err := tr.store.Templates.Get(req.Name)
+	tmpl, err := tr.getStore().Templates.Get(req.Name)
 	if err != nil {
 		respondError(w, http.StatusNotFound, "template not found: "+err.Error())
 		return
@@ -355,7 +363,7 @@ func (tr *TemplateRoutes) run(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tmpl, err := tr.store.Templates.Get(name)
+	tmpl, err := tr.getStore().Templates.Get(name)
 	if err != nil {
 		respondError(w, http.StatusNotFound, err.Error())
 		return
@@ -389,7 +397,7 @@ func (tr *TemplateRoutes) run(w http.ResponseWriter, r *http.Request) {
 		skipped := false
 		skipReason := ""
 		if action.SkipIfExists && !req.DryRun {
-			projectRoot := filepath.Dir(tr.store.Root)
+			projectRoot := filepath.Dir(tr.getStore().Root)
 			if _, statErr := os.Stat(filepath.Join(projectRoot, path)); statErr == nil {
 				skipped = true
 				skipReason = "file exists"

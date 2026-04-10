@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { FolderOpen, Trash2, Search, Plus, ArrowRightLeft, Clock } from "lucide-react";
+import { FolderOpen, Folder, Trash2, Search, ChevronRight, ArrowRightLeft, Clock, Loader2 } from "lucide-react";
 import {
 	Dialog,
 	DialogContent,
@@ -8,12 +8,13 @@ import {
 	DialogDescription,
 } from "@/ui/components/ui/dialog";
 import { Button } from "@/ui/components/ui/button";
-import { Input } from "@/ui/components/ui/input";
-import { workspaceApi, type WorkspaceProject } from "@/ui/api/client";
+import { workspaceApi, type WorkspaceProject, type DirEntry } from "@/ui/api/client";
+import { cn } from "@/ui/lib/utils";
 
 interface WorkspacePickerProps {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
+	onSwitched?: () => void;
 }
 
 function formatRelativeTime(dateStr: string): string {
@@ -30,103 +31,309 @@ function formatRelativeTime(dateStr: string): string {
 	return date.toLocaleDateString();
 }
 
-export function WorkspacePicker({ open, onOpenChange }: WorkspacePickerProps) {
+// ─── Saved tab ───────────────────────────────────────────────────────────────
+
+function SavedTab({ onSwitch }: { onSwitch: (id: string) => Promise<void> }) {
 	const [projects, setProjects] = useState<WorkspaceProject[]>([]);
-	const [loading, setLoading] = useState(false);
+	const [loading, setLoading] = useState(true);
 	const [scanning, setScanning] = useState(false);
 	const [switching, setSwitching] = useState<string | null>(null);
-	const [addPath, setAddPath] = useState("");
-	const [scanDirs, setScanDirs] = useState("");
 	const [error, setError] = useState<string | null>(null);
 
-	const loadProjects = useCallback(async () => {
+	const load = useCallback(async () => {
 		setLoading(true);
-		setError(null);
 		try {
-			const data = await workspaceApi.list();
-			setProjects(data || []);
-		} catch (err) {
+			setProjects(await workspaceApi.list() || []);
+		} catch {
 			setError("Failed to load projects");
-			console.error(err);
 		} finally {
 			setLoading(false);
 		}
 	}, []);
 
-	const handleAutoScan = useCallback(async () => {
+	const autoScan = useCallback(async () => {
 		setScanning(true);
 		try {
-			const added = await workspaceApi.autoScan();
-			if (added.length > 0) {
-				await loadProjects();
-			}
-		} catch (err) {
-			console.error("Auto-scan failed:", err);
+			await workspaceApi.autoScan();
+			await load();
+		} catch {
+			// silent
 		} finally {
 			setScanning(false);
 		}
-	}, [loadProjects]);
+	}, [load]);
 
-	useEffect(() => {
-		if (open) {
-			loadProjects();
-			handleAutoScan();
-		}
-	}, [open, loadProjects, handleAutoScan]);
+	useEffect(() => { load(); autoScan(); }, [load, autoScan]);
 
 	const handleSwitch = async (id: string) => {
 		setSwitching(id);
-		setError(null);
-		try {
-			await workspaceApi.switchProject(id);
-			onOpenChange(false);
-		} catch (err) {
-			setError("Failed to switch workspace");
-			console.error(err);
-		} finally {
-			setSwitching(null);
-		}
+		try { await onSwitch(id); } finally { setSwitching(null); }
 	};
 
 	const handleRemove = async (id: string) => {
-		setError(null);
 		try {
 			await workspaceApi.remove(id);
-			setProjects((prev) => prev.filter((p) => p.id !== id));
-		} catch (err) {
+			setProjects(prev => prev.filter(p => p.id !== id));
+		} catch {
 			setError("Failed to remove project");
-			console.error(err);
 		}
 	};
 
-	const handleScan = async () => {
-		if (!scanDirs.trim()) return;
-		setError(null);
-		try {
-			const dirs = scanDirs.split(",").map((d) => d.trim()).filter(Boolean);
-			const added = await workspaceApi.scan(dirs);
-			if (added.length > 0) {
-				await loadProjects();
+	return (
+		<div className="flex flex-col gap-3">
+			{error && <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</div>}
+			{scanning && (
+				<div className="flex items-center gap-2 text-xs text-muted-foreground">
+					<Loader2 className="h-3 w-3 animate-spin" /> Scanning common directories…
+				</div>
+			)}
+			<div className="max-h-72 overflow-y-auto space-y-1">
+				{loading ? (
+					<div className="py-8 text-center text-sm text-muted-foreground">Loading…</div>
+				) : projects.length === 0 ? (
+					<div className="py-8 text-center text-sm text-muted-foreground">
+						No saved projects. Use Browse to find one.
+					</div>
+				) : projects.map(p => (
+					<div
+						key={p.id}
+						className="group flex items-center gap-3 rounded-lg border px-3 py-2.5 hover:bg-accent/50 transition-colors cursor-pointer"
+						onClick={() => handleSwitch(p.id)}
+						onKeyDown={e => e.key === "Enter" && handleSwitch(p.id)}
+						role="button"
+						tabIndex={0}
+					>
+						<FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
+						<div className="min-w-0 flex-1 overflow-hidden">
+							<div className="truncate text-sm font-medium">{p.name}</div>
+							<div className="truncate text-xs text-muted-foreground" title={p.path}>{p.path}</div>
+						</div>
+						<div className="flex items-center gap-1.5 shrink-0 ml-2">
+							<span className="flex items-center gap-1 text-xs text-muted-foreground">
+								<Clock className="h-3 w-3" />{formatRelativeTime(p.lastUsed)}
+							</span>
+							{switching === p.id && <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />}
+							<button
+								type="button"
+								className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-destructive/10 hover:text-destructive transition-all"
+								onClick={e => { e.stopPropagation(); handleRemove(p.id); }}
+								aria-label={`Remove ${p.name}`}
+							>
+								<Trash2 className="h-3.5 w-3.5" />
+							</button>
+						</div>
+					</div>
+				))}
+			</div>
+		</div>
+	);
+}
+
+// ─── Browse tab ───────────────────────────────────────────────────────────────
+
+interface TreeNode {
+	entry: DirEntry;
+	children: TreeNode[] | null; // null = not loaded yet
+	loading: boolean;
+	expanded: boolean;
+}
+
+function buildNodes(entries: DirEntry[]): TreeNode[] {
+	return entries.map(e => ({ entry: e, children: null, loading: false, expanded: false }));
+}
+
+function BrowseTab({ onSwitch }: { onSwitch: (path: string) => Promise<void> }) {
+	const [roots, setRoots] = useState<TreeNode[]>([]);
+	const [loading, setLoading] = useState(true);
+	const [switching, setSwitching] = useState<string | null>(null);
+	const [homePath, setHomePath] = useState<string>("");
+
+	useEffect(() => {
+		workspaceApi.browse().then(entries => {
+			setRoots(buildNodes(entries));
+			// Infer home from first entry's parent
+			if (entries.length > 0 && entries[0]?.path) {
+				const parts = entries[0].path.split("/");
+				parts.pop();
+				setHomePath(parts.join("/") || "/");
 			}
-			setScanDirs("");
+		}).catch(() => {}).finally(() => setLoading(false));
+	}, []);
+
+	const toggleNode = useCallback(async (path: string[], nodeList: TreeNode[], setList: (n: TreeNode[]) => void) => {
+		if (path.length === 0) return;
+
+		const updateNodes = async (nodes: TreeNode[], depth: number): Promise<TreeNode[]> => {
+			return Promise.all(nodes.map(async n => {
+				if (n.entry.path !== path[depth]) return n;
+				if (depth < path.length - 1) {
+					// Recurse deeper
+					return { ...n, children: n.children ? await updateNodes(n.children, depth + 1) : n.children };
+				}
+				// This is the target node
+				if (n.expanded) return { ...n, expanded: false };
+				if (n.children !== null) return { ...n, expanded: true };
+				// Load children
+				const loading = { ...n, loading: true, expanded: true };
+				// We need to trigger a re-render with loading state first
+				return loading;
+			}));
+		};
+
+		// First pass: set loading
+		const withLoading = await updateNodes(nodeList, 0);
+		setList(withLoading);
+
+		// Find the target node and load its children
+		const targetPath = path[path.length - 1];
+		const loadChildren = async (nodes: TreeNode[]): Promise<TreeNode[]> => {
+			return Promise.all(nodes.map(async n => {
+				if (n.entry.path === targetPath && n.loading) {
+					try {
+						const entries = await workspaceApi.browse(n.entry.path);
+						return { ...n, loading: false, children: buildNodes(entries) };
+					} catch {
+						return { ...n, loading: false, children: [] };
+					}
+				}
+				if (n.children) return { ...n, children: await loadChildren(n.children) };
+				return n;
+			}));
+		};
+
+		const withChildren = await loadChildren(withLoading);
+		setList(withChildren);
+	}, []);
+
+	const handleSwitch = async (path: string) => {
+		setSwitching(path);
+		try { await onSwitch(path); } finally { setSwitching(null); }
+	};
+
+	const renderNodes = (nodes: TreeNode[], depth: number, pathSoFar: string[]): React.ReactNode => {
+		return nodes.map(n => {
+			const currentPath = [...pathSoFar, n.entry.path];
+			return (
+				<div key={n.entry.path}>
+					<div
+						className={cn(
+							"flex items-center gap-1.5 rounded px-2 py-1.5 text-sm hover:bg-accent/50 transition-colors group",
+							n.entry.isProject && "text-foreground"
+						)}
+						style={{ paddingLeft: `${8 + depth * 16}px` }}
+					>
+						{/* Expand chevron */}
+						<button
+							type="button"
+							className={cn(
+								"h-4 w-4 shrink-0 flex items-center justify-center rounded transition-colors",
+								n.entry.hasChildren || n.entry.isProject ? "hover:bg-accent cursor-pointer" : "opacity-0 pointer-events-none"
+							)}
+							onClick={() => toggleNode(currentPath, roots, setRoots)}
+						>
+							{n.loading
+								? <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+								: <ChevronRight className={cn("h-3 w-3 text-muted-foreground transition-transform", n.expanded && "rotate-90")} />
+							}
+						</button>
+
+						{/* Folder icon */}
+						{n.entry.isProject
+							? <FolderOpen className="h-4 w-4 shrink-0 text-primary" />
+							: <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
+						}
+
+						{/* Name */}
+						<span
+							className="flex-1 truncate cursor-pointer"
+							onClick={() => n.entry.hasChildren && toggleNode(currentPath, roots, setRoots)}
+						>
+							{n.entry.name}
+						</span>
+
+						{/* Open button for projects */}
+						{n.entry.isProject && (
+							<Button
+								size="sm"
+								variant="default"
+								className="h-6 px-2 text-xs opacity-0 group-hover:opacity-100 shrink-0"
+								disabled={switching === n.entry.path}
+								onClick={() => handleSwitch(n.entry.path)}
+							>
+								{switching === n.entry.path ? <Loader2 className="h-3 w-3 animate-spin" /> : "Open"}
+							</Button>
+						)}
+					</div>
+
+					{/* Children */}
+					{n.expanded && n.children && n.children.length > 0 && (
+						<div>{renderNodes(n.children, depth + 1, currentPath)}</div>
+					)}
+					{n.expanded && n.children && n.children.length === 0 && (
+						<div className="text-xs text-muted-foreground py-1" style={{ paddingLeft: `${8 + (depth + 1) * 16}px` }}>
+							Empty
+						</div>
+					)}
+				</div>
+			);
+		});
+	};
+
+	return (
+		<div className="flex flex-col gap-2">
+			{homePath && (
+				<div className="flex items-center gap-1.5 text-xs text-muted-foreground px-1">
+					<Folder className="h-3 w-3" />
+					<span className="truncate">{homePath}</span>
+				</div>
+			)}
+			<div className="max-h-72 overflow-y-auto border rounded-lg">
+				{loading ? (
+					<div className="flex items-center justify-center py-8 gap-2 text-sm text-muted-foreground">
+						<Loader2 className="h-4 w-4 animate-spin" /> Loading…
+					</div>
+				) : roots.length === 0 ? (
+					<div className="py-8 text-center text-sm text-muted-foreground">No directories found</div>
+				) : (
+					<div className="py-1">{renderNodes(roots, 0, [])}</div>
+				)}
+			</div>
+			<p className="text-xs text-muted-foreground px-1">
+				Folders with a <FolderOpen className="inline h-3 w-3 text-primary" /> icon contain a Knowns project.
+			</p>
+		</div>
+	);
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
+export function WorkspacePicker({ open, onOpenChange, onSwitched }: WorkspacePickerProps) {
+	const [tab, setTab] = useState<"saved" | "browse">("saved");
+	const [switching, setSwitching] = useState(false);
+
+	const handleSwitchById = async (id: string) => {
+		setSwitching(true);
+		try {
+			await workspaceApi.switchProject(id);
+			onOpenChange(false);
+			onSwitched?.();
 		} catch (err) {
-			setError("Failed to scan directories");
 			console.error(err);
+		} finally {
+			setSwitching(false);
 		}
 	};
 
-	const handleAdd = async () => {
-		if (!addPath.trim()) return;
-		setError(null);
+	const handleSwitchByPath = async (path: string) => {
+		setSwitching(true);
 		try {
-			// Scan the parent dir to discover the project
-			const dirs = [addPath.trim()];
-			await workspaceApi.scan(dirs);
-			await loadProjects();
-			setAddPath("");
+			await workspaceApi.switchByPath(path);
+			onOpenChange(false);
+			onSwitched?.();
 		} catch (err) {
-			setError("Failed to add project");
 			console.error(err);
+		} finally {
+			setSwitching(false);
 		}
 	};
 
@@ -139,100 +346,39 @@ export function WorkspacePicker({ open, onOpenChange }: WorkspacePickerProps) {
 						Switch Workspace
 					</DialogTitle>
 					<DialogDescription>
-						Select a project or add new ones to the registry.
+						Select a saved project or browse your filesystem.
 					</DialogDescription>
 				</DialogHeader>
 
-				{error && (
-					<div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-						{error}
+				{/* Tabs */}
+				<div className="flex gap-1 border-b">
+					{(["saved", "browse"] as const).map(t => (
+						<button
+							key={t}
+							type="button"
+							className={cn(
+								"px-3 py-1.5 text-sm font-medium capitalize transition-colors border-b-2 -mb-px",
+								tab === t
+									? "border-primary text-foreground"
+									: "border-transparent text-muted-foreground hover:text-foreground"
+							)}
+							onClick={() => setTab(t)}
+						>
+							{t === "saved" ? "Saved" : "Browse"}
+						</button>
+					))}
+				</div>
+
+				{tab === "saved"
+					? <SavedTab onSwitch={handleSwitchById} />
+					: <BrowseTab onSwitch={handleSwitchByPath} />
+				}
+
+				{switching && (
+					<div className="flex items-center gap-2 text-sm text-muted-foreground">
+						<Loader2 className="h-4 w-4 animate-spin" /> Switching workspace…
 					</div>
 				)}
-
-				{scanning && (
-					<div className="flex items-center gap-2 rounded-md bg-primary/5 px-3 py-2 text-sm text-muted-foreground">
-						<Search className="h-3.5 w-3.5 animate-pulse" />
-						Scanning common directories...
-					</div>
-				)}
-
-				{/* Project List */}
-				<div className="max-h-64 space-y-1 overflow-y-auto">
-					{loading ? (
-						<div className="py-8 text-center text-sm text-muted-foreground">Loading...</div>
-					) : projects.length === 0 ? (
-						<div className="py-8 text-center text-sm text-muted-foreground">
-							No projects registered. Scan a directory or add a path below.
-						</div>
-					) : (
-						projects.map((project) => (
-							<div
-								key={project.id}
-								className="group flex items-center gap-3 rounded-lg border px-3 py-2.5 hover:bg-accent/50 transition-colors cursor-pointer"
-								onClick={() => handleSwitch(project.id)}
-								onKeyDown={(e) => e.key === "Enter" && handleSwitch(project.id)}
-								role="button"
-								tabIndex={0}
-							>
-								<FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
-								<div className="min-w-0 flex-1">
-									<div className="truncate text-sm font-medium">{project.name}</div>
-									<div className="truncate text-xs text-muted-foreground">{project.path}</div>
-								</div>
-								<div className="flex items-center gap-1.5 shrink-0">
-									<span className="flex items-center gap-1 text-xs text-muted-foreground">
-										<Clock className="h-3 w-3" />
-										{formatRelativeTime(project.lastUsed)}
-									</span>
-									{switching === project.id && (
-										<span className="text-xs text-primary">Switching...</span>
-									)}
-									<button
-										type="button"
-										className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-destructive/10 hover:text-destructive transition-all"
-										onClick={(e) => {
-											e.stopPropagation();
-											handleRemove(project.id);
-										}}
-										aria-label={`Remove ${project.name}`}
-									>
-										<Trash2 className="h-3.5 w-3.5" />
-									</button>
-								</div>
-							</div>
-						))
-					)}
-				</div>
-
-				{/* Add Project */}
-				<div className="flex gap-2">
-					<Input
-						placeholder="Project parent directory path..."
-						value={addPath}
-						onChange={(e) => setAddPath(e.target.value)}
-						onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-						className="text-sm"
-					/>
-					<Button variant="outline" size="sm" onClick={handleAdd} disabled={!addPath.trim()}>
-						<Plus className="h-4 w-4 mr-1" />
-						Add
-					</Button>
-				</div>
-
-				{/* Scan */}
-				<div className="flex gap-2">
-					<Input
-						placeholder="Scan directories (comma-separated)..."
-						value={scanDirs}
-						onChange={(e) => setScanDirs(e.target.value)}
-						onKeyDown={(e) => e.key === "Enter" && handleScan()}
-						className="text-sm"
-					/>
-					<Button variant="outline" size="sm" onClick={handleScan} disabled={!scanDirs.trim()}>
-						<Search className="h-4 w-4 mr-1" />
-						Scan
-					</Button>
-				</div>
 			</DialogContent>
 		</Dialog>
 	);

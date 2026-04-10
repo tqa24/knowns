@@ -37,10 +37,10 @@ Add revert message and copy message functionality to Chat UI, plus clear chat on
 - Revert endpoint already exists: `POST /session/{sessionID}/revert`
 
 ### Phase 2: Frontend - API Layer
-- Added `revertMessage(sessionId, messageId)` to `opencodeApi` in `ui/src/api/client.ts`
+- Added `revertMessage(sessionId, messageId)` to `opencodeApi` in @code/ui/src/api/client.ts
 
 ### Phase 3: Frontend - Clear Chat on Enter
-- Modified `handleSend` in ChatPage.tsx to clear messages after send
+- Modified `handleSend` in @code/ui/src/pages/ChatPage.tsx to clear messages after send
 
 ### Phase 4: Frontend - MessageBubble Enhancements
 - Added copy button to user message bubble
@@ -48,8 +48,8 @@ Add revert message and copy message functionality to Chat UI, plus clear chat on
 - Wired up revert API call with onRevert callback
 
 ## Files Modified
-- `ui/src/api/client.ts` - Added `revertMessage` API method
-- `ui/src/pages/ChatPage.tsx` - Clear messages on send, added `handleRevert`
-- `ui/src/components/chat/MessageBubble.tsx` - Added copy/revert buttons
-- `ui/src/components/chat/ChatThread.tsx` - Added `onRevert` prop
-- `ui/src/components/organisms/chat-page/ChatMessages.tsx` - Added `onRevert` prop
+- @code/ui/src/api/client.ts - Added `revertMessage` API method
+- @code/ui/src/pages/ChatPage.tsx - Clear messages on send, added `handleRevert`
+- @code/ui/src/components/chat/MessageBubble.tsx - Added copy/revert buttons
+- @code/ui/src/components/chat/ChatThread.tsx - Added `onRevert` prop
+- @code/ui/src/components/organisms/ChatPage/ChatMessages.tsx - Added `onRevert` prop

@@ -63,7 +63,12 @@ Generate 2–4 gray areas for this feature. A gray area is a decision that:
 
 **Quick codebase scout** (grep only — no deep analysis):
 - Check what already exists that's related
+- Search for past decisions and patterns on this topic
 - Annotate options with what the codebase already has
+
+```json
+mcp__knowns__search({ "query": "<feature keywords>", "type": "memory" })
+```
 
 **Filter OUT:**
 - Technical implementation details (architecture, library choices) — that's planning's job

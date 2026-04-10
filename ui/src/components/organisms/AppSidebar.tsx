@@ -12,6 +12,7 @@ import {
 	ArrowRightLeft,
 	Network,
 	Brain,
+	Code2,
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import logoImage from "../../public/logo.png";
@@ -35,6 +36,7 @@ interface AppSidebarProps {
 	currentPage: string;
 	onSearchClick: () => void;
 	onWorkspacePickerClick: () => void;
+	serverVersion?: string;
 }
 
 const topNavItems = [
@@ -75,6 +77,12 @@ const topNavItems = [
 		to: "/graph",
 	},
 	{
+		id: "code-graph",
+		label: "Code Graph",
+		icon: Code2,
+		to: "/graph/code",
+	},
+	{
 		id: "memory",
 		label: "Memory",
 		icon: Brain,
@@ -86,6 +94,7 @@ export function AppSidebar({
 	currentPage,
 	onSearchClick,
 	onWorkspacePickerClick,
+	serverVersion,
 }: AppSidebarProps) {
 	const { state } = useSidebar();
 	const isMobile = useIsMobile();
@@ -111,18 +120,17 @@ export function AppSidebar({
 									<span className="truncate font-semibold">
 										{config.name || "Knowns"}
 									</span>
-									<span className="truncate text-xs text-muted-foreground">
-										{import.meta.env.APP_VERSION || "v0.0.0"}
-									</span>
 								</div>
-								<button
-									type="button"
-									onClick={onWorkspacePickerClick}
-									className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
-									title="Switch workspace"
-								>
-									<ArrowRightLeft className="h-4 w-4" />
-								</button>
+								{isExpanded && (
+									<button
+										type="button"
+										onClick={onWorkspacePickerClick}
+										className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+										title="Switch workspace"
+									>
+										<ArrowRightLeft className="h-4 w-4" />
+									</button>
+								)}
 						</div>
 					</SidebarMenuItem>
 				</SidebarMenu>
@@ -203,9 +211,15 @@ export function AppSidebar({
 								GitHub
 								<ExternalLink className="w-2.5 h-2.5" />
 							</a>
-							<span className="font-mono">
-								{import.meta.env.APP_VERSION}
-							</span>
+							<a
+								href="https://knowns.sh/changelog"
+								target="_blank"
+								rel="noopener noreferrer"
+								className="font-mono hover:text-sidebar-foreground transition-colors truncate max-w-[120px]"
+								title={serverVersion || import.meta.env.APP_VERSION}
+							>
+								{serverVersion || import.meta.env.APP_VERSION}
+							</a>
 						</div>
 					</div>
 				)}

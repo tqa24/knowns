@@ -45,6 +45,7 @@ var (
 	taskRefRE   = regexp.MustCompile(`@task-([a-z0-9]+)`)
 	docRefRE    = regexp.MustCompile(`@doc/([^\s\)]+)`)
 	memoryRefRE = regexp.MustCompile(`@memory-([a-z0-9]+)`)
+	codeRefRE   = regexp.MustCompile(`@code/([^\s\)]+)`)
 )
 
 // Valid status and priority values.
@@ -100,7 +101,7 @@ func Run(store *storage.Store, opts Options) *Result {
 			if opts.Entity != "" && opts.Entity != t.ID {
 				continue
 			}
-			issues = append(issues, validateTask(t, taskIDs, docPaths, memoryIDs, parentMap, opts)...)
+			issues = append(issues, validateTask(t, taskIDs, docPaths, memoryIDs, parentMap, opts, store)...)
 		}
 	}
 
@@ -123,7 +124,7 @@ func Run(store *storage.Store, opts Options) *Result {
 				})
 				continue
 			}
-			issues = append(issues, validateDoc(fullDoc, taskIDs, docPaths, memoryIDs)...)
+			issues = append(issues, validateDoc(fullDoc, taskIDs, docPaths, memoryIDs, store)...)
 		}
 	}
 
@@ -133,7 +134,7 @@ func Run(store *storage.Store, opts Options) *Result {
 			if opts.Entity != "" && opts.Entity != m.ID {
 				continue
 			}
-			issues = append(issues, validateMemory(m, taskIDs, docPaths, memoryIDs)...)
+			issues = append(issues, validateMemory(m, taskIDs, docPaths, memoryIDs, store)...)
 		}
 	}
 
@@ -188,7 +189,7 @@ func Run(store *storage.Store, opts Options) *Result {
 
 // ---------- Task validation ----------
 
-func validateTask(t *models.Task, taskIDs, docPaths, memoryIDs map[string]bool, parentMap map[string]string, opts Options) []Issue {
+func validateTask(t *models.Task, taskIDs, docPaths, memoryIDs map[string]bool, parentMap map[string]string, opts Options, store *storage.Store) []Issue {
 	var issues []Issue
 
 	// Title required.
@@ -317,6 +318,9 @@ func validateTask(t *models.Task, taskIDs, docPaths, memoryIDs map[string]bool, 
 		}
 	}
 
+	// @code/ references — check against AST index when it exists.
+	issues = append(issues, validateCodeRefs(checkText, t.ID, store)...)
+
 	// SDD-specific checks.
 	if opts.Scope == "sdd" {
 		if t.Spec != "" && len(t.AcceptanceCriteria) == 0 {
@@ -346,7 +350,7 @@ func detectCircularParent(id string, parentMap map[string]string) bool {
 
 // ---------- Doc validation ----------
 
-func validateDoc(d *models.Doc, taskIDs, docPaths, memoryIDs map[string]bool) []Issue {
+func validateDoc(d *models.Doc, taskIDs, docPaths, memoryIDs map[string]bool, store *storage.Store) []Issue {
 	var issues []Issue
 
 	if d.Title == "" {
@@ -399,12 +403,15 @@ func validateDoc(d *models.Doc, taskIDs, docPaths, memoryIDs map[string]bool) []
 		}
 	}
 
+	// @code/ references — check against AST index when it exists.
+	issues = append(issues, validateCodeRefs(d.Content, d.Path, store)...)
+
 	return issues
 }
 
 // ---------- Memory validation ----------
 
-func validateMemory(m *models.MemoryEntry, taskIDs, docPaths, memoryIDs map[string]bool) []Issue {
+func validateMemory(m *models.MemoryEntry, taskIDs, docPaths, memoryIDs map[string]bool, store *storage.Store) []Issue {
 	var issues []Issue
 
 	if m.Title == "" {
@@ -456,6 +463,9 @@ func validateMemory(m *models.MemoryEntry, taskIDs, docPaths, memoryIDs map[stri
 			})
 		}
 	}
+
+	// @code/ references — check against AST index when it exists.
+	issues = append(issues, validateCodeRefs(m.Content, m.ID, store)...)
 
 	return issues
 }
@@ -523,6 +533,42 @@ func validateTemplate(tmpl *models.Template, engine *codegen.Engine, docPaths ma
 			Level: severity, Code: "BROKEN_DOC_REF",
 			Message: fmt.Sprintf("Linked doc %q not found", tmpl.Doc), Entity: tmpl.Name,
 		})
+	}
+
+	return issues
+}
+
+// validateCodeRefs checks @code/ references in content when the AST index exists.
+// It silently skips when code_edges table has no rows.
+func validateCodeRefs(content, entityID string, store *storage.Store) []Issue {
+	var issues []Issue
+
+	// Skip if store is nil or AST index doesn't exist
+	if store == nil || !store.CodeRefIndexExists() {
+		return issues
+	}
+
+	for _, match := range codeRefRE.FindAllStringSubmatch(content, -1) {
+		ref := strings.TrimRight(match[1], ".,;)")
+		// Parse @code/<filepath> or @code/<filepath>::<symbol>
+		var docPath, symbol string
+		if idx := strings.Index(ref, "::"); idx >= 0 {
+			docPath = ref[:idx]
+			symbol = ref[idx+2:]
+		} else {
+			docPath = ref
+			symbol = ""
+		}
+
+		// Check if the ref exists in the AST index
+		if !store.CodeRefExists(docPath, symbol) {
+			issues = append(issues, Issue{
+				Level:   "error",
+				Code:    "BROKEN_CODE_REF",
+				Message: fmt.Sprintf("Broken code ref: @code/%s (symbol not found in AST index)", ref),
+				Entity:  entityID,
+			})
+		}
 	}
 
 	return issues

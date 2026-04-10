@@ -28,9 +28,10 @@ func setupWorkspaceTest(t *testing.T) (*chi.Mux, *fakeBroadcaster, *storage.Mana
 	t.Helper()
 	tmpDir := t.TempDir()
 
-	// Create a fake project with .knowns/
+	// Create a fake project with .knowns/config.json
 	projDir := filepath.Join(tmpDir, "test-project")
 	os.MkdirAll(filepath.Join(projDir, ".knowns"), 0755)
+	os.WriteFile(filepath.Join(projDir, ".knowns", "config.json"), []byte(`{"name":"test-project"}`), 0644)
 
 	regFile := filepath.Join(tmpDir, "registry.json")
 	reg := registry.NewRegistryWithPath(regFile)
@@ -77,6 +78,7 @@ func TestWorkspaceSwitch(t *testing.T) {
 	// Create a second project
 	proj2 := filepath.Join(tmpDir, "proj2")
 	os.MkdirAll(filepath.Join(proj2, ".knowns"), 0755)
+	os.WriteFile(filepath.Join(proj2, ".knowns", "config.json"), []byte(`{"name":"proj2"}`), 0644)
 	reg := mgr.GetRegistry()
 	p2, _ := reg.Add(proj2)
 
@@ -109,7 +111,9 @@ func TestWorkspaceScan(t *testing.T) {
 	// Create a scan directory with 2 projects
 	scanDir := filepath.Join(tmpDir, "scan-parent")
 	os.MkdirAll(filepath.Join(scanDir, "repo-a", ".knowns"), 0755)
+	os.WriteFile(filepath.Join(scanDir, "repo-a", ".knowns", "config.json"), []byte(`{"name":"repo-a"}`), 0644)
 	os.MkdirAll(filepath.Join(scanDir, "repo-b", ".knowns"), 0755)
+	os.WriteFile(filepath.Join(scanDir, "repo-b", ".knowns", "config.json"), []byte(`{"name":"repo-b"}`), 0644)
 
 	body, _ := json.Marshal(map[string][]string{"dirs": {scanDir}})
 	req := httptest.NewRequest("POST", "/workspaces/scan", bytes.NewReader(body))

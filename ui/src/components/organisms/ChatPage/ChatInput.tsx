@@ -47,6 +47,7 @@ import {
   CommandSeparator,
 } from "../../ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "../../ui/popover";
+import { Sheet, SheetContent } from "../../ui/sheet";
 import { OpenCodeModelManagerDialog } from "../OpenCodeModelManagerDialog";
 import { toast } from "../../ui/sonner";
 import type { ChatTodoItem } from "./helpers";
@@ -102,6 +103,7 @@ interface ChatInputProps {
   activePermission?: OpenCodePendingPermission | null;
   restoreValue?: string | null;
   onRestoreValueConsumed?: () => void;
+  sessionId?: string;
   messages?: ChatMessage[];
   sessionModelID?: string;
   sessionModelName?: string;
@@ -136,6 +138,7 @@ export function ChatInput({
   activePermission = null,
   restoreValue = null,
   onRestoreValueConsumed,
+  sessionId,
   messages,
   sessionModelID,
   sessionModelName,
@@ -149,6 +152,7 @@ export function ChatInput({
   const [modelQuery, setModelQuery] = useState("");
   const [files, setFiles] = useState<ChatComposerFile[]>([]);
   const [selectedSkillIndex, setSelectedSkillIndex] = useState(0);
+  const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const isComposingRef = useRef(false);
@@ -171,6 +175,11 @@ export function ChatInput({
     docs: Array<{ path: string; title: string }>;
   }>({ tasks: [], docs: [] });
 
+  const draftStorageKey = useMemo(
+    () => (sessionId ? `knowns.chat.draft.${sessionId}` : null),
+    [sessionId],
+  );
+
   // Restore value when revert is triggered
   useEffect(() => {
     if (restoreValue) {
@@ -179,6 +188,35 @@ export function ChatInput({
       setTimeout(() => textareaRef.current?.focus(), 50);
     }
   }, [restoreValue, onRestoreValueConsumed]);
+
+  useEffect(() => {
+	if (!draftStorageKey) {
+		setValue("");
+		setFiles([]);
+		return;
+	}
+	try {
+		const savedDraft = window.localStorage.getItem(draftStorageKey);
+		setValue(savedDraft || "");
+		setFiles([]);
+	} catch {
+		setValue("");
+		setFiles([]);
+	}
+  }, [draftStorageKey]);
+
+  useEffect(() => {
+	if (!draftStorageKey) return;
+	try {
+		if (value.trim().length === 0) {
+			window.localStorage.removeItem(draftStorageKey);
+			return;
+		}
+		window.localStorage.setItem(draftStorageKey, value);
+	} catch {
+		// Best-effort draft persistence.
+	}
+  }, [draftStorageKey, value]);
 
   const filteredSkills = useMemo(() => {
     const query = value.trimStart();
@@ -262,6 +300,13 @@ export function ChatInput({
       return;
     if (files.length > 0 && !imageUploadSupported) return;
     onSend(normalizeKnownsTaskReferences(value.trim()), files);
+    if (draftStorageKey) {
+		try {
+			window.localStorage.removeItem(draftStorageKey);
+		} catch {
+			// ignore localStorage failures
+		}
+	}
     setValue("");
     setFiles([]);
   };
@@ -510,6 +555,12 @@ export function ChatInput({
             variant="inline"
           />
         )}
+        {!composerLocked && value.trim().length > 0 && (
+          <div className={cn('flex', 'items-center', 'justify-between', 'gap-2', 'px-1', 'text-[11px]', 'text-muted-foreground')}>
+            <span>Draft saved for this session</span>
+            <span className={cn('hidden', 'sm:inline')}>{value.trim().length} chars</span>
+          </div>
+        )}
         {!composerLocked && (
         <div className={cn('relative', 'overflow-visible', 'rounded-2xl', 'border', 'border-border/50', 'bg-background', 'shadow-sm')}>
             <>
@@ -723,10 +774,17 @@ export function ChatInput({
 
               {/* Middle: Model selector */}
 				<div className={cn('flex', 'min-w-0', 'flex-1', 'items-center', 'gap-1', 'sm:ml-1', 'sm:flex-none')}>
+				  <Button type="button" variant="ghost" size="sm"
+				    onClick={() => setMobileControlsOpen(true)}
+				    className={cn('h-7', 'rounded-lg', 'px-2', 'text-xs', 'text-muted-foreground', 'hover:text-foreground', 'sm:hidden')}
+				    title="Open chat controls">
+				    <SlidersHorizontal className={cn('mr-1', 'h-3.5', 'w-3.5')} />
+				    Controls
+				  </Button>
                 <Popover open={modelOpen} onOpenChange={setModelOpen}>
                   <PopoverTrigger asChild>
 					<Button variant="ghost" role="combobox" aria-expanded={modelOpen}
-					  className={cn('h-7', 'min-w-0', 'max-w-[120px]', 'flex-1', 'justify-between', 'gap-1.5', 'rounded-lg', 'px-2', 'text-xs', 'font-medium', 'text-muted-foreground', 'hover:text-foreground', 'sm:max-w-[200px]', 'sm:flex-none')}>
+					  className={cn('hidden', 'h-7', 'min-w-0', 'max-w-[120px]', 'flex-1', 'justify-between', 'gap-1.5', 'rounded-lg', 'px-2', 'text-xs', 'font-medium', 'text-muted-foreground', 'hover:text-foreground', 'sm:inline-flex', 'sm:max-w-[200px]', 'sm:flex-none')}>
                       <span className="truncate">{selectedModel ? selectedModel.modelName : autoModelLabel}</span>
                       <ChevronsUpDown className={cn('h-3', 'w-3', 'shrink-0', 'opacity-50')} />
                     </Button>
@@ -769,8 +827,8 @@ export function ChatInput({
                 {hasVariants && (
                   <Popover open={variantOpen} onOpenChange={setVariantOpen}>
                     <PopoverTrigger asChild>
-						<Button variant="ghost" role="combobox" aria-expanded={variantOpen}
-						  className={cn('h-7', 'min-w-0', 'max-w-[84px]', 'justify-between', 'gap-1', 'rounded-lg', 'px-2', 'text-xs', 'font-medium', 'text-muted-foreground', 'hover:text-foreground', 'sm:max-w-[90px]')}>
+					<Button variant="ghost" role="combobox" aria-expanded={variantOpen}
+					  className={cn('hidden', 'h-7', 'min-w-0', 'max-w-[84px]', 'justify-between', 'gap-1', 'rounded-lg', 'px-2', 'text-xs', 'font-medium', 'text-muted-foreground', 'hover:text-foreground', 'sm:inline-flex', 'sm:max-w-[90px]')}>
                         <span className={cn('truncate', 'capitalize')}>{currentVariant || "Auto"}</span>
                         <ChevronsUpDown className={cn('h-3', 'w-3', 'shrink-0', 'opacity-50')} />
                       </Button>
@@ -801,9 +859,12 @@ export function ChatInput({
                   onToggleProviderHidden={onToggleProviderHidden}
                   showProviderVisibility={Boolean(onToggleProviderHidden)}
                   triggerIcon={<SlidersHorizontal className={cn('h-3.5', 'w-3.5')} />}
+                  triggerClassName="hidden sm:inline-flex"
                 />
 
-                <ContextUsageIndicator data={contextUsage} modelName={sessionModelName} messages={messages} />
+                <div className="hidden sm:block">
+                  <ContextUsageIndicator data={contextUsage} modelName={sessionModelName} messages={messages} />
+                </div>
               </div>
 
               {/* Right: Send / Stop */}
@@ -827,6 +888,93 @@ export function ChatInput({
                 )}
               </div>
             </div>
+            <Sheet open={mobileControlsOpen} onOpenChange={setMobileControlsOpen}>
+              <SheetContent side="bottom" className="rounded-t-3xl border-border/70 bg-background p-0 sm:hidden">
+                <div className="space-y-4 p-4">
+                  <div>
+                    <div className="text-sm font-semibold text-foreground">Chat controls</div>
+                    <div className="text-xs text-muted-foreground">Model, context, and session tools for compact layouts</div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Popover open={modelOpen} onOpenChange={setModelOpen}>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" role="combobox" aria-expanded={modelOpen} className="min-w-0 flex-1 justify-between text-xs">
+                          <span className="truncate">{selectedModel ? selectedModel.modelName : autoModelLabel}</span>
+                          <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className={cn('w-[min(420px,calc(100vw-2rem))]', 'rounded-2xl', 'border-border/60', 'p-0', 'shadow-xl')} align="start">
+                        <Command>
+                          <CommandInput placeholder="Search model..." value={modelQuery} onValueChange={setModelQuery} />
+                          <CommandList>
+                            <CommandEmpty>No models found.</CommandEmpty>
+                            <CommandGroup heading="Selection">
+                              <CommandItem value="auto-mobile" onSelect={() => { onModelChange(null); setModelOpen(false); setModelQuery(""); }}>
+                                <Check className={cn("mr-2 h-4 w-4", !currentModel ? "opacity-100" : "opacity-0")} />
+                                <div className={cn('flex', 'min-w-0', 'flex-1', 'items-center', 'gap-2')}>
+                                  <span className="truncate">{autoModelLabel}</span>
+                                  <Badge variant="outline" className="text-[10px]">Default</Badge>
+                                </div>
+                              </CommandItem>
+                            </CommandGroup>
+                            <CommandSeparator />
+                            {providers.map((provider) => (
+                              <CommandGroup key={`${provider.id}-mobile`} heading={provider.name}>
+                                {provider.models.map((model) => (
+                                  <CommandItem key={`${model.key}-mobile`} value={`${model.modelName} ${model.providerName} ${model.key}`} disabled={!model.selectable} onSelect={() => { onModelChange(model.key, model.variants ? null : undefined); setModelOpen(false); setModelQuery(""); }}>
+                                    <Check className={cn("mr-2 h-4 w-4", currentModel === model.key ? "opacity-100" : "opacity-0")} />
+                                    <div className={cn('flex', 'min-w-0', 'flex-1', 'items-center', 'gap-2')}>
+                                      <span className="truncate">{model.modelName}</span>
+                                      {model.apiDefault && <Badge variant="outline" className="text-[10px]">API Default</Badge>}
+                                    </div>
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            ))}
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+                    {hasVariants && (
+                      <Popover open={variantOpen} onOpenChange={setVariantOpen}>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" role="combobox" aria-expanded={variantOpen} className="justify-between text-xs">
+                            <span className="truncate capitalize">{currentVariant || "Auto"}</span>
+                            <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className={cn('w-[min(130px,calc(100vw-2rem))]', 'rounded-xl', 'border-border/60', 'p-1', 'shadow-xl')} align="start">
+                          <div className="space-y-0.5">
+                            <button type="button" onClick={() => { onModelChange(currentModel ?? null, null); if (currentModel) onSetDefaultVariant?.(currentModel, null); setVariantOpen(false); }} className={cn("flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm hover:bg-muted", !currentVariant && "bg-muted font-medium")}>
+                              Auto
+                            </button>
+                            {modelVariants.map((variant) => (
+                              <button key={`${variant}-mobile`} type="button" onClick={() => { onModelChange(currentModel ?? null, variant); if (currentModel) onSetDefaultVariant?.(currentModel, variant); setVariantOpen(false); }} className={cn("flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm capitalize hover:bg-muted", currentVariant === variant && "bg-muted font-medium")}>
+                                {variant}
+                              </button>
+                            ))}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                    )}
+                  </div>
+                  <div className="rounded-2xl border border-border/60 bg-muted/20 p-3">
+                    <ContextUsageIndicator data={contextUsage} modelName={sessionModelName} messages={messages} />
+                  </div>
+                  <OpenCodeModelManagerDialog
+                    catalog={catalog}
+                    lastLoadedAt={lastLoadedAt}
+                    onSetDefaultModel={onSetDefaultModel}
+                    onUpdateModelPref={onUpdateModelPref}
+                    onToggleProviderHidden={onToggleProviderHidden}
+                    showProviderVisibility={Boolean(onToggleProviderHidden)}
+                    triggerLabel="Manage models"
+                    triggerIcon={<SlidersHorizontal className={cn('h-3.5', 'w-3.5')} />}
+                    triggerClassName="w-full justify-center"
+                  />
+                </div>
+              </SheetContent>
+            </Sheet>
             </>
         </div>
         )}

@@ -14,7 +14,15 @@ import (
 // MemoryRoutes handles /api/memories endpoints.
 type MemoryRoutes struct {
 	store *storage.Store
+	mgr   *storage.Manager
 	sse   Broadcaster
+}
+
+func (mr *MemoryRoutes) getStore() *storage.Store {
+	if mr.mgr != nil {
+		return mr.mgr.GetStore()
+	}
+	return mr.store
 }
 
 // Register wires the memory routes onto r.
@@ -34,7 +42,7 @@ func (mr *MemoryRoutes) list(w http.ResponseWriter, r *http.Request) {
 	category := r.URL.Query().Get("category")
 	tag := r.URL.Query().Get("tag")
 
-	entries, err := mr.store.Memory.List(layer)
+	entries, err := mr.getStore().Memory.List(layer)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -72,7 +80,7 @@ func (mr *MemoryRoutes) list(w http.ResponseWriter, r *http.Request) {
 
 func (mr *MemoryRoutes) get(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	entry, err := mr.store.Memory.Get(id)
+	entry, err := mr.getStore().Memory.Get(id)
 	if err != nil {
 		respondError(w, http.StatusNotFound, err.Error())
 		return
@@ -119,12 +127,12 @@ func (mr *MemoryRoutes) create(w http.ResponseWriter, r *http.Request) {
 		entry.Tags = []string{}
 	}
 
-	if err := mr.store.Memory.Create(entry); err != nil {
+	if err := mr.getStore().Memory.Create(entry); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	search.BestEffortIndexMemory(mr.store, entry.ID)
+	search.BestEffortIndexMemory(mr.getStore(), entry.ID)
 
 	respondJSON(w, http.StatusCreated, entry)
 }
@@ -138,7 +146,7 @@ type updateMemoryRequest struct {
 
 func (mr *MemoryRoutes) update(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	entry, err := mr.store.Memory.Get(id)
+	entry, err := mr.getStore().Memory.Get(id)
 	if err != nil {
 		respondError(w, http.StatusNotFound, err.Error())
 		return
@@ -165,12 +173,12 @@ func (mr *MemoryRoutes) update(w http.ResponseWriter, r *http.Request) {
 
 	entry.UpdatedAt = time.Now().UTC()
 
-	if err := mr.store.Memory.Update(entry); err != nil {
+	if err := mr.getStore().Memory.Update(entry); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	search.BestEffortIndexMemory(mr.store, entry.ID)
+	search.BestEffortIndexMemory(mr.getStore(), entry.ID)
 
 	respondJSON(w, http.StatusOK, entry)
 }
@@ -178,12 +186,12 @@ func (mr *MemoryRoutes) update(w http.ResponseWriter, r *http.Request) {
 func (mr *MemoryRoutes) delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	if err := mr.store.Memory.Delete(id); err != nil {
+	if err := mr.getStore().Memory.Delete(id); err != nil {
 		respondError(w, http.StatusNotFound, err.Error())
 		return
 	}
 
-	search.BestEffortRemoveMemory(mr.store, id)
+	search.BestEffortRemoveMemory(mr.getStore(), id)
 
 	respondJSON(w, http.StatusOK, map[string]any{"deleted": true, "id": id})
 }
@@ -191,13 +199,13 @@ func (mr *MemoryRoutes) delete(w http.ResponseWriter, r *http.Request) {
 func (mr *MemoryRoutes) promote(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	entry, err := mr.store.Memory.Promote(id)
+	entry, err := mr.getStore().Memory.Promote(id)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	search.BestEffortIndexMemory(mr.store, entry.ID)
+	search.BestEffortIndexMemory(mr.getStore(), entry.ID)
 
 	respondJSON(w, http.StatusOK, entry)
 }
@@ -205,19 +213,19 @@ func (mr *MemoryRoutes) promote(w http.ResponseWriter, r *http.Request) {
 func (mr *MemoryRoutes) demote(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	entry, err := mr.store.Memory.Demote(id)
+	entry, err := mr.getStore().Memory.Demote(id)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	search.BestEffortIndexMemory(mr.store, entry.ID)
+	search.BestEffortIndexMemory(mr.getStore(), entry.ID)
 
 	respondJSON(w, http.StatusOK, entry)
 }
 
 func (mr *MemoryRoutes) clean(w http.ResponseWriter, r *http.Request) {
-	count, err := mr.store.Memory.Clean()
+	count, err := mr.getStore().Memory.Clean()
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return

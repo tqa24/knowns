@@ -11,9 +11,15 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 )
+
+type healthResponse struct {
+	Healthy bool   `json:"healthy"`
+	Version string `json:"version,omitempty"`
+}
 
 // Config holds the OpenCode server configuration.
 type Config struct {
@@ -35,11 +41,12 @@ func DefaultConfig() Config {
 
 // Client is an HTTP client for the OpenCode server API.
 type Client struct {
-	config      Config
-	baseURL     string
-	httpClient  *http.Client
+	config       Config
+	baseURL      string
+	httpClient   *http.Client
 	healthClient *http.Client
-	mu          sync.RWMutex
+	sseClient    *http.Client
+	mu           sync.RWMutex
 }
 
 // NewClient creates a new OpenCode API client.
@@ -62,6 +69,9 @@ func NewClient(cfg Config) *Client {
 		},
 		healthClient: &http.Client{
 			Timeout: 3 * time.Second,
+		},
+		sseClient: &http.Client{
+			Timeout: 0, // no timeout for long-lived SSE connections
 		},
 	}
 }
@@ -124,16 +134,16 @@ type MessagePart struct {
 
 // SendMessageResponse is the response from sending a message.
 type SendMessageResponse struct {
-	Info  MessageInfo  `json:"info"`
+	Info  MessageInfo   `json:"info"`
 	Parts []MessagePart `json:"parts"`
 }
 
 // MessageInfo contains message metadata.
 type MessageInfo struct {
-	ID        string `json:"id"`
-	SessionID string `json:"sessionID"`
-	Role      string `json:"role"`
-	ModelID   string `json:"modelID"`
+	ID         string `json:"id"`
+	SessionID  string `json:"sessionID"`
+	Role       string `json:"role"`
+	ModelID    string `json:"modelID"`
 	ProviderID string `json:"providerID"`
 }
 
@@ -347,7 +357,7 @@ func (c *Client) SendMessageAsync(sessionID string, req AsyncPromptRequest) (str
 
 // SessionMessage represents a message from OpenCode session.
 type SessionMessage struct {
-	Info  MessageInfo  `json:"info"`
+	Info  MessageInfo   `json:"info"`
 	Parts []MessagePart `json:"parts"`
 }
 
@@ -408,7 +418,7 @@ func (c *Client) StreamEvents(sessionID string, handler EventHandler) error {
 		req.SetBasicAuth(c.config.Username, c.config.Password)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.sseClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}
@@ -467,7 +477,7 @@ func (c *Client) StreamGlobalEvents(ctx context.Context, handler EventHandler) e
 		req.SetBasicAuth(c.config.Username, c.config.Password)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.sseClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}
@@ -514,34 +524,86 @@ func (c *Client) StreamGlobalEvents(ctx context.Context, handler EventHandler) e
 // IsServerAvailable checks if the OpenCode server is running and accessible.
 // Uses a short 3s timeout to avoid blocking the caller.
 func (c *Client) IsServerAvailable() bool {
+	return c.Readiness().Healthy
+}
+
+// Readiness performs staged probes so callers can distinguish shallow health
+// from a runtime that is fully ready for chat use.
+func (c *Client) Readiness() RuntimeReadiness {
+	readiness := RuntimeReadiness{}
+
+	var health healthResponse
+	if err := c.probe("/global/health", &health); err != nil {
+		readiness.Error = err.Error()
+		return readiness
+	}
+	readiness.Healthy = health.Healthy
+	readiness.Version = health.Version
+	if !health.Healthy {
+		readiness.Error = "OpenCode health check reported unhealthy"
+		return readiness
+	}
+
+	if err := c.probe("/config", nil); err != nil {
+		readiness.Error = err.Error()
+		return readiness
+	}
+	readiness.ConfigOK = true
+
+	if err := c.probe("/agent", nil); err != nil {
+		readiness.Error = err.Error()
+		return readiness
+	}
+	readiness.AgentOK = true
+	readiness.Ready = true
+	return readiness
+}
+
+func (c *Client) probe(path string, target any) error {
 	req, err := http.NewRequest("GET", c.baseURL+"/global/health", nil)
 	if err != nil {
-		return false
+		return fmt.Errorf("create %s request: %w", path, err)
 	}
+	req.URL.Path = path
 	if c.config.Password != "" {
 		req.SetBasicAuth(c.config.Username, c.config.Password)
 	}
 	resp, err := c.healthClient.Do(req)
 	if err != nil {
-		return false
+		return fmt.Errorf("request %s failed: %w", path, err)
 	}
 	defer resp.Body.Close()
 
-	return resp.StatusCode >= 200 && resp.StatusCode < 300
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		msg := strings.TrimSpace(string(body))
+		if msg == "" {
+			msg = resp.Status
+		}
+		return fmt.Errorf("%s returned %d: %s", path, resp.StatusCode, msg)
+	}
+
+	if target == nil {
+		return nil
+	}
+	if err := json.NewDecoder(resp.Body).Decode(target); err != nil {
+		return fmt.Errorf("decode %s response: %w", path, err)
+	}
+	return nil
 }
 
 // ProviderResponse is the response from the provider endpoint.
 type ProviderResponse struct {
-	All       []Provider       `json:"all"`
+	All       []Provider        `json:"all"`
 	Default   map[string]string `json:"default"`
-	Connected []string         `json:"connected"`
+	Connected []string          `json:"connected"`
 }
 
 // Provider represents an AI provider.
 type Provider struct {
-	ID     string                `json:"id"`
-	Name   string                `json:"name"`
-	Models map[string]ModelInfo  `json:"models"`
+	ID     string               `json:"id"`
+	Name   string               `json:"name"`
+	Models map[string]ModelInfo `json:"models"`
 }
 
 // ModelInfo represents information about a model.

@@ -11,7 +11,15 @@ import (
 // TimeRoutes handles /api/time endpoints.
 type TimeRoutes struct {
 	store *storage.Store
+	mgr   *storage.Manager
 	sse   Broadcaster
+}
+
+func (tr *TimeRoutes) getStore() *storage.Store {
+	if tr.mgr != nil {
+		return tr.mgr.GetStore()
+	}
+	return tr.store
 }
 
 // Register wires the time-tracking routes onto r.
@@ -27,7 +35,7 @@ func (tr *TimeRoutes) Register(r chi.Router) {
 //
 // GET /api/time/status
 func (tr *TimeRoutes) status(w http.ResponseWriter, r *http.Request) {
-	state, err := tr.store.Time.GetState()
+	state, err := tr.getStore().Time.GetState()
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -54,18 +62,18 @@ func (tr *TimeRoutes) start(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	task, err := tr.store.Tasks.Get(req.TaskID)
+	task, err := tr.getStore().Tasks.Get(req.TaskID)
 	if err != nil {
 		respondError(w, http.StatusNotFound, "task not found: "+err.Error())
 		return
 	}
 
-	if err := tr.store.Time.Start(req.TaskID, task.Title); err != nil {
+	if err := tr.getStore().Time.Start(req.TaskID, task.Title); err != nil {
 		respondError(w, http.StatusConflict, err.Error())
 		return
 	}
 
-	state, _ := tr.store.Time.GetState()
+	state, _ := tr.getStore().Time.GetState()
 	tr.sse.Broadcast(SSEEvent{Type: "time:updated", Data: state})
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"taskId": req.TaskID,
@@ -91,25 +99,25 @@ func (tr *TimeRoutes) stop(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.All {
-		state, err := tr.store.Time.GetState()
+		state, err := tr.getStore().Time.GetState()
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		var stopped []string
 		for _, a := range state.Active {
-			entry, err := tr.store.Time.Stop(a.TaskID)
+			entry, err := tr.getStore().Time.Stop(a.TaskID)
 			if err == nil {
 				stopped = append(stopped, a.TaskID)
 				// Update task's timeSpent
-				if task, taskErr := tr.store.Tasks.Get(a.TaskID); taskErr == nil {
+				if task, taskErr := tr.getStore().Tasks.Get(a.TaskID); taskErr == nil {
 					task.TimeSpent += entry.Duration
 					task.UpdatedAt = time.Now().UTC()
-					_ = tr.store.Tasks.Update(task)
+					_ = tr.getStore().Tasks.Update(task)
 				}
 			}
 		}
-		newState, _ := tr.store.Time.GetState()
+		newState, _ := tr.getStore().Time.GetState()
 		tr.sse.Broadcast(SSEEvent{Type: "time:updated", Data: newState})
 		respondJSON(w, http.StatusOK, map[string]interface{}{
 			"stopped": stopped,
@@ -122,18 +130,18 @@ func (tr *TimeRoutes) stop(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "taskId is required (or set all:true)")
 		return
 	}
-	entry, err := tr.store.Time.Stop(req.TaskID)
+	entry, err := tr.getStore().Time.Stop(req.TaskID)
 	if err != nil {
 		respondError(w, http.StatusNotFound, err.Error())
 		return
 	}
 	// Update task's timeSpent
-	if task, taskErr := tr.store.Tasks.Get(req.TaskID); taskErr == nil {
+	if task, taskErr := tr.getStore().Tasks.Get(req.TaskID); taskErr == nil {
 		task.TimeSpent += entry.Duration
 		task.UpdatedAt = time.Now().UTC()
-		_ = tr.store.Tasks.Update(task)
+		_ = tr.getStore().Tasks.Update(task)
 	}
-	state, _ := tr.store.Time.GetState()
+	state, _ := tr.getStore().Time.GetState()
 	tr.sse.Broadcast(SSEEvent{Type: "time:updated", Data: state})
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"stopped": []interface{}{entry},
@@ -159,11 +167,11 @@ func (tr *TimeRoutes) pause(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "taskId is required")
 		return
 	}
-	if err := tr.store.Time.Pause(req.TaskID); err != nil {
+	if err := tr.getStore().Time.Pause(req.TaskID); err != nil {
 		respondError(w, http.StatusConflict, err.Error())
 		return
 	}
-	state, _ := tr.store.Time.GetState()
+	state, _ := tr.getStore().Time.GetState()
 	tr.sse.Broadcast(SSEEvent{Type: "time:updated", Data: state})
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"taskId": req.TaskID,
@@ -185,11 +193,11 @@ func (tr *TimeRoutes) resume(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "taskId is required")
 		return
 	}
-	if err := tr.store.Time.Resume(req.TaskID); err != nil {
+	if err := tr.getStore().Time.Resume(req.TaskID); err != nil {
 		respondError(w, http.StatusConflict, err.Error())
 		return
 	}
-	state, _ := tr.store.Time.GetState()
+	state, _ := tr.getStore().Time.GetState()
 	tr.sse.Broadcast(SSEEvent{Type: "time:updated", Data: state})
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"taskId": req.TaskID,

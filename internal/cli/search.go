@@ -28,6 +28,13 @@ var searchCmd = &cobra.Command{
 	RunE:  runSearch,
 }
 
+var retrieveCmd = &cobra.Command{
+	Use:   "retrieve <query>",
+	Short: "Retrieve ranked context for docs, tasks, and memories",
+	Args:  cobra.ArbitraryArgs,
+	RunE:  runRetrieve,
+}
+
 func runSearch(cmd *cobra.Command, args []string) error {
 	reindex, _ := cmd.Flags().GetBool("reindex")
 	setup, _ := cmd.Flags().GetBool("setup")
@@ -64,6 +71,10 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	tagFilter, _ := cmd.Flags().GetString("tag")
 	assigneeFilter, _ := cmd.Flags().GetString("assignee")
 	keywordOnly, _ := cmd.Flags().GetBool("keyword")
+	limit, _ := cmd.Flags().GetInt("limit")
+	if limit <= 0 {
+		limit = 20
+	}
 
 	plain := isPlain(cmd)
 	jsonOut := isJSON(cmd)
@@ -86,7 +97,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		Assignee: assigneeFilter,
 		Label:    labelFilter,
 		Tag:      tagFilter,
-		Limit:    20,
+		Limit:    limit,
 	}
 
 	engine := search.NewEngine(store, embedder, vecStore)
@@ -123,27 +134,109 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Split into tasks and docs.
-	var taskResults, docResults []models.SearchResult
+	var taskResults, docResults, memoryResults []models.SearchResult
+	filteredResults := make([]models.SearchResult, 0, len(results))
 	for _, r := range results {
-		if r.Type == "task" {
+		switch r.Type {
+		case "task":
 			taskResults = append(taskResults, r)
-		} else {
+			filteredResults = append(filteredResults, r)
+		case "doc":
 			docResults = append(docResults, r)
+			filteredResults = append(filteredResults, r)
+		case "memory":
+			memoryResults = append(memoryResults, r)
+			filteredResults = append(filteredResults, r)
 		}
 	}
 
 	if plain {
-		content := sprintPlainResults(taskResults, docResults, maxScore)
+		content := sprintPlainResults(taskResults, docResults, memoryResults, maxScore)
 		printPaged(cmd, content)
 	} else {
-		content := renderPrettyResults(query, actualMode, results, taskResults, docResults, maxScore)
+		content := renderPrettyResults(query, actualMode, filteredResults, taskResults, docResults, memoryResults, maxScore)
 		renderOrPage(cmd, fmt.Sprintf("Search: %s", query), content)
 	}
 	return nil
 }
 
-func sprintPlainResults(taskResults, docResults []models.SearchResult, maxScore float64) string {
+func runRetrieve(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("retrieve query required (use --help for usage)")
+	}
+
+	query := strings.Join(args, " ")
+	store := getStore()
+
+	statusFilter, _ := cmd.Flags().GetString("status")
+	priorityFilter, _ := cmd.Flags().GetString("priority")
+	labelFilter, _ := cmd.Flags().GetString("label")
+	tagFilter, _ := cmd.Flags().GetString("tag")
+	assigneeFilter, _ := cmd.Flags().GetString("assignee")
+	keywordOnly, _ := cmd.Flags().GetBool("keyword")
+	expandReferences, _ := cmd.Flags().GetBool("expand-references")
+	sourceTypes := splitCSV(getFlagString(cmd, "source-types"))
+	limit, _ := cmd.Flags().GetInt("limit")
+	if limit <= 0 {
+		limit = 20
+	}
+
+	plain := isPlain(cmd)
+	jsonOut := isJSON(cmd)
+
+	mode := "hybrid"
+	if keywordOnly {
+		mode = "keyword"
+	}
+
+	embedder, vecStore, _ := initSemanticSearchReal()
+	if embedder != nil {
+		defer embedder.Close()
+	}
+	if vecStore != nil {
+		defer vecStore.Close()
+	}
+
+	engine := search.NewEngine(store, embedder, vecStore)
+	resp, err := engine.Retrieve(models.RetrievalOptions{
+		Query:            query,
+		Mode:             mode,
+		Limit:            limit,
+		SourceTypes:      sourceTypes,
+		ExpandReferences: expandReferences,
+		Status:           statusFilter,
+		Priority:         priorityFilter,
+		Assignee:         assigneeFilter,
+		Label:            labelFilter,
+		Tag:              tagFilter,
+	})
+	if err != nil {
+		return err
+	}
+
+	if jsonOut {
+		printJSON(resp)
+		return nil
+	}
+
+	if len(resp.Candidates) == 0 {
+		if plain {
+			fmt.Println("No retrieval results found.")
+		} else {
+			fmt.Println(RenderWarning(fmt.Sprintf("No retrieval results for %q", query)))
+		}
+		return nil
+	}
+
+	if plain {
+		printPaged(cmd, sprintPlainRetrieval(resp))
+	} else {
+		renderOrPage(cmd, fmt.Sprintf("Retrieve: %s", query), renderPrettyRetrieval(resp))
+	}
+	return nil
+}
+
+func sprintPlainResults(taskResults, docResults, memoryResults []models.SearchResult, maxScore float64) string {
 	var b strings.Builder
 	if len(taskResults) > 0 {
 		fmt.Fprintln(&b, "Tasks:")
@@ -171,10 +264,23 @@ func sprintPlainResults(taskResults, docResults []models.SearchResult, maxScore 
 		}
 		fmt.Fprintln(&b)
 	}
+	if len(memoryResults) > 0 {
+		fmt.Fprintln(&b, "Memories:")
+		for _, r := range memoryResults {
+			pct := scoreToPercent(r.Score, maxScore)
+			fmt.Fprintf(&b, "  %s (%d%%)\n", r.ID, pct)
+			if r.Snippet != "" {
+				snip := truncate(r.Snippet, 100)
+				fmt.Fprintf(&b, "    %s\n", snip)
+			}
+			fmt.Fprintf(&b, "    Matched by: %s\n", formatMatchedBy(r.MatchedBy))
+		}
+		fmt.Fprintln(&b)
+	}
 	return b.String()
 }
 
-func renderPrettyResults(query, mode string, results []models.SearchResult, taskResults, docResults []models.SearchResult, maxScore float64) string {
+func renderPrettyResults(query, mode string, results []models.SearchResult, taskResults, docResults, memoryResults []models.SearchResult, maxScore float64) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s %s %s\n\n",
 		StyleBold.Render(fmt.Sprintf("Found %d result(s)", len(results))),
@@ -225,7 +331,137 @@ func renderPrettyResults(query, mode string, results []models.SearchResult, task
 			fmt.Fprintln(&b)
 		}
 	}
+
+	if len(memoryResults) > 0 {
+		fmt.Fprintln(&b, RenderSectionHeader("Memories"))
+		fmt.Fprintln(&b)
+		for _, r := range memoryResults {
+			pct := scoreToPercent(r.Score, maxScore)
+			fmt.Fprintf(&b, "  %s %s %s %s\n",
+				RenderBadge("MEMORY", colorPurple),
+				StyleID.Render(r.ID),
+				StyleBold.Render("— "+r.Title),
+				StyleDim.Render(fmt.Sprintf("(%d%%)", pct)))
+			if r.Snippet != "" {
+				snip := truncate(r.Snippet, 100)
+				fmt.Fprintf(&b, "    %s\n", StyleDim.Render(snip))
+			}
+			fmt.Fprintf(&b, "    %s\n", StyleDim.Render("Matched by: "+formatMatchedBy(r.MatchedBy)))
+			fmt.Fprintln(&b)
+		}
+	}
 	return b.String()
+}
+
+func sprintPlainRetrieval(resp *models.RetrievalResponse) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Query: %s\n", resp.Query)
+	fmt.Fprintf(&b, "Mode: %s\n", resp.Mode)
+	fmt.Fprintf(&b, "Candidates: %d\n", len(resp.Candidates))
+	fmt.Fprintf(&b, "Context items: %d\n\n", len(resp.ContextPack.Items))
+
+	fmt.Fprintln(&b, "Candidates:")
+	for _, candidate := range resp.Candidates {
+		fmt.Fprintf(&b, "  [%s] %s (%s)\n", strings.ToUpper(candidate.Type), candidate.Title, candidate.ID)
+		fmt.Fprintf(&b, "    Score: %.3f\n", candidate.Score)
+		fmt.Fprintf(&b, "    Direct: %t\n", candidate.DirectMatch)
+		if len(candidate.ExpandedFrom) > 0 {
+			fmt.Fprintf(&b, "    Expanded from: %s\n", strings.Join(candidate.ExpandedFrom, ", "))
+		}
+		fmt.Fprintf(&b, "    Citation: %s\n", formatRetrievalCitation(candidate.Citation))
+		if candidate.Snippet != "" {
+			fmt.Fprintf(&b, "    %s\n", truncate(candidate.Snippet, 120))
+		}
+	}
+
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "Context Pack:")
+	for _, item := range resp.ContextPack.Items {
+		fmt.Fprintf(&b, "  [%s] %s (%s)\n", strings.ToUpper(item.Type), item.Title, item.ID)
+		fmt.Fprintf(&b, "    Citation: %s\n", formatRetrievalCitation(item.Citation))
+		fmt.Fprintf(&b, "    Direct: %t\n", item.DirectMatch)
+		if len(item.ExpandedFrom) > 0 {
+			fmt.Fprintf(&b, "    Expanded from: %s\n", strings.Join(item.ExpandedFrom, ", "))
+		}
+		if item.Content != "" {
+			fmt.Fprintf(&b, "    %s\n", truncate(item.Content, 160))
+		}
+	}
+
+	return b.String()
+}
+
+func renderPrettyRetrieval(resp *models.RetrievalResponse) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s %s %s\n\n",
+		StyleBold.Render(fmt.Sprintf("Retrieved %d candidate(s)", len(resp.Candidates))),
+		StyleDim.Render("for"),
+		StyleInfo.Render(fmt.Sprintf("%q", resp.Query))+" "+StyleDim.Render(fmt.Sprintf("(%s mode)", resp.Mode)))
+
+	fmt.Fprintln(&b, RenderSectionHeader("Candidates"))
+	fmt.Fprintln(&b)
+	for _, candidate := range resp.Candidates {
+		badgeColor := colorBlue
+		switch candidate.Type {
+		case "doc":
+			badgeColor = colorMagenta
+		case "memory":
+			badgeColor = colorPurple
+		}
+		fmt.Fprintf(&b, "  %s %s %s %s\n",
+			RenderBadge(strings.ToUpper(candidate.Type), badgeColor),
+			StyleID.Render(candidate.ID),
+			StyleBold.Render("— "+candidate.Title),
+			StyleDim.Render(fmt.Sprintf("(%.3f)", candidate.Score)))
+		fmt.Fprintf(&b, "    %s\n", StyleDim.Render("Citation: "+formatRetrievalCitation(candidate.Citation)))
+		fmt.Fprintf(&b, "    %s\n", StyleDim.Render(fmt.Sprintf("Direct match: %t", candidate.DirectMatch)))
+		if len(candidate.ExpandedFrom) > 0 {
+			fmt.Fprintf(&b, "    %s\n", StyleDim.Render("Expanded from: "+strings.Join(candidate.ExpandedFrom, ", ")))
+		}
+		if candidate.Snippet != "" {
+			fmt.Fprintf(&b, "    %s\n", StyleDim.Render(truncate(candidate.Snippet, 120)))
+		}
+		fmt.Fprintln(&b)
+	}
+
+	fmt.Fprintln(&b, RenderSectionHeader("Context Pack"))
+	fmt.Fprintln(&b)
+	for _, item := range resp.ContextPack.Items {
+		badgeColor := colorBlue
+		switch item.Type {
+		case "doc":
+			badgeColor = colorMagenta
+		case "memory":
+			badgeColor = colorPurple
+		}
+		fmt.Fprintf(&b, "  %s %s %s\n",
+			RenderBadge(strings.ToUpper(item.Type), badgeColor),
+			StyleID.Render(item.ID),
+			StyleBold.Render("— "+item.Title))
+		fmt.Fprintf(&b, "    %s\n", StyleDim.Render("Citation: "+formatRetrievalCitation(item.Citation)))
+		fmt.Fprintf(&b, "    %s\n", StyleDim.Render(fmt.Sprintf("Direct match: %t", item.DirectMatch)))
+		if len(item.ExpandedFrom) > 0 {
+			fmt.Fprintf(&b, "    %s\n", StyleDim.Render("Expanded from: "+strings.Join(item.ExpandedFrom, ", ")))
+		}
+		if item.Content != "" {
+			fmt.Fprintf(&b, "    %s\n", StyleDim.Render(truncate(item.Content, 160)))
+		}
+		fmt.Fprintln(&b)
+	}
+
+	return b.String()
+}
+
+func formatRetrievalCitation(citation models.Citation) string {
+	if citation.Path != "" {
+		return citation.Type + ":" + citation.Path
+	}
+	return citation.Type + ":" + citation.ID
+}
+
+func getFlagString(cmd *cobra.Command, name string) string {
+	v, _ := cmd.Flags().GetString(name)
+	return v
 }
 
 func formatMatchedBy(methods []string) string {
@@ -295,7 +531,7 @@ func runStatusCheck() error {
 	if onnxAvail && cfg != nil && cfg.Settings.SemanticSearch != nil && cfg.Settings.SemanticSearch.Enabled && count > 0 {
 		fmt.Println(searchSuccessStyle.Render("  Status: ready (hybrid search active)"))
 	} else if onnxAvail && cfg != nil && cfg.Settings.SemanticSearch != nil && cfg.Settings.SemanticSearch.Enabled {
-		fmt.Println(searchWarnStyle.Render("  Status: needs reindex (run: knowns search --reindex)"))
+		fmt.Println(searchWarnStyle.Render("  Status: needs search reindex (run: knowns search --reindex)"))
 	} else {
 		fmt.Println(searchDimStyle.Render("  Status: keyword-only mode"))
 	}
@@ -863,17 +1099,29 @@ func sortSearchResults(results []models.SearchResult) {
 }
 
 func init() {
-	searchCmd.Flags().String("type", "", "Search type: all|task|doc (default: all)")
+	searchCmd.Flags().String("type", "", "Search type: all|task|doc|memory (default: all)")
 	searchCmd.Flags().String("status", "", "Filter tasks by status")
 	searchCmd.Flags().String("priority", "", "Filter tasks by priority")
 	searchCmd.Flags().String("label", "", "Filter tasks by label")
 	searchCmd.Flags().String("tag", "", "Filter docs by tag")
 	searchCmd.Flags().String("assignee", "", "Filter tasks by assignee")
 	searchCmd.Flags().Bool("keyword", false, "Force keyword-only search")
+	searchCmd.Flags().Int("limit", 20, "Limit search results")
 	searchCmd.Flags().Bool("reindex", false, "Rebuild the search index")
 	searchCmd.Flags().Bool("setup", false, "Set up semantic search")
 	searchCmd.Flags().Bool("status-check", false, "Show semantic search status")
 	searchCmd.Flags().Bool("install-runtime", false, "Download and install ONNX Runtime")
 
+	retrieveCmd.Flags().String("status", "", "Filter tasks by status")
+	retrieveCmd.Flags().String("priority", "", "Filter tasks by priority")
+	retrieveCmd.Flags().String("label", "", "Filter tasks by label")
+	retrieveCmd.Flags().String("tag", "", "Filter docs or memories by tag")
+	retrieveCmd.Flags().String("assignee", "", "Filter tasks by assignee")
+	retrieveCmd.Flags().Bool("keyword", false, "Force keyword-only retrieval")
+	retrieveCmd.Flags().Bool("expand-references", false, "Expand @doc/@task/@memory references into the result")
+	retrieveCmd.Flags().String("source-types", "", "Comma-separated source types: doc,task,memory")
+	retrieveCmd.Flags().Int("limit", 20, "Limit ranked candidates")
+
 	rootCmd.AddCommand(searchCmd)
+	rootCmd.AddCommand(retrieveCmd)
 }

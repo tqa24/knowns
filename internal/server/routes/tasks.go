@@ -34,7 +34,7 @@ func (tr *TaskRoutes) loadTaskTimeEntries(t *models.Task) {
 	if t == nil {
 		return
 	}
-	entries, err := tr.store.Time.GetEntries(t.ID)
+	entries, err := tr.getStore().Time.GetEntries(t.ID)
 	if err != nil {
 		return
 	}
@@ -45,7 +45,15 @@ func (tr *TaskRoutes) loadTaskTimeEntries(t *models.Task) {
 // TaskRoutes handles /api/tasks endpoints.
 type TaskRoutes struct {
 	store *storage.Store
+	mgr   *storage.Manager
 	sse   Broadcaster
+}
+
+func (tr *TaskRoutes) getStore() *storage.Store {
+	if tr.mgr != nil {
+		return tr.mgr.GetStore()
+	}
+	return tr.store
 }
 
 // Register wires the task routes onto r.
@@ -66,7 +74,7 @@ func (tr *TaskRoutes) Register(r chi.Router) {
 //
 // GET /api/tasks
 func (tr *TaskRoutes) list(w http.ResponseWriter, r *http.Request) {
-	tasks, err := tr.store.Tasks.List()
+	tasks, err := tr.getStore().Tasks.List()
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -85,13 +93,13 @@ func (tr *TaskRoutes) list(w http.ResponseWriter, r *http.Request) {
 // GET /api/tasks/{id}
 func (tr *TaskRoutes) get(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	task, err := tr.store.Tasks.Get(id)
+	task, err := tr.getStore().Tasks.Get(id)
 	if err != nil {
 		respondError(w, http.StatusNotFound, err.Error())
 		return
 	}
 	tr.loadTaskTimeEntries(task)
-	task.ActiveTimer = tr.store.Time.GetActiveTimer(task.ID)
+	task.ActiveTimer = tr.getStore().Time.GetActiveTimer(task.ID)
 	respondJSON(w, http.StatusOK, task)
 }
 
@@ -126,16 +134,16 @@ func (tr *TaskRoutes) create(w http.ResponseWriter, r *http.Request) {
 		task.Labels = []string{}
 	}
 
-	if err := tr.store.Tasks.Create(&task); err != nil {
+	if err := tr.getStore().Tasks.Create(&task); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	search.BestEffortIndexTask(tr.store, task.ID)
+	search.BestEffortIndexTask(tr.getStore(), task.ID)
 
 	// Record initial version.
-	_ = tr.store.Versions.SaveVersion(task.ID, models.TaskVersion{
-		Changes:  tr.store.Versions.TrackChanges(nil, &task),
+	_ = tr.getStore().Versions.SaveVersion(task.ID, models.TaskVersion{
+		Changes:  tr.getStore().Versions.TrackChanges(nil, &task),
 		Snapshot: storage.TaskToSnapshot(&task),
 	})
 
@@ -150,7 +158,7 @@ func (tr *TaskRoutes) create(w http.ResponseWriter, r *http.Request) {
 func (tr *TaskRoutes) update(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	existing, err := tr.store.Tasks.Get(id)
+	existing, err := tr.getStore().Tasks.Get(id)
 	if err != nil {
 		respondError(w, http.StatusNotFound, err.Error())
 		return
@@ -170,17 +178,17 @@ func (tr *TaskRoutes) update(w http.ResponseWriter, r *http.Request) {
 	updated.CreatedAt = existing.CreatedAt
 	updated.UpdatedAt = time.Now().UTC()
 
-	changes := tr.store.Versions.TrackChanges(existing, &updated)
+	changes := tr.getStore().Versions.TrackChanges(existing, &updated)
 
-	if err := tr.store.Tasks.Update(&updated); err != nil {
+	if err := tr.getStore().Tasks.Update(&updated); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	search.BestEffortIndexTask(tr.store, updated.ID)
+	search.BestEffortIndexTask(tr.getStore(), updated.ID)
 
 	if len(changes) > 0 {
-		_ = tr.store.Versions.SaveVersion(id, models.TaskVersion{
+		_ = tr.getStore().Versions.SaveVersion(id, models.TaskVersion{
 			Changes:  changes,
 			Snapshot: storage.TaskToSnapshot(&updated),
 		})
@@ -197,16 +205,16 @@ func (tr *TaskRoutes) update(w http.ResponseWriter, r *http.Request) {
 func (tr *TaskRoutes) archive(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	// Read the task before archiving so we can return it.
-	task, err := tr.store.Tasks.Get(id)
+	task, err := tr.getStore().Tasks.Get(id)
 	if err != nil {
 		respondError(w, http.StatusNotFound, err.Error())
 		return
 	}
-	if err := tr.store.Tasks.Archive(id); err != nil {
+	if err := tr.getStore().Tasks.Archive(id); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	search.BestEffortRemoveTask(tr.store, id)
+	search.BestEffortRemoveTask(tr.getStore(), id)
 	task.Status = "archived"
 	NormalizeTask(task)
 	tr.sse.Broadcast(SSEEvent{Type: "tasks:archived", Data: map[string]interface{}{"task": task}})
@@ -218,13 +226,13 @@ func (tr *TaskRoutes) archive(w http.ResponseWriter, r *http.Request) {
 // POST /api/tasks/{id}/unarchive
 func (tr *TaskRoutes) unarchive(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	if err := tr.store.Tasks.Unarchive(id); err != nil {
+	if err := tr.getStore().Tasks.Unarchive(id); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	search.BestEffortIndexTask(tr.store, id)
+	search.BestEffortIndexTask(tr.getStore(), id)
 	// Re-read the task after unarchiving to return the current state.
-	task, err := tr.store.Tasks.Get(id)
+	task, err := tr.getStore().Tasks.Get(id)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -249,7 +257,7 @@ func (tr *TaskRoutes) batchArchive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tasks, err := tr.store.Tasks.List()
+	tasks, err := tr.getStore().Tasks.List()
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -265,8 +273,8 @@ func (tr *TaskRoutes) batchArchive(w http.ResponseWriter, r *http.Request) {
 		if req.OlderThanMs > 0 && t.UpdatedAt.After(cutoff) {
 			continue
 		}
-		if err := tr.store.Tasks.Archive(t.ID); err == nil {
-			search.BestEffortRemoveTask(tr.store, t.ID)
+		if err := tr.getStore().Tasks.Archive(t.ID); err == nil {
+			search.BestEffortRemoveTask(tr.getStore(), t.ID)
 			t.Status = "archived"
 			NormalizeTask(t)
 			archivedTasks = append(archivedTasks, t)
@@ -309,7 +317,7 @@ func (tr *TaskRoutes) reorder(w http.ResponseWriter, r *http.Request) {
 
 	updated := 0
 	for _, item := range req.Orders {
-		task, err := tr.store.Tasks.Get(item.ID)
+		task, err := tr.getStore().Tasks.Get(item.ID)
 		if err != nil {
 			continue
 		}
@@ -319,7 +327,7 @@ func (tr *TaskRoutes) reorder(w http.ResponseWriter, r *http.Request) {
 		}
 		order := item.Order
 		task.Order = &order
-		if err := tr.store.Tasks.Update(task); err != nil {
+		if err := tr.getStore().Tasks.Update(task); err != nil {
 			continue
 		}
 		updated++
@@ -342,7 +350,7 @@ func (tr *TaskRoutes) reorder(w http.ResponseWriter, r *http.Request) {
 //
 // POST /api/tasks/sync-spec-acs
 func (tr *TaskRoutes) syncSpecACs(w http.ResponseWriter, r *http.Request) {
-	tasks, err := tr.store.Tasks.List()
+	tasks, err := tr.getStore().Tasks.List()
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -354,7 +362,7 @@ func (tr *TaskRoutes) syncSpecACs(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		doc, err := tr.store.Docs.Get(t.Spec)
+		doc, err := tr.getStore().Docs.Get(t.Spec)
 		if err != nil || doc == nil {
 			continue
 		}
@@ -379,7 +387,7 @@ func (tr *TaskRoutes) syncSpecACs(w http.ResponseWriter, r *http.Request) {
 // GET /api/tasks/{id}/history
 func (tr *TaskRoutes) history(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	h, err := tr.store.Versions.GetHistory(id)
+	h, err := tr.getStore().Versions.GetHistory(id)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return

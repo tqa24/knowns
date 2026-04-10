@@ -19,7 +19,15 @@ import (
 // ImportRoutes handles /api/imports endpoints.
 type ImportRoutes struct {
 	store *storage.Store
+	mgr   *storage.Manager
 	sse   Broadcaster
+}
+
+func (ir *ImportRoutes) getStore() *storage.Store {
+	if ir.mgr != nil {
+		return ir.mgr.GetStore()
+	}
+	return ir.store
 }
 
 // Register wires the import routes onto r.
@@ -49,7 +57,7 @@ type ImportEntry struct {
 
 // importsDir returns the path to .knowns/imports/.
 func (ir *ImportRoutes) importsDir() string {
-	return filepath.Join(ir.store.Root, "imports")
+	return filepath.Join(ir.getStore().Root, "imports")
 }
 
 // collectFiles recursively collects relative file paths under dir.
@@ -236,7 +244,7 @@ func readImportMeta(importDir string) (importMeta, bool) {
 func (ir *ImportRoutes) injectGitToken(source string) string {
 	token := os.Getenv("KNOWNS_GIT_TOKEN")
 	if token == "" {
-		if v, err := ir.store.Config.Get("git.token"); err == nil {
+		if v, err := ir.getStore().Config.Get("git.token"); err == nil {
 			if s, ok := v.(string); ok && s != "" {
 				token = s
 			}
@@ -247,7 +255,7 @@ func (ir *ImportRoutes) injectGitToken(source string) string {
 		token = os.Getenv("KNOWNS_GITHUB_TOKEN")
 	}
 	if token == "" {
-		if v, err := ir.store.Config.Get("github.token"); err == nil {
+		if v, err := ir.getStore().Config.Get("github.token"); err == nil {
 			if s, ok := v.(string); ok && s != "" {
 				token = s
 			}

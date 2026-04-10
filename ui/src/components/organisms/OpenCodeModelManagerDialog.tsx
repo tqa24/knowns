@@ -21,6 +21,8 @@ interface OpenCodeModelManagerDialogProps {
 	onToggleProviderHidden?: (providerID: string, hidden: boolean, modelKeys?: string[]) => void;
 	showProviderVisibility?: boolean;
 	triggerIcon?: ReactNode;
+	triggerLabel?: string;
+	triggerClassName?: string;
 }
 
 export function OpenCodeModelManagerDialog({
@@ -31,6 +33,8 @@ export function OpenCodeModelManagerDialog({
 	onToggleProviderHidden,
 	showProviderVisibility = false,
 	triggerIcon,
+	triggerLabel,
+	triggerClassName,
 }: OpenCodeModelManagerDialogProps) {
 	const [open, setOpen] = useState(false);
 
@@ -39,12 +43,13 @@ export function OpenCodeModelManagerDialog({
 			<DialogTrigger asChild>
 				<Button
 					variant="outline"
-					size="icon"
+					size={triggerLabel ? "sm" : "icon"}
 					title="Manage models"
 					aria-label="Manage models"
-					className="h-8 w-8 rounded-lg border-border/60 bg-background/80"
+					className={triggerLabel ? `rounded-lg border-border/60 bg-background/80 ${triggerClassName || ""}` : `h-8 w-8 rounded-lg border-border/60 bg-background/80 ${triggerClassName || ""}`}
 				>
 					{triggerIcon || <Settings2 className="h-4 w-4" />}
+					{triggerLabel && <span className="ml-1">{triggerLabel}</span>}
 				</Button>
 			</DialogTrigger>
 			<DialogContent className="grid h-[80vh] max-h-[80vh] max-w-3xl grid-rows-[auto,minmax(0,1fr)] overflow-hidden p-0">

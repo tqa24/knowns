@@ -14,12 +14,13 @@
       },
       "type": "local"
     },
+    "playwright": {
+      "type": "local",
+      "command": ["npx", "-y", "@playwright/mcp@latest"],
+      "enabled": true
+    },
     "knowns": {
-      "command": [
-        "knowns",
-        "mcp",
-        "--stdio"
-      ],
+      "command": ["knowns", "mcp", "--stdio"],
       "enabled": true,
       "type": "local"
     }

@@ -751,10 +751,28 @@ function getOpenCodeHeaders(directory?: string | null, contentType?: string): He
 
 export interface OpenCodeStatus {
 	configured: boolean;
+	mode?: "managed" | "external";
+	state?: "ready" | "degraded" | "unavailable";
 	available: boolean;
+	ready?: boolean;
 	host: string;
 	port: number;
-	cliAvailable: boolean;
+	cliAvailable?: boolean;
+	cliInstalled?: boolean;
+	compatible?: boolean;
+	version?: string;
+	minVersion?: string;
+	restartCount?: number;
+	lastError?: string;
+	lastHealthyAt?: string;
+	readiness?: {
+		healthy: boolean;
+		configOk: boolean;
+		agentOk: boolean;
+		ready: boolean;
+		version?: string;
+		error?: string;
+	};
 	error?: string;
 }
 
@@ -1321,12 +1339,33 @@ export const opencodeApi = {
 	},
 };
 
+// Status API
+export interface ProjectStatus {
+	active: boolean;
+	projectName: string;
+	projectPath: string;
+	version: string;
+}
+
+export async function getProjectStatus(): Promise<ProjectStatus> {
+	const res = await fetch(`${API_BASE}/api/status`);
+	if (!res.ok) throw new Error("Failed to fetch status");
+	return res.json();
+}
+
 // Workspace API
 export interface WorkspaceProject {
 	id: string;
 	name: string;
 	path: string;
 	lastUsed: string;
+}
+
+export interface DirEntry {
+	name: string;
+	path: string;
+	isProject: boolean;
+	hasChildren: boolean;
 }
 
 export const workspaceApi = {
@@ -1341,6 +1380,16 @@ export const workspaceApi = {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ id }),
+		});
+		if (!res.ok) throw new Error("Failed to switch workspace");
+		return res.json();
+	},
+
+	async switchByPath(path: string): Promise<WorkspaceProject> {
+		const res = await fetch(`${API_BASE}/api/workspaces/switch`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ path }),
 		});
 		if (!res.ok) throw new Error("Failed to switch workspace");
 		return res.json();
@@ -1370,13 +1419,22 @@ export const workspaceApi = {
 		if (!res.ok) throw new Error("Failed to auto-scan workspaces");
 		return res.json();
 	},
+
+	async browse(path?: string): Promise<DirEntry[]> {
+		const url = path
+			? `${API_BASE}/api/workspaces/browse?path=${encodeURIComponent(path)}`
+			: `${API_BASE}/api/workspaces/browse`;
+		const res = await fetch(url);
+		if (!res.ok) throw new Error("Failed to browse directory");
+		return res.json();
+	},
 };
 
 // --- Graph API ---
 
 export interface GraphNode {
 	id: string;
-	type: "task" | "doc" | "template" | "memory";
+	type: "task" | "doc" | "template" | "memory" | "code";
 	label: string;
 	data: Record<string, unknown>;
 }
@@ -1384,7 +1442,8 @@ export interface GraphNode {
 export interface GraphEdge {
 	source: string;
 	target: string;
-	type: "parent" | "spec" | "template-doc" | "mention";
+	type: "parent" | "spec" | "template-doc" | "mention" | "code-ref" | "calls" | "imports" | "contains" | "instantiates" | "implements";
+	data?: Record<string, unknown>;
 }
 
 export interface GraphData {
@@ -1395,6 +1454,12 @@ export interface GraphData {
 export async function getGraph(): Promise<GraphData> {
 	const res = await fetch(`${API_BASE}/api/graph`);
 	if (!res.ok) throw new Error("Failed to fetch graph");
+	return res.json();
+}
+
+export async function getCodeGraph(): Promise<GraphData> {
+	const res = await fetch(`${API_BASE}/api/graph/code`);
+	if (!res.ok) throw new Error("Failed to fetch code graph");
 	return res.json();
 }
 

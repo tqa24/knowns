@@ -17,10 +17,12 @@ export const SubAgentBlock = memo(function SubAgentBlock({
 	session,
 	forceExpandKey,
 	indented = true,
+	onOpenModal,
 }: {
 	session: ChatSession;
 	forceExpandKey?: number;
 	indented?: boolean;
+	onOpenModal?: (session: ChatSession) => void;
 }) {
 	const [expanded, setExpanded] = useState(session.status === "streaming");
 	const time = new Date(session.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -50,7 +52,7 @@ export const SubAgentBlock = memo(function SubAgentBlock({
 		<div className={cn(indented && "ml-3 sm:ml-6", "overflow-hidden rounded-lg border border-border/50 bg-muted/20")}>
 			<button
 				type="button"
-				onClick={() => setExpanded((value) => !value)}
+				onClick={() => onOpenModal ? onOpenModal(session) : setExpanded((value) => !value)}
 				className="flex w-full items-start gap-2.5 px-3 py-2.5 sm:py-2 text-left transition-colors hover:bg-muted/40"
 			>
 				<div className="mt-0.5 shrink-0 text-muted-foreground">
@@ -90,14 +92,14 @@ export const SubAgentBlock = memo(function SubAgentBlock({
 				</div>
 				<div className="mt-0.5 flex shrink-0 items-center gap-2 sm:gap-1.5 self-start">
 					<span className="text-xs sm:text-[11px] text-muted-foreground">{time}</span>
-					{expanded ? (
+					{!onOpenModal && (expanded ? (
 						<ChevronDown className="w-4 h-4 text-muted-foreground" />
 					) : (
 						<ChevronRight className="w-4 h-4 text-muted-foreground" />
-					)}
+					))}
 				</div>
 			</button>
-			{expanded && (
+			{!onOpenModal && expanded && (
 				<div className="border-t border-border/40 bg-background/40 py-2">
 					{session.messages.length === 0 ? (
 						<div className="px-3 text-sm text-muted-foreground">Sub-agent started. Waiting for messages...</div>

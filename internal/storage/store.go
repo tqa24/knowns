@@ -3,9 +3,12 @@
 package storage
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
+
+	_ "modernc.org/sqlite"
 
 	"github.com/howznguyen/knowns/internal/models"
 )
@@ -44,14 +47,72 @@ func NewStore(root string) *Store {
 	return s
 }
 
-// FindProjectRoot walks up from startDir looking for a .knowns/ directory.
+// SemanticDB returns a connection to the semantic search database (index.db).
+// Returns nil if the database does not exist.
+func (s *Store) SemanticDB() *sql.DB {
+	dbPath := filepath.Join(s.Root, ".search", "index.db")
+	if _, err := os.Stat(dbPath); err != nil {
+		return nil
+	}
+	db, err := sql.Open("sqlite", dbPath+"?mode=ro")
+	if err != nil {
+		return nil
+	}
+	return db
+}
+
+// CodeRefIndexExists returns true if the code_edges table has any rows.
+func (s *Store) CodeRefIndexExists() bool {
+	db := s.SemanticDB()
+	if db == nil {
+		return false
+	}
+	defer db.Close()
+	var count int
+	err := db.QueryRow("SELECT COUNT(*) FROM code_edges").Scan(&count)
+	return err == nil && count > 0
+}
+
+// CodeRefExists returns true if a @code/ ref exists in the AST index.
+// docPath is the file path, symbol is the symbol name (empty for file refs).
+func (s *Store) CodeRefExists(docPath, symbol string) bool {
+	db := s.SemanticDB()
+	if db == nil {
+		return false
+	}
+	defer db.Close()
+
+	var idPattern string
+	if symbol == "" {
+		// File-level ref: check if any chunk exists for this file
+		idPattern = "code::" + docPath + "::%"
+	} else {
+		// Symbol-level ref
+		idPattern = "code::" + docPath + "::" + symbol
+	}
+
+	if symbol == "" {
+		var count int
+		err := db.QueryRow("SELECT COUNT(*) FROM chunks WHERE id LIKE ?", idPattern).Scan(&count)
+		return err == nil && count > 0
+	} else {
+		var count int
+		err := db.QueryRow("SELECT COUNT(*) FROM chunks WHERE id = ?", idPattern).Scan(&count)
+		return err == nil && count > 0
+	}
+}
+
+// FindProjectRoot walks up from startDir looking for a .knowns/ directory
+// that contains a config.json (i.e. a properly initialized project).
 // Returns the absolute path to the .knowns/ directory, or an error if not found.
 func FindProjectRoot(startDir string) (string, error) {
 	dir := startDir
 	for {
 		candidate := filepath.Join(dir, ".knowns")
 		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-			return candidate, nil
+			if _, cfgErr := os.Stat(filepath.Join(candidate, "config.json")); cfgErr == nil {
+				return candidate, nil
+			}
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {

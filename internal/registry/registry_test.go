@@ -7,11 +7,12 @@ import (
 	"time"
 )
 
-// helper creates a temp dir with a .knowns/ subfolder to simulate a project.
+// helper creates a temp dir with a .knowns/config.json to simulate an initialized project.
 func createFakeProject(t *testing.T, parent, name string) string {
 	t.Helper()
 	dir := filepath.Join(parent, name)
 	os.MkdirAll(filepath.Join(dir, ".knowns"), 0755)
+	os.WriteFile(filepath.Join(dir, ".knowns", "config.json"), []byte(`{"name":"`+name+`"}`), 0644)
 	return dir
 }
 

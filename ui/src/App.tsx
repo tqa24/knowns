@@ -10,6 +10,7 @@ import { GlobalTaskProvider } from "./contexts/GlobalTaskContext";
 import { OpenCodeProvider } from "./contexts/OpenCodeContext";
 import { OpenCodeEventProvider } from "./contexts/OpenCodeEventContext";
 import { router } from "./router";
+import { Agentation } from "agentation";
 
 interface ThemeContextType {
 	isDark: boolean;
@@ -37,19 +38,20 @@ export default function App() {
 		<ConfigProvider>
 			<UserProvider>
 				<UIPreferencesProvider>
-					<OpenCodeProvider>
-						<SSEProvider>
+					<SSEProvider>
+						<OpenCodeProvider>
 							<OpenCodeEventProvider>
 								<TimeTrackerProvider>
 									<ChatProvider>
 										<GlobalTaskProvider>
 											<RouterProvider router={router} />
+											{import.meta.env.DEV && <Agentation />}
 										</GlobalTaskProvider>
 									</ChatProvider>
 								</TimeTrackerProvider>
 							</OpenCodeEventProvider>
-						</SSEProvider>
-					</OpenCodeProvider>
+						</OpenCodeProvider>
+					</SSEProvider>
 				</UIPreferencesProvider>
 			</UserProvider>
 		</ConfigProvider>

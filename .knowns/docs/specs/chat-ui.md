@@ -175,15 +175,15 @@ User → POST /api/chats/{id}/send { content }
 ## Technical Notes
 
 ### Backend Changes
-- Reuse `ProcessManager` from `internal/server/workspace/process.go` — add `sessionID` param to `buildAgentCommand()`
-- New files: `internal/models/chat.go`, `internal/storage/chat_store.go`, `internal/server/routes/chat.go`
+- Reuse process/session orchestration from the existing server layer; this spec originally named the old `internal/server/workspace/process.go` path, but current repo paths differ after the rewrite.
+- New files: @code/internal/models/chat.go, @code/internal/storage/chat_store.go, @code/internal/server/routes/chat.go
 - Storage: `.knowns/chats.json` (single file, same pattern as `workspaces.json`)
 - SSE events: `chats:created`, `chats:updated`, `chats:deleted`, `chats:message`
 
 ### Frontend Changes
-- New files: `ui/src/models/chat.ts`, `ui/src/contexts/ChatContext.tsx`, `ui/src/pages/ChatPage.tsx`
-- Modify: `use-terminal-websocket.ts` (add `type` param for `/ws/chat`), `App.tsx`, `AppSidebar.tsx`, `client.ts`
-- Remove: `WorkspacesPage.tsx`, `WorkspaceContext.tsx`, and ~12 workspace-specific component files
+- New files: @code/ui/src/models/chat.ts, @code/ui/src/contexts/ChatContext.tsx, @code/ui/src/pages/ChatPage.tsx
+- Modify: terminal websocket hook, @code/ui/src/App.tsx, @code/ui/src/components/organisms/AppSidebar.tsx, @code/ui/src/api/client.ts
+- Remove: legacy workspace page/context surfaces from the pre-rewrite layout
 
 ### OpenCode Session Continuity
 Claude supports `--session-id` natively. OpenCode may not — if unsupported, prepend previous messages in prompt as fallback.

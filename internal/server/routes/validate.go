@@ -11,6 +11,14 @@ import (
 // ValidateRoutes handles /api/validate endpoints.
 type ValidateRoutes struct {
 	store *storage.Store
+	mgr   *storage.Manager
+}
+
+func (vr *ValidateRoutes) getStore() *storage.Store {
+	if vr.mgr != nil {
+		return vr.mgr.GetStore()
+	}
+	return vr.store
 }
 
 // Register wires the validate routes onto r.
@@ -35,20 +43,20 @@ func roundPercent(v float64) float64 {
 //
 // GET /api/validate/sdd
 func (vr *ValidateRoutes) sdd(w http.ResponseWriter, r *http.Request) {
-	tasks, err := vr.store.Tasks.List()
+	tasks, err := vr.getStore().Tasks.List()
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	docs, err := vr.store.Docs.List()
+	docs, err := vr.getStore().Docs.List()
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	// Load config for dynamic status definitions.
-	cfg, _ := vr.store.Config.Load()
+	cfg, _ := vr.getStore().Config.Load()
 	statuses := cfg.Settings.Statuses
 	if len(statuses) == 0 {
 		statuses = []string{"todo", "in-progress", "in-review", "done", "blocked", "on-hold", "urgent"}

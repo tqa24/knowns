@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 
 import { opencodeApi, type OpenCodeAuth, type OpenCodeProviderResponse, type OpenCodeStatus, type ProviderAuthAuthorization, type ProviderAuthMethod } from "../api/client";
 import { useConfig } from "./ConfigContext";
+import { useSSEEvent } from "./SSEContext";
 
 export interface CustomProviderParams {
 	id: string;
@@ -35,10 +36,14 @@ const OpenCodeContext = createContext<OpenCodeContextType | undefined>(undefined
 function createFallbackStatus(message: string): OpenCodeStatus {
 	return {
 		configured: true,
+		mode: "managed",
+		state: "unavailable",
 		available: false,
+		ready: false,
 		host: "",
 		port: 0,
 		cliAvailable: false,
+		cliInstalled: false,
 		error: message,
 	};
 }
@@ -72,6 +77,12 @@ export function OpenCodeProvider({ children }: { children: ReactNode }) {
 			setStatusLoading(false);
 		}
 	}, []);
+
+	// When the server broadcasts a new runtime status after workspace switch,
+	// update local state immediately without a round-trip API call.
+	useSSEEvent("opencode:status", useCallback((data) => {
+		setStatus(data as unknown as OpenCodeStatus);
+	}, []));
 
 	const refreshProviders = useCallback(async (options?: { silent?: boolean; fallback?: string }) => {
 		setProvidersLoading(true);

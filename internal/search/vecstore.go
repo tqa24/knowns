@@ -68,6 +68,11 @@ type indexEntry struct {
 	Status   string   `json:"status,omitempty"`
 	Priority string   `json:"priority,omitempty"`
 	Labels   []string `json:"labels,omitempty"`
+
+	// Code fields (populated when Type == ChunkTypeCode).
+	Name      string `json:"name,omitempty"`
+	Signature string `json:"signature,omitempty"`
+	Content   string `json:"content,omitempty"`
 }
 
 type versionInfo struct {
@@ -220,13 +225,16 @@ func (s *FileVectorStore) AddChunks(chunks []Chunk) {
 			DocPath:       c.DocPath,
 			Section:       c.Section,
 			HeadingLevel:  c.HeadingLevel,
-			HeaderPath: c.HeaderPath,
+			HeaderPath:    c.HeaderPath,
 			Position:      c.Position,
 			TaskID:        c.TaskID,
 			Field:         c.Field,
 			Status:        c.Status,
 			Priority:      c.Priority,
 			Labels:        c.Labels,
+			Name:          c.Name,
+			Signature:     c.Signature,
+			Content:       c.Content,
 		})
 	}
 }
@@ -316,13 +324,16 @@ func (s *FileVectorStore) Search(queryVec []float32, opts VectorSearchOpts) []Sc
 				DocPath:       entry.DocPath,
 				Section:       entry.Section,
 				HeadingLevel:  entry.HeadingLevel,
-				HeaderPath:   entry.HeaderPath,
+				HeaderPath:    entry.HeaderPath,
 				Position:      entry.Position,
 				TaskID:        entry.TaskID,
 				Field:         entry.Field,
 				Status:        entry.Status,
 				Priority:      entry.Priority,
 				Labels:        entry.Labels,
+				Name:          entry.Name,
+				Signature:     entry.Signature,
+				Content:       entry.Content,
 			},
 			Score: c.score,
 		}

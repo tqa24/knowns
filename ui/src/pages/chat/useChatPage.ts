@@ -850,7 +850,7 @@ export function useChatPage() {
 	}, [activeSession]);
 
 	const opencodeBlockedReason =
-		!opencodeStatusLoading && opencodeStatus && !opencodeStatus.available
+		!opencodeStatusLoading && opencodeStatus && opencodeStatus.configured && !opencodeStatus.available
 			? opencodeStatus.error || "OpenCode is unavailable."
 			: null;
 	const chatDisabled = opencodeStatusLoading || Boolean(opencodeBlockedReason);
@@ -1313,6 +1313,45 @@ export function useChatPage() {
 		[activeId, localSessions],
 	);
 
+	const handleForkMessage = useCallback(
+		async (messageId: string) => {
+			if (!activeId || chatDisabled) {
+				if (chatDisabled) toast.error(opencodeBlockedReason || "OpenCode is unavailable");
+				return;
+			}
+
+			const session = localSessions.find((item) => item.id === activeId);
+			if (!session) return;
+			const sourceMessage = session.messages.find((message) => message.id === messageId);
+			try {
+				const sessionModel = session.model
+					? { model: { providerID: session.model.providerID, modelID: session.model.modelID }, title: `${session.title || "New Chat"} fork` }
+					: { title: `${session.title || "New Chat"} fork` };
+				const created = await opencodeApi.createSession(sessionModel);
+				const nextSession = {
+					...toChatSessionFromOpenCodeSession(created),
+					model: session.model,
+					modelSource: session.model ? "session" as const : session.modelSource,
+					parentSessionId: activeId,
+					parentMessageId: messageId,
+					title: created.title || `${session.title || "New Chat"} fork`,
+				};
+				setLocalSessions((prev) => mergeSessionList(prev, [nextSession]));
+				setSessionParentMap((prev) => ({ ...prev, [nextSession.id]: activeId }));
+				setActiveId(nextSession.id);
+				updateSessionHash(nextSession.id);
+				if (sourceMessage?.content) {
+					setInputRestoreValue(sourceMessage.content);
+				}
+				toast.success("Created branch from selected message");
+			} catch (error) {
+				toast.error(getErrorMessage(error, "Failed to fork session"));
+				await refreshOpenCodeStatus({ fallback: getErrorMessage(error, "Failed to fork OpenCode session") });
+			}
+		},
+		[activeId, chatDisabled, localSessions, opencodeBlockedReason, refreshOpenCodeStatus],
+	);
+
 	const handleStop = async () => {
 		if (!activeId || chatDisabled) {
 			if (chatDisabled) toast.error(opencodeBlockedReason || "OpenCode is unavailable");
@@ -1375,6 +1414,7 @@ export function useChatPage() {
 		// status
 		chatDisabled,
 		opencodeBlockedReason,
+		opencodeStatus,
 		// model
 		pickerProviders,
 		catalog,
@@ -1409,6 +1449,7 @@ export function useChatPage() {
 		handleRejectQuestion,
 		handleRespondPermission,
 		handleRevertMessage,
+		handleForkMessage,
 		handleStop,
 	};
 }

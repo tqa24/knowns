@@ -1,10 +1,11 @@
 import { createContext, useContext, useEffect, useState, lazy, Suspense } from "react";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import type { Task } from "../models/task";
-import { api } from "./api/client";
+import { api, getProjectStatus } from "./api/client";
 import { useSSEEvent } from "./contexts/SSEContext";
 import { AppSidebar, TaskCreateForm, SearchCommandDialog, NotificationBell, TaskDetailSheet } from "./components/organisms";
 import { WorkspacePicker } from "./components/organisms/WorkspacePicker";
+import { WelcomePage } from "./pages/WelcomePage";
 import { ConnectionStatus, ThemeToggle, ErrorBoundary } from "./components/atoms";
 import { HeaderTimeTracker } from "./components/molecules";
 import { AppBreadcrumb } from "./components/molecules/AppBreadcrumb";
@@ -20,7 +21,13 @@ import { cn } from "./lib/utils";
 // Retry wrapper for lazy imports — auto-reloads when chunks are stale after a deploy.
 function lazyWithRetry(factory: () => Promise<{ default: React.ComponentType<any> }>) {
 	return lazy(() =>
-		factory().catch(() => {
+		factory().catch((err) => {
+			// In development, surface the real error to the ErrorBoundary instead of
+			// triggering a reload loop that hides the root cause.
+			if (import.meta.env.DEV) {
+				throw err;
+			}
+
 			window.location.reload();
 			// Return a never-resolving promise so React doesn't render a broken component.
 			return new Promise(() => {});
@@ -36,6 +43,7 @@ const KanbanPage = lazyWithRetry(() => import("./pages/KanbanPage"));
 const TasksPage = lazyWithRetry(() => import("./pages/TasksPage"));
 const ChatPage = lazyWithRetry(() => import("./pages/ChatPage"));
 const GraphPage = lazyWithRetry(() => import("./pages/GraphPage"));
+const CodeGraphPage = lazyWithRetry(() => import("./pages/CodeGraphPage"));
 const MemoryPage = lazyWithRetry(() => import("./pages/MemoryPage"));
 
 function PageLoading() {
@@ -54,6 +62,7 @@ function getCurrentPage(pathname: string) {
 	if (pathname.startsWith("/tasks")) return "tasks";
 	if (pathname.startsWith("/docs")) return "docs";
 	if (pathname.startsWith("/imports")) return "imports";
+	if (pathname.startsWith("/graph/code")) return "code-graph";
 	if (pathname.startsWith("/graph")) return "graph";
 	if (pathname.startsWith("/memory")) return "memory";
 	if (pathname.startsWith("/chat")) return "chat";
@@ -72,12 +81,14 @@ function getTaskIdFromLocation(pathname: string, searchStr: string, page?: strin
 }
 
 export default function AppShell() {
-	const { config } = useConfig();
+	const { config, refetch: refetchConfig } = useConfig();
 	const { currentTaskId, closeTask } = useGlobalTask();
 	const navigate = useNavigate();
 	const location = useRouterState({ select: (state) => state.location });
 	const [tasks, setTasks] = useState<Task[]>([]);
 	const [loading, setLoading] = useState(true);
+	const [projectActive, setProjectActive] = useState<boolean | null>(null);
+	const [serverVersion, setServerVersion] = useState<string>("");
 	const [showCreateForm, setShowCreateForm] = useState(false);
 	const [showCommandDialog, setShowCommandDialog] = useState(false);
 	const [showWorkspacePicker, setShowWorkspacePicker] = useState(false);
@@ -102,6 +113,7 @@ export default function AppShell() {
 			tasks: "Tasks",
 			docs: "Docs",
 			graph: "Graph",
+			"code-graph": "Code Graph",
 			memory: "Memory",
 			imports: "Imports",
 			chat: "Chat",
@@ -139,6 +151,15 @@ export default function AppShell() {
 	}, []);
 
 	useEffect(() => {
+		getProjectStatus()
+			.then((s) => {
+				setProjectActive(s.active);
+				if (s.version) setServerVersion(s.version);
+			})
+			.catch(() => setProjectActive(true));
+	}, []);
+
+	useEffect(() => {
 		api
 			.getTasks()
 			.then((data) => {
@@ -167,15 +188,12 @@ export default function AppShell() {
 		api.getTasks().then(setTasks).catch(console.error);
 	});
 
-	// Handle workspace switch — reload all data
+	// Handle workspace switch — full page reload for clean state
 	useSSEEvent("refresh", (data) => {
 		if (data?.reason === "workspace-switch") {
-			api.getTasks().then((data) => {
-				setTasks(data);
-				setLoading(false);
-			}).catch(console.error);
+			window.location.reload();
 		}
-	});
+	}, []);
 
 	const handleTaskCreated = () => {
 		api.getTasks().then(setTasks).catch(console.error);
@@ -272,6 +290,8 @@ export default function AppShell() {
 				return <DocsPage />;
 			case "graph":
 				return <GraphPage />;
+			case "code-graph":
+				return <CodeGraphPage />;
 			case "memory":
 				return <MemoryPage />;
 			case "imports":
@@ -287,11 +307,21 @@ export default function AppShell() {
 
 	return (
 		<ThemeContext.Provider value={{ isDark, toggle: toggleTheme }}>
+			{projectActive === null && (
+				<div className="flex flex-1 items-center justify-center min-h-screen">
+					<Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+				</div>
+			)}
+			{projectActive === false && (
+				<WelcomePage onProjectSelected={() => window.location.reload()} />
+			)}
+			{projectActive === true && (
 			<SidebarProvider open={sidebarOpen} onOpenChange={handleSidebarOpenChange}>
 				<AppSidebar
 					currentPage={currentPage}
 					onSearchClick={() => setShowCommandDialog(true)}
 					onWorkspacePickerClick={() => setShowWorkspacePicker(true)}
+					serverVersion={serverVersion}
 				/>
 					<main className={cn("flex min-w-0 flex-1 flex-col overflow-hidden", isChatPage ? "bg-background" : "bg-background")}>
 						<header
@@ -361,6 +391,7 @@ export default function AppShell() {
 				<WorkspacePicker
 					open={showWorkspacePicker}
 					onOpenChange={setShowWorkspacePicker}
+					onSwitched={() => window.location.reload()}
 				/>
 
 				<TaskDetailSheet
@@ -381,6 +412,7 @@ export default function AppShell() {
 					}}
 				/>
 			</SidebarProvider>
+			)}
 			<Toaster />
 		</ThemeContext.Provider>
 	);

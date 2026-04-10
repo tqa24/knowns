@@ -45,7 +45,7 @@ Classify before investigating. Misclassifying wastes time.
 
 ## Step 2: Check Known Patterns
 
-Before deep investigation, search for known solutions:
+Before deep investigation, search for known solutions (unified search includes docs, learnings, and memories):
 
 ```json
 mcp__knowns__search({ "query": "<keywords from classification>", "type": "doc" })
@@ -54,6 +54,11 @@ mcp__knowns__search({ "query": "<keywords from classification>", "type": "doc" }
 Also check learnings docs:
 ```json
 mcp__knowns__search({ "query": "<error pattern>", "type": "doc", "tag": "learning" })
+```
+
+Search memories for past debug patterns:
+```json
+mcp__knowns__search({ "query": "<error pattern>", "type": "memory" })
 ```
 
 If a known pattern matches → jump to Step 4 (Fix) using the documented resolution.
@@ -160,7 +165,18 @@ If verification fails → return to Step 3 with new information. Do NOT report s
 
 Ask: would this save ≥15 minutes if a future agent knew it?
 
-If yes, create or update a learning doc:
+**Quick pattern (< 5 min to describe):** save to memory for fast recall:
+```json
+mcp__knowns__add_memory({
+  "title": "<error pattern>",
+  "content": "Root cause: <sentence>. Fix: <what resolves it>",
+  "layer": "project",
+  "category": "failure",
+  "tags": ["debug", "<domain>"]
+})
+```
+
+**Detailed pattern (worth a full writeup):** create or update a learning doc:
 
 ```json
 mcp__knowns__search({ "query": "<failure domain>", "type": "doc", "tag": "learning" })

@@ -61,7 +61,15 @@ func toDocResponse(d *models.Doc) docResponse {
 // DocRoutes handles /api/docs endpoints.
 type DocRoutes struct {
 	store *storage.Store
+	mgr   *storage.Manager
 	sse   Broadcaster
+}
+
+func (dr *DocRoutes) getStore() *storage.Store {
+	if dr.mgr != nil {
+		return dr.mgr.GetStore()
+	}
+	return dr.store
 }
 
 // Register wires the doc routes onto r.
@@ -88,7 +96,7 @@ func (dr *DocRoutes) getOrHistory(w http.ResponseWriter, r *http.Request) {
 //
 // GET /api/docs
 func (dr *DocRoutes) list(w http.ResponseWriter, r *http.Request) {
-	docs, err := dr.store.Docs.List()
+	docs, err := dr.getStore().Docs.List()
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -121,7 +129,7 @@ func docPathParam(r *http.Request) string {
 // GET /api/docs/*
 func (dr *DocRoutes) get(w http.ResponseWriter, r *http.Request) {
 	path := docPathParam(r)
-	doc, err := dr.store.Docs.Get(path)
+	doc, err := dr.getStore().Docs.Get(path)
 	if err != nil {
 		respondError(w, http.StatusNotFound, err.Error())
 		return
@@ -162,16 +170,16 @@ func (dr *DocRoutes) create(w http.ResponseWriter, r *http.Request) {
 		doc.Tags = []string{}
 	}
 
-	if err := dr.store.Docs.Create(&doc); err != nil {
+	if err := dr.getStore().Docs.Create(&doc); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	search.BestEffortIndexDoc(dr.store, doc.Path)
+	search.BestEffortIndexDoc(dr.getStore(), doc.Path)
 
 	// Record initial version.
-	_ = dr.store.Versions.SaveDocVersion(doc.Path, models.DocVersion{
-		Changes:  dr.store.Versions.TrackDocChanges(nil, &doc),
+	_ = dr.getStore().Versions.SaveDocVersion(doc.Path, models.DocVersion{
+		Changes:  dr.getStore().Versions.TrackDocChanges(nil, &doc),
 		Snapshot: storage.DocToSnapshot(&doc),
 	})
 
@@ -185,7 +193,7 @@ func (dr *DocRoutes) create(w http.ResponseWriter, r *http.Request) {
 func (dr *DocRoutes) update(w http.ResponseWriter, r *http.Request) {
 	path := docPathParam(r)
 
-	existing, err := dr.store.Docs.Get(path)
+	existing, err := dr.getStore().Docs.Get(path)
 	if err != nil {
 		respondError(w, http.StatusNotFound, err.Error())
 		return
@@ -224,17 +232,17 @@ func (dr *DocRoutes) update(w http.ResponseWriter, r *http.Request) {
 		doc.Tags = []string{}
 	}
 
-	if err := dr.store.Docs.Update(&doc); err != nil {
+	if err := dr.getStore().Docs.Update(&doc); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	search.BestEffortIndexDoc(dr.store, doc.Path)
+	search.BestEffortIndexDoc(dr.getStore(), doc.Path)
 
 	// Save version if something changed.
-	changes := dr.store.Versions.TrackDocChanges(&oldDoc, &doc)
+	changes := dr.getStore().Versions.TrackDocChanges(&oldDoc, &doc)
 	if len(changes) > 0 {
-		_ = dr.store.Versions.SaveDocVersion(doc.Path, models.DocVersion{
+		_ = dr.getStore().Versions.SaveDocVersion(doc.Path, models.DocVersion{
 			Changes:  changes,
 			Snapshot: storage.DocToSnapshot(&doc),
 		})
@@ -254,7 +262,7 @@ func (dr *DocRoutes) history(w http.ResponseWriter, r *http.Request) {
 	path = strings.TrimPrefix(path, "/")
 	path = strings.TrimSuffix(path, ".md")
 
-	h, err := dr.store.Versions.GetDocHistory(path)
+	h, err := dr.getStore().Versions.GetDocHistory(path)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return

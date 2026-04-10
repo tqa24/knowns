@@ -3,7 +3,7 @@
  */
 
 import { memo, useState } from "react";
-import { Copy, Check, Coins, Clock, RotateCcw, AlertCircle, CheckCircle2, XCircle, ChevronDown, MessageSquareQuote } from "lucide-react";
+import { Copy, Check, Coins, Clock, RotateCcw, AlertCircle, CheckCircle2, XCircle, ChevronDown, MessageSquareQuote, GitBranchPlus } from "lucide-react";
 import MDRender from "../../components/editor/MDRender";
 import { ReasoningBlock } from "./ReasoningBlock";
 import { ToolCallList } from "./ToolCallBlock";
@@ -22,6 +22,7 @@ interface MessageBubbleProps {
 	onSubmitQuestion?: (messageId: string, blockId: string, answers: string[][]) => Promise<void> | void;
 	onRejectQuestion?: (messageId: string, blockId: string) => Promise<void> | void;
 	onRevert?: (messageId: string) => void;
+	onFork?: (messageId: string) => void;
 	onPreviewTask?: (taskId: string) => void;
 	onPreviewDoc?: (docPath: string) => void;
 }
@@ -35,6 +36,7 @@ export const MessageBubble = memo(function MessageBubble({
 	onSubmitQuestion,
 	onRejectQuestion,
 	onRevert,
+	onFork,
 	onPreviewTask,
 	onPreviewDoc,
 }: MessageBubbleProps) {
@@ -67,42 +69,20 @@ export const MessageBubble = memo(function MessageBubble({
 		return (
 			<div className="px-1">
 				<div className="group relative min-w-0">
-					<div className="mb-1.5 text-[11px] font-medium text-muted-foreground">
-						You
-					</div>
-					<div className="min-w-0 overflow-hidden rounded-lg bg-muted/40 px-4 py-3">
-						<div className="space-y-3">
-							{message.content && (
-								<p className="min-w-0 whitespace-pre-wrap break-words text-sm [overflow-wrap:anywhere]">
-									{message.content}
-								</p>
-							)}
-							<MessageAttachments attachments={attachments} />
-						</div>
-					</div>
-					<div className="mt-1 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-						<span className="text-[10px] text-muted-foreground">{time}</span>
-						{message.content && (
-							<button
-								type="button"
-								onClick={handleCopy}
-								className="rounded-md p-1 hover:bg-accent"
-								title="Copy"
-							>
-								{copied ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3 text-muted-foreground" />}
-							</button>
-						)}
-						{isLastUserMessage && onRevert && (
-							<button
-								type="button"
-								onClick={() => onRevert(message.id)}
-								className="rounded-md p-1 hover:bg-accent"
-								title="Revert — remove this message and restore to input"
-							>
-								<RotateCcw className="w-3 h-3 text-muted-foreground" />
-							</button>
-						)}
-					</div>
+					<div className="mb-1.5 text-[11px] font-medium text-muted-foreground">You</div>
+					<UserMessageBody content={message.content} attachments={attachments} />
+					<MessageActionBar
+						time={time}
+						showOnHover
+						canCopy={Boolean(message.content)}
+						copied={copied}
+						onCopy={handleCopy}
+						canRevert={Boolean(isLastUserMessage && onRevert)}
+						onRevert={() => onRevert?.(message.id)}
+						canFork={Boolean(onFork)}
+						onFork={() => onFork?.(message.id)}
+						revertTitle="Revert — remove this message and restore to input"
+					/>
 				</div>
 			</div>
 		);
@@ -115,92 +95,245 @@ export const MessageBubble = memo(function MessageBubble({
 	return (
 		<div className="px-1">
 			<div className="min-w-0">
-				{message.reasoning && <ReasoningBlock markdown={message.reasoning} defaultOpen={false} />}
-				{shellToolCalls.length > 0 && <ShellCallList toolCalls={shellToolCalls} />}
-				{nonShellToolCalls.length > 0 && (
-					<ToolCallList
-						toolCalls={nonShellToolCalls}
-						parentSessionId={parentSessionId}
-						messageId={message.id}
-						messageCreatedAt={message.createdAt}
-					/>
-				)}
-				{(message.questionBlocks || []).map((block) => (
-					<QuestionSummaryBlock key={block.id} block={block} />
-				))}
-				{message.error && (
-					<div className="my-2 rounded-md border border-red-500/20 bg-red-500/5 px-3 py-2.5 sm:px-2.5 sm:py-2">
-						<div className="flex items-start gap-2.5 sm:gap-2">
-							<div className="mt-0.5 text-red-500">
-								<AlertCircle className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-							</div>
-							<div className="min-w-0">
-								<div className="text-sm sm:text-xs text-foreground/90">{message.error}</div>
-							</div>
-						</div>
-					</div>
-				)}
-				{/* Main content */}
-				{(message.content || attachments.length > 0) && (
-					<div className="group relative">
-						<div className="max-w-none py-1">
-							<div className="space-y-3">
-								{message.content && (
-									<MDRender
-										markdown={message.content}
-										className="chat-markdown-compact text-sm [&_p]:text-foreground [&_li]:text-foreground [&_code]:bg-muted [&_code]:px-1 [&_code]:rounded [&_code]:text-xs [&_pre]:bg-muted [&_pre]:text-xs"
-										onTaskLinkClick={onPreviewTask}
-										onDocLinkClick={onPreviewDoc}
-									/>
-								)}
-								<MessageAttachments attachments={attachments} />
-							</div>
-						</div>
-						{message.content && (
-							<button
-								type="button"
-								onClick={handleCopy}
-								className="absolute right-0 top-1 rounded-md p-1 opacity-0 transition-opacity hover:bg-accent group-hover:opacity-100"
-								title="Copy"
-							>
-								{copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5 text-muted-foreground" />}
-							</button>
-						)}
-					</div>
-				)}
-				{showMetadata && (
-					<div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 pl-1 text-[11px] text-muted-foreground">
-						{showModel && message.model && (
-							<span className="rounded-md border border-border/50 bg-muted/30 px-1.5 py-0.5 capitalize">{message.model}</span>
-						)}
-						{message.tokens && (
-							<span className="flex items-center gap-1 text-amber-500/80" title="Tokens used">
-								<Coins className="h-3 w-3" />
-								{message.tokens.toLocaleString()}
-								{message.inputTokens && message.outputTokens && (
-									<span className="text-muted-foreground/60">
-										({message.inputTokens.toLocaleString()} in, {message.outputTokens.toLocaleString()} out)
-									</span>
-								)}
-							</span>
-						)}
-						{typeof message.cost === "number" && message.cost > 0 && (
-							<span className="flex items-center gap-1 text-emerald-500/80" title="Cost">
-								${message.cost.toFixed(4)}
-							</span>
-						)}
-						{message.duration && (
-							<span className="flex items-center gap-1" title="Duration">
-								<Clock className="h-3 w-3" />
-								{(message.duration / 1000).toFixed(1)}s
-							</span>
-						)}
-					</div>
-				)}
+				<AssistantReasoningSection reasoning={message.reasoning} />
+				<AssistantToolSection
+					shellToolCalls={shellToolCalls}
+					nonShellToolCalls={nonShellToolCalls}
+					parentSessionId={parentSessionId}
+					messageId={message.id}
+					messageCreatedAt={message.createdAt}
+				/>
+				<AssistantQuestionSection blocks={message.questionBlocks || []} />
+				<AssistantErrorSection error={message.error} />
+				<AssistantContentSection
+					content={message.content}
+					attachments={attachments}
+					copied={copied}
+					onCopy={handleCopy}
+					onRevert={onRevert ? () => onRevert(message.id) : undefined}
+					onFork={onFork ? () => onFork(message.id) : undefined}
+					onPreviewTask={onPreviewTask}
+					onPreviewDoc={onPreviewDoc}
+				/>
+				{showMetadata && <AssistantMetadataRow message={message} showModel={showModel} />}
 			</div>
 		</div>
 	);
 });
+
+function UserMessageBody({
+	content,
+	attachments,
+}: {
+	content: string;
+	attachments: NonNullable<ChatMessage["attachments"]>;
+}) {
+	return (
+		<div className="min-w-0 overflow-hidden rounded-lg bg-muted/40 px-4 py-3">
+			<div className="space-y-3">
+				{content && <p className="min-w-0 whitespace-pre-wrap break-words text-sm [overflow-wrap:anywhere]">{content}</p>}
+				<MessageAttachments attachments={attachments} />
+			</div>
+		</div>
+	);
+}
+
+function AssistantReasoningSection({ reasoning }: { reasoning?: string }) {
+	if (!reasoning) return null;
+	return <ReasoningBlock markdown={reasoning} />;
+}
+
+function AssistantToolSection({
+	shellToolCalls,
+	nonShellToolCalls,
+	parentSessionId,
+	messageId,
+	messageCreatedAt,
+}: {
+	shellToolCalls: NonNullable<ChatMessage["toolCalls"]>;
+	nonShellToolCalls: NonNullable<ChatMessage["toolCalls"]>;
+	parentSessionId?: string;
+	messageId: string;
+	messageCreatedAt: string;
+}) {
+	if (shellToolCalls.length === 0 && nonShellToolCalls.length === 0) return null;
+	return (
+		<>
+			{shellToolCalls.length > 0 && <ShellCallList toolCalls={shellToolCalls} />}
+			{nonShellToolCalls.length > 0 && (
+				<ToolCallList
+					toolCalls={nonShellToolCalls}
+					parentSessionId={parentSessionId}
+					messageId={messageId}
+					messageCreatedAt={messageCreatedAt}
+				/>
+			)}
+		</>
+	);
+}
+
+function AssistantQuestionSection({ blocks }: { blocks: ChatQuestionBlock[] }) {
+	if (blocks.length === 0) return null;
+	return (
+		<>
+			{blocks.map((block) => (
+				<QuestionSummaryBlock key={block.id} block={block} />
+			))}
+		</>
+	);
+}
+
+function AssistantErrorSection({ error }: { error?: string }) {
+	if (!error) return null;
+	return (
+		<div className="my-2 rounded-md border border-red-500/20 bg-red-500/5 px-3 py-2.5 sm:px-2.5 sm:py-2">
+			<div className="flex items-start gap-2.5 sm:gap-2">
+				<div className="mt-0.5 text-red-500">
+					<AlertCircle className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+				</div>
+				<div className="min-w-0">
+					<div className="text-sm sm:text-xs text-foreground/90">{error}</div>
+				</div>
+			</div>
+		</div>
+	);
+}
+
+function AssistantContentSection({
+	content,
+	attachments,
+	copied,
+	onCopy,
+	onRevert,
+	onFork,
+	onPreviewTask,
+	onPreviewDoc,
+}: {
+	content: string;
+	attachments: NonNullable<ChatMessage["attachments"]>;
+	copied: boolean;
+	onCopy: () => void;
+	onRevert?: () => void;
+	onFork?: () => void;
+	onPreviewTask?: (taskId: string) => void;
+	onPreviewDoc?: (docPath: string) => void;
+}) {
+	if (!content && attachments.length === 0) return null;
+	return (
+		<div className="group relative">
+			<div className="max-w-none py-1">
+				<div className="space-y-3">
+					{content && (
+						<MDRender
+							markdown={content}
+							className="chat-markdown-compact text-sm [&_p]:text-foreground [&_li]:text-foreground [&_code]:bg-muted [&_code]:px-1 [&_code]:rounded [&_code]:text-xs [&_pre]:bg-muted [&_pre]:text-xs"
+							onTaskLinkClick={onPreviewTask}
+							onDocLinkClick={onPreviewDoc}
+						/>
+					)}
+					<MessageAttachments attachments={attachments} />
+				</div>
+			</div>
+			<MessageActionBar
+				className="absolute right-0 top-1"
+				showOnHover
+				canCopy={Boolean(content)}
+				copied={copied}
+				onCopy={onCopy}
+				canRevert={Boolean(onRevert)}
+				onRevert={onRevert}
+				canFork={Boolean(onFork)}
+				onFork={onFork}
+			/>
+		</div>
+	);
+}
+
+function AssistantMetadataRow({
+	message,
+	showModel,
+}: {
+	message: ChatMessage;
+	showModel: boolean;
+}) {
+	return (
+		<div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 pl-1 text-[11px] text-muted-foreground">
+			{showModel && message.model && (
+				<span className="rounded-md border border-border/50 bg-muted/30 px-1.5 py-0.5 capitalize">{message.model}</span>
+			)}
+			{message.tokens && (
+				<span className="flex items-center gap-1 text-amber-500/80" title="Tokens used">
+					<Coins className="h-3 w-3" />
+					{message.tokens.toLocaleString()}
+					{message.inputTokens && message.outputTokens && (
+						<span className="text-muted-foreground/60">
+							({message.inputTokens.toLocaleString()} in, {message.outputTokens.toLocaleString()} out)
+						</span>
+					)}
+				</span>
+			)}
+			{typeof message.cost === "number" && message.cost > 0 && (
+				<span className="flex items-center gap-1 text-emerald-500/80" title="Cost">
+					${message.cost.toFixed(4)}
+				</span>
+			)}
+			{message.duration && (
+				<span className="flex items-center gap-1" title="Duration">
+					<Clock className="h-3 w-3" />
+					{(message.duration / 1000).toFixed(1)}s
+				</span>
+			)}
+		</div>
+	);
+}
+
+function MessageActionBar({
+	time,
+	showOnHover = false,
+	className,
+	canCopy = false,
+	copied = false,
+	onCopy,
+	canRevert = false,
+	onRevert,
+	canFork = false,
+	onFork,
+	revertTitle = "Revert",
+}: {
+	time?: string;
+	showOnHover?: boolean;
+	className?: string;
+	canCopy?: boolean;
+	copied?: boolean;
+	onCopy?: () => void;
+	canRevert?: boolean;
+	onRevert?: () => void;
+	canFork?: boolean;
+	onFork?: () => void;
+	revertTitle?: string;
+}) {
+	if (!time && !canCopy && !canRevert && !canFork) return null;
+	return (
+		<div className={cn("mt-1 flex items-center gap-1 transition-opacity", showOnHover && "opacity-0 group-hover:opacity-100", className)}>
+			{time && <span className="text-[10px] text-muted-foreground">{time}</span>}
+			{canCopy && onCopy && (
+				<button type="button" onClick={onCopy} className="rounded-md p-1 hover:bg-accent" title="Copy">
+					{copied ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3 text-muted-foreground" />}
+				</button>
+			)}
+			{canRevert && onRevert && (
+				<button type="button" onClick={onRevert} className="rounded-md p-1 hover:bg-accent" title={revertTitle}>
+					<RotateCcw className="w-3 h-3 text-muted-foreground" />
+				</button>
+			)}
+			{canFork && onFork && (
+				<button type="button" onClick={onFork} className="rounded-md p-1 hover:bg-accent" title="Fork from here">
+					<GitBranchPlus className="w-3 h-3 text-muted-foreground" />
+				</button>
+			)}
+		</div>
+	);
+}
 
 function QuestionSummaryBlock({ block }: { block: ChatQuestionBlock }) {
 	const [isOpen, setIsOpen] = useState(true);

@@ -16,6 +16,10 @@ type ProjectSettings struct {
 	DefaultPriority string   `json:"defaultPriority"`
 	DefaultLabels   []string `json:"defaultLabels,omitempty"`
 
+	// CodeIntelligenceIgnore is an optional list of repo-relative paths or
+	// glob-like patterns skipped by code ingest in addition to .gitignore.
+	CodeIntelligenceIgnore []string `json:"codeIntelligenceIgnore,omitempty"`
+
 	// TimeFormat is "12h" or "24h".
 	TimeFormat string `json:"timeFormat,omitempty"`
 
@@ -54,6 +58,11 @@ type ProjectSettings struct {
 
 // OpenCodeServerConfig holds settings for the OpenCode server API.
 type OpenCodeServerConfig struct {
+	// Mode controls whether Knowns manages the runtime itself or attaches to an
+	// already running external OpenCode server. Supported values: "managed",
+	// "external". Empty defaults to managed for backward compatibility.
+	Mode string `json:"mode,omitempty"`
+
 	// Host is the OpenCode server hostname (default: 127.0.0.1).
 	Host string `json:"host,omitempty"`
 

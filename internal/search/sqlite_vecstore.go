@@ -124,14 +124,17 @@ CREATE TABLE IF NOT EXISTS chunks (
     doc_path        TEXT,
     section         TEXT,
     heading_level   INTEGER,
-    header_path  TEXT,
+    header_path     TEXT,
     position        INTEGER,
 
     task_id         TEXT,
     field           TEXT,
     status          TEXT,
     priority        TEXT,
-    labels          TEXT
+    labels          TEXT,
+
+    name            TEXT,
+    signature       TEXT
 );
 
 CREATE TABLE IF NOT EXISTS content_hashes (
@@ -139,19 +142,72 @@ CREATE TABLE IF NOT EXISTS content_hashes (
     hash      TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS code_edges (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_id               TEXT NOT NULL,
+    to_id                 TEXT NOT NULL,
+    edge_type             TEXT NOT NULL,
+    from_path             TEXT NOT NULL,
+    to_path               TEXT NOT NULL,
+    raw_target            TEXT NOT NULL DEFAULT '',
+    target_name           TEXT NOT NULL DEFAULT '',
+    target_qualifier      TEXT NOT NULL DEFAULT '',
+    target_module_hint    TEXT NOT NULL DEFAULT '',
+    receiver_type_hint    TEXT NOT NULL DEFAULT '',
+    resolution_status     TEXT NOT NULL DEFAULT '',
+    resolution_confidence TEXT NOT NULL DEFAULT '',
+    resolved_to           TEXT NOT NULL DEFAULT ''
+);
+
 CREATE INDEX IF NOT EXISTS idx_chunks_type ON chunks(type);
 CREATE INDEX IF NOT EXISTS idx_chunks_doc_path ON chunks(doc_path);
 CREATE INDEX IF NOT EXISTS idx_chunks_task_id ON chunks(task_id);
+CREATE INDEX IF NOT EXISTS idx_code_edges_from ON code_edges(from_id);
+CREATE INDEX IF NOT EXISTS idx_code_edges_to ON code_edges(to_id);
 `
-	_, err := s.db.Exec(schema)
-	return err
+	if _, err := s.db.Exec(schema); err != nil {
+		return err
+	}
+
+	// Auto-migrate: add name and signature columns if missing.
+	for _, col := range []string{"name", "signature"} {
+		var hasCol int
+		row := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('chunks') WHERE name=?`, col)
+		if err := row.Scan(&hasCol); err == nil && hasCol == 0 {
+			s.db.Exec(`ALTER TABLE chunks ADD COLUMN ` + col + ` TEXT`)
+		}
+	}
+
+	// Auto-migrate: add code_edges metadata columns if missing.
+	for _, col := range []struct {
+		name string
+		ddl  string
+	}{
+		{name: "raw_target", ddl: `ALTER TABLE code_edges ADD COLUMN raw_target TEXT NOT NULL DEFAULT ''`},
+		{name: "target_name", ddl: `ALTER TABLE code_edges ADD COLUMN target_name TEXT NOT NULL DEFAULT ''`},
+		{name: "target_qualifier", ddl: `ALTER TABLE code_edges ADD COLUMN target_qualifier TEXT NOT NULL DEFAULT ''`},
+		{name: "target_module_hint", ddl: `ALTER TABLE code_edges ADD COLUMN target_module_hint TEXT NOT NULL DEFAULT ''`},
+		{name: "receiver_type_hint", ddl: `ALTER TABLE code_edges ADD COLUMN receiver_type_hint TEXT NOT NULL DEFAULT ''`},
+		{name: "resolution_status", ddl: `ALTER TABLE code_edges ADD COLUMN resolution_status TEXT NOT NULL DEFAULT ''`},
+		{name: "resolution_confidence", ddl: `ALTER TABLE code_edges ADD COLUMN resolution_confidence TEXT NOT NULL DEFAULT ''`},
+		{name: "resolved_to", ddl: `ALTER TABLE code_edges ADD COLUMN resolved_to TEXT NOT NULL DEFAULT ''`},
+	} {
+		var hasCol int
+		row := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('code_edges') WHERE name=?`, col.name)
+		if err := row.Scan(&hasCol); err == nil && hasCol == 0 {
+			s.db.Exec(col.ddl)
+		}
+	}
+
+	return nil
 }
 
 func (s *SQLiteVectorStore) loadIntoMemory() error {
 	rows, err := s.db.Query(`
-		SELECT id, type, token_count, embedding,
+		SELECT id, type, content, token_count, embedding,
 		       doc_path, section, heading_level, header_path, position,
-		       task_id, field, status, priority, labels
+		       task_id, field, status, priority, labels,
+		       COALESCE(name, ''), COALESCE(signature, '')
 		FROM chunks
 	`)
 	if err != nil {
@@ -165,14 +221,17 @@ func (s *SQLiteVectorStore) loadIntoMemory() error {
 	for rows.Next() {
 		var entry indexEntry
 		var embBlob []byte
+		var content sql.NullString
 		var docPath, section, parentSection sql.NullString
 		var headingLevel, position sql.NullInt64
 		var taskID, field, status, priority, labels sql.NullString
+		var name, signature string
 
 		if err := rows.Scan(
-			&entry.ID, &entry.Type, &entry.TokenCount, &embBlob,
+			&entry.ID, &entry.Type, &content, &entry.TokenCount, &embBlob,
 			&docPath, &section, &headingLevel, &parentSection, &position,
 			&taskID, &field, &status, &priority, &labels,
+			&name, &signature,
 		); err != nil {
 			return err
 		}
@@ -186,6 +245,9 @@ func (s *SQLiteVectorStore) loadIntoMemory() error {
 		entry.Field = field.String
 		entry.Status = status.String
 		entry.Priority = priority.String
+		entry.Content = content.String
+		entry.Name = name
+		entry.Signature = signature
 
 		if labels.Valid && labels.String != "" {
 			_ = json.Unmarshal([]byte(labels.String), &entry.Labels)
@@ -226,12 +288,13 @@ func (s *SQLiteVectorStore) Save() error {
 		return err
 	}
 
-	// Insert all chunks.
+	// Insert all chunks (use OR REPLACE to handle any duplicates gracefully).
 	stmt, err := tx.Prepare(`
-		INSERT INTO chunks (id, type, token_count, embedding,
+		INSERT OR REPLACE INTO chunks (id, type, content, token_count, embedding,
 		    doc_path, section, heading_level, header_path, position,
-		    task_id, field, status, priority, labels)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		    task_id, field, status, priority, labels,
+		    name, signature)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
 		return err
@@ -258,13 +321,14 @@ func (s *SQLiteVectorStore) Save() error {
 		}
 
 		if _, err := stmt.Exec(
-			entry.ID, entry.Type, entry.TokenCount, embBlob,
+			entry.ID, entry.Type, entry.Content, entry.TokenCount, embBlob,
 			nullStr(entry.DocPath), nullStr(entry.Section),
 			nullInt(entry.HeadingLevel), nullStr(entry.HeaderPath),
 			nullInt(entry.Position),
 			nullStr(entry.TaskID), nullStr(entry.Field),
 			nullStr(entry.Status), nullStr(entry.Priority),
 			labelsJSON,
+			nullStr(entry.Name), nullStr(entry.Signature),
 		); err != nil {
 			return err
 		}
@@ -311,8 +375,18 @@ func (s *SQLiteVectorStore) AddChunks(chunks []Chunk) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// Build set of existing IDs for deduplication.
+	existing := make(map[string]bool, len(s.index))
+	for _, e := range s.index {
+		existing[e.ID] = true
+	}
+
 	for _, c := range chunks {
 		if len(c.Embedding) != s.dimensions {
+			continue
+		}
+		// Skip duplicates (idempotent re-indexing).
+		if existing[c.ID] {
 			continue
 		}
 
@@ -327,13 +401,16 @@ func (s *SQLiteVectorStore) AddChunks(chunks []Chunk) {
 			DocPath:       c.DocPath,
 			Section:       c.Section,
 			HeadingLevel:  c.HeadingLevel,
-			HeaderPath: c.HeaderPath,
+			HeaderPath:    c.HeaderPath,
 			Position:      c.Position,
 			TaskID:        c.TaskID,
 			Field:         c.Field,
 			Status:        c.Status,
 			Priority:      c.Priority,
 			Labels:        c.Labels,
+			Name:          c.Name,
+			Signature:     c.Signature,
+			Content:       c.Content,
 		})
 	}
 }
@@ -420,13 +497,16 @@ func (s *SQLiteVectorStore) Search(queryVec []float32, opts VectorSearchOpts) []
 				DocPath:       entry.DocPath,
 				Section:       entry.Section,
 				HeadingLevel:  entry.HeadingLevel,
-				HeaderPath: entry.HeaderPath,
+				HeaderPath:    entry.HeaderPath,
 				Position:      entry.Position,
 				TaskID:        entry.TaskID,
 				Field:         entry.Field,
 				Status:        entry.Status,
 				Priority:      entry.Priority,
 				Labels:        entry.Labels,
+				Name:          entry.Name,
+				Signature:     entry.Signature,
+				Content:       entry.Content,
 			},
 			Score: c.score,
 		}

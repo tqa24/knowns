@@ -49,7 +49,22 @@ func (r *Registry) Load() error {
 		}
 		return fmt.Errorf("read registry: %w", err)
 	}
-	return json.Unmarshal(data, &r.Projects)
+	if err := json.Unmarshal(data, &r.Projects); err != nil {
+		return err
+	}
+	// Deduplicate by path (keep last occurrence so most recent wins)
+	seen := make(map[string]int)
+	deduped := r.Projects[:0]
+	for _, p := range r.Projects {
+		if idx, exists := seen[p.Path]; exists {
+			deduped[idx] = p // overwrite with newer entry
+		} else {
+			seen[p.Path] = len(deduped)
+			deduped = append(deduped, p)
+		}
+	}
+	r.Projects = deduped
+	return nil
 }
 
 // Save writes the registry to disk, creating parent directories if needed.
@@ -72,10 +87,13 @@ func (r *Registry) Add(projectPath string) (*Project, error) {
 		return nil, fmt.Errorf("resolve path: %w", err)
 	}
 
-	// Check .knowns/ exists
+	// Check .knowns/ exists and has config.json (properly initialized project)
 	knDir := filepath.Join(absPath, ".knowns")
 	if info, err := os.Stat(knDir); err != nil || !info.IsDir() {
 		return nil, fmt.Errorf("no .knowns/ directory found at %s", absPath)
+	}
+	if _, err := os.Stat(filepath.Join(knDir, "config.json")); err != nil {
+		return nil, fmt.Errorf("no config.json found at %s — run 'knowns init' first", absPath)
 	}
 
 	// Dedup by path
@@ -160,6 +178,9 @@ func (r *Registry) Scan(dirs []string) ([]Project, error) {
 			candidate := filepath.Join(absDir, entry.Name())
 			knDir := filepath.Join(candidate, ".knowns")
 			if info, err := os.Stat(knDir); err == nil && info.IsDir() {
+				if _, cfgErr := os.Stat(filepath.Join(knDir, "config.json")); cfgErr != nil {
+					continue // not a properly initialized project
+				}
 				if r.FindByPath(candidate) != nil {
 					continue // already registered
 				}

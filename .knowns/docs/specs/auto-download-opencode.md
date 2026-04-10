@@ -130,7 +130,7 @@ func detectOpenCode() (*AgentStatus, error) {
 ```
 
 ### Minimum Version
-Define in `internal/agents/opencode/version.go`:
+Define in @code/internal/agents/opencode/detect.go:
 ```go
 const MinOpenCodeVersion = "1.3.0"
 ```

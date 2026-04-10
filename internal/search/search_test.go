@@ -1,9 +1,12 @@
 package search
 
 import (
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/howznguyen/knowns/internal/models"
+	"github.com/howznguyen/knowns/internal/storage"
 )
 
 // --- Model Prefix Config Tests ---
@@ -279,11 +282,11 @@ func TestChunkTask_LongFieldSplit(t *testing.T) {
 
 func TestChunkTask_PreservesMetadata(t *testing.T) {
 	task := &models.Task{
-		ID:       "t3",
-		Title:    "Meta task",
-		Status:   "in-progress",
-		Priority: "high",
-		Labels:   []string{"bug", "urgent"},
+		ID:          "t3",
+		Title:       "Meta task",
+		Status:      "in-progress",
+		Priority:    "high",
+		Labels:      []string{"bug", "urgent"},
 		Description: "Some description",
 	}
 
@@ -497,8 +500,150 @@ func TestFileVectorStore_ContentHashNoOps(t *testing.T) {
 		t.Errorf("expected empty, got %q", h)
 	}
 	store.SetContentHash("task:abc", "hash123") // no-op
-	store.DeleteContentHash("task:abc")          // no-op
+	store.DeleteContentHash("task:abc")         // no-op
 	if hashes := store.ListContentHashes(); hashes != nil {
 		t.Errorf("expected nil, got %v", hashes)
 	}
+}
+
+func TestEngineRetrieve_BuildsCandidatesAndContextPack(t *testing.T) {
+	store := newRetrievalTestStore(t)
+	engine := NewEngine(store, nil, nil)
+
+	resp, err := engine.Retrieve(models.RetrievalOptions{Query: "retrieval foundation", Limit: 10})
+	if err != nil {
+		t.Fatalf("Retrieve: %v", err)
+	}
+	if len(resp.Candidates) < 3 {
+		t.Fatalf("expected at least 3 candidates, got %d", len(resp.Candidates))
+	}
+	if len(resp.ContextPack.Items) != len(resp.Candidates) {
+		t.Fatalf("context pack items = %d, want %d", len(resp.ContextPack.Items), len(resp.Candidates))
+	}
+	if resp.Candidates[0].Type != "doc" {
+		t.Fatalf("first candidate type = %q, want doc", resp.Candidates[0].Type)
+	}
+	if resp.Candidates[0].Citation.Path != "guides/retrieval-foundation" {
+		t.Fatalf("doc citation path = %q, want guides/retrieval-foundation", resp.Candidates[0].Citation.Path)
+	}
+	if !resp.Candidates[0].DirectMatch {
+		t.Fatal("expected top candidate to be a direct match")
+	}
+	if resp.ContextPack.Items[0].Content == "" {
+		t.Fatal("expected context pack content for top candidate")
+	}
+	if resp.ContextPack.Items[0].Type != "doc" {
+		t.Fatalf("first context-pack item type = %q, want doc", resp.ContextPack.Items[0].Type)
+	}
+	if resp.Candidates[1].SourcePreference < resp.Candidates[0].SourcePreference {
+		t.Fatalf("expected docs-first ordering, got source preference %d before %d", resp.Candidates[1].SourcePreference, resp.Candidates[0].SourcePreference)
+	}
+}
+
+func TestEngineRetrieve_FiltersSourceTypes(t *testing.T) {
+	store := newRetrievalTestStore(t)
+	engine := NewEngine(store, nil, nil)
+
+	resp, err := engine.Retrieve(models.RetrievalOptions{
+		Query:       "retrieval foundation",
+		SourceTypes: []string{"task", "memory"},
+	})
+	if err != nil {
+		t.Fatalf("Retrieve: %v", err)
+	}
+	if len(resp.Candidates) == 0 {
+		t.Fatal("expected candidates")
+	}
+	for _, candidate := range resp.Candidates {
+		if candidate.Type == "doc" {
+			t.Fatalf("unexpected doc candidate in filtered response: %+v", candidate)
+		}
+	}
+}
+
+func TestEngineRetrieve_ExpandsReferences(t *testing.T) {
+	store := newRetrievalTestStore(t)
+	engine := NewEngine(store, nil, nil)
+
+	resp, err := engine.Retrieve(models.RetrievalOptions{
+		Query:            "doc only retrieval",
+		SourceTypes:      []string{"doc", "task", "memory"},
+		ExpandReferences: true,
+	})
+	if err != nil {
+		t.Fatalf("Retrieve: %v", err)
+	}
+
+	foundExpanded := false
+	for _, candidate := range resp.Candidates {
+		if len(candidate.ExpandedFrom) == 0 {
+			continue
+		}
+		if candidate.ExpandedFrom[0] != "doc:guides/doc-only-retrieval" {
+			t.Fatalf("expanded candidate origin = %q, want doc:guides/doc-only-retrieval", candidate.ExpandedFrom[0])
+		}
+		foundExpanded = true
+	}
+	if !foundExpanded {
+		t.Fatal("expected at least one expanded candidate")
+	}
+}
+
+func newRetrievalTestStore(t *testing.T) *storage.Store {
+	t.Helper()
+	root := filepath.Join(t.TempDir(), ".knowns")
+	store := storage.NewStore(root)
+	if err := store.Init("retrieval-test"); err != nil {
+		t.Fatalf("Init store: %v", err)
+	}
+
+	now := time.Now().UTC()
+	if err := store.Docs.Create(&models.Doc{
+		Path:        "guides/retrieval-foundation",
+		Title:       "Retrieval Foundation",
+		Description: "Doc-first retrieval foundation guide",
+		Content:     "This doc explains the retrieval foundation. It references @task-rag001 and @memory-mem001.",
+		Tags:        []string{"rag", "retrieval"},
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}); err != nil {
+		t.Fatalf("create doc: %v", err)
+	}
+	if err := store.Docs.Create(&models.Doc{
+		Path:        "guides/doc-only-retrieval",
+		Title:       "Doc Only Retrieval",
+		Description: "This doc is a direct match and links other sources",
+		Content:     "Doc only retrieval links @task-rag001 and @memory-mem001 for extra context.",
+		Tags:        []string{"rag"},
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}); err != nil {
+		t.Fatalf("create doc 2: %v", err)
+	}
+	if err := store.Tasks.Create(&models.Task{
+		ID:          "rag001",
+		Title:       "Implement retrieval foundation task",
+		Description: "Task details for retrieval foundation",
+		Status:      "todo",
+		Priority:    "high",
+		Labels:      []string{"rag", "retrieval"},
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}); err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	if err := store.Memory.Create(&models.MemoryEntry{
+		ID:        "mem001",
+		Title:     "Retrieval preference",
+		Layer:     models.MemoryLayerProject,
+		Category:  "decision",
+		Content:   "Memories support retrieval foundation context.",
+		Tags:      []string{"rag", "retrieval"},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("create memory: %v", err)
+	}
+
+	return store
 }

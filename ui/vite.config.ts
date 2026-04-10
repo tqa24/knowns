@@ -17,9 +17,15 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   root: "src",
   resolve: {
+    dedupe: ["react", "react-dom"],
     alias: {
       "@/ui": path.resolve(__dirname, "src"),
+      react: path.resolve(__dirname, "node_modules/react"),
+      "react-dom": path.resolve(__dirname, "node_modules/react-dom"),
     },
+  },
+  optimizeDeps: {
+    include: ["react-force-graph-2d"],
   },
   server: {
     port: 6421,
@@ -38,7 +44,9 @@ export default defineConfig({
             id.includes("node_modules/@mermaid-js") ||
             id.includes("node_modules/d3") ||
             id.includes("node_modules/elkjs") ||
-            id.includes("node_modules/cytoscape")
+            id.includes("node_modules/cytoscape") ||
+            id.includes("node_modules/react-force-graph-2d") ||
+            id.includes("node_modules/force-graph")
           ) {
             return "mermaid-vendor";
           }

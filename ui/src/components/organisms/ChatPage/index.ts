@@ -5,6 +5,7 @@ export { ChatInput } from "./ChatInput";
 export { ChatWelcome } from "./ChatWelcome";
 export { ChatTodoPanel } from "./ChatTodoPanel";
 export { ChatRightSidebar } from "./ChatRightSidebar";
+export { ChatTimelineDialog } from "./ChatTimelineDialog";
 export { OpenCodeUnavailableBanner } from "./OpenCodeUnavailableBanner";
 export { SubAgentDialog } from "./SubAgentDialog";
 export { AgentActivityDialog } from "./AgentActivityDialog";

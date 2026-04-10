@@ -2,7 +2,7 @@
 title: Graph Intelligence Features
 description: Specification for graph-enhanced search, impact analysis, and cluster detection
 createdAt: '2026-04-02T09:42:57.532Z'
-updatedAt: '2026-04-02T09:45:04.958Z'
+updatedAt: '2026-04-06T07:01:35.127Z'
 tags:
   - spec
   - approved
@@ -100,13 +100,15 @@ Three intelligence features for the Knowledge Graph WebUI that transform the gra
 
 ## Technical Notes
 
-- All three features are client-side only — no backend changes needed
-- Search uses existing /api/search endpoint for matching, then client-side graph traversal for neighbors
-- Impact uses Cytoscape's BFS: `cy.elements().bfs({ root: node, directed: false })`
-- Clusters use Cytoscape's `cy.elements().components()` built-in algorithm
-- Features are mutually exclusive modes: search, impact, clusters, or normal view
-- Cytoscape CSS classes used for all visual states (no direct style manipulation)
-
+- All three features are client-side only — no backend changes needed for the first pass.
+- Primary implementation surface is @code/ui/src/pages/GraphPage.tsx.
+- Node detail interactions live in @code/ui/src/pages/GraphDetailPanel.tsx.
+- Graph data typing and fetch shape live in @code/ui/src/api/client.ts.
+- Search uses existing graph data plus client-side traversal for neighbors.
+- Impact uses Cytoscape traversal over the rendered graph.
+- Clusters use Cytoscape connected-components detection on the rendered graph.
+- Features are mutually exclusive modes: search, impact, clusters, or normal view.
+- Cytoscape CSS classes should drive visual states instead of direct style mutation.
 ## Open Questions
 
 - [ ] Should search also match on node metadata (status, labels, tags) or just title/content?

@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"regexp"
@@ -452,6 +453,22 @@ func TestCLI_SemanticSearch(t *testing.T) {
 			t.Fatalf("search failed with code %d: %s", res.ExitCode, res.Stderr)
 		}
 		t.Logf("keyword search: %s", truncate(res.Stdout, 300))
+	})
+
+	t.Run("search code only json", func(t *testing.T) {
+		res := runCli(t, dir, "search", "authentication security patterns", "--type", "code", "--json", "--limit", "10")
+		if res.ExitCode > 1 {
+			t.Fatalf("search failed with code %d: %s", res.ExitCode, res.Stderr)
+		}
+		var parsed []map[string]any
+		if err := json.Unmarshal([]byte(res.Stdout), &parsed); err != nil {
+			t.Fatalf("parse json output: %v\n%s", err, res.Stdout)
+		}
+		for _, item := range parsed {
+			if got, _ := item["type"].(string); got != "code" {
+				t.Fatalf("expected only code results, got type=%q in %v", got, item)
+			}
+		}
 	})
 
 	// Step 9: Model status

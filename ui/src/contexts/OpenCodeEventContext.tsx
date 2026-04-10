@@ -60,7 +60,7 @@ export function OpenCodeEventProvider({ children }: { children: ReactNode }) {
 export function useOpenCodeEvent() {
 	const ctx = useContext(OpenCodeEventContext);
 	if (!ctx) {
-		throw new Error("useOpenCodeEvent must be used within OpenCodeEventProvider");
+		return { subscribe: () => () => {} };
 	}
 	return ctx;
 }

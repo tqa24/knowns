@@ -50,16 +50,15 @@ const ShellCallCard = memo(function ShellCallCard({ tool }: { tool: ToolCallItem
 	const output = tool.output || "";
 	const status = tool.status;
 	const [expanded, setExpanded] = useState(status === "loading");
-	const previousStatusRef = useRef(status);
+	const previousWasLoadingRef = useRef(status === "loading");
 
 	useEffect(() => {
-		const previousStatus = previousStatusRef.current;
 		if (status === "loading") {
 			setExpanded(true);
-		} else if (previousStatus === "loading" && status !== "loading") {
+		} else if (previousWasLoadingRef.current) {
 			setExpanded(false);
 		}
-		previousStatusRef.current = status;
+		previousWasLoadingRef.current = status === "loading";
 	}, [status]);
 
 	const firstLine = command.split("\n")[0] || command;

@@ -11,6 +11,14 @@ import (
 // ActivityRoutes handles /api/activities endpoints.
 type ActivityRoutes struct {
 	store *storage.Store
+	mgr   *storage.Manager
+}
+
+func (ar *ActivityRoutes) getStore() *storage.Store {
+	if ar.mgr != nil {
+		return ar.mgr.GetStore()
+	}
+	return ar.store
 }
 
 // Register wires the activity routes onto r.
@@ -31,7 +39,7 @@ func (ar *ActivityRoutes) list(w http.ResponseWriter, r *http.Request) {
 
 	typeFilter := r.URL.Query().Get("type")
 
-	entries, err := ar.store.Versions.ListRecentActivities(limit, typeFilter)
+	entries, err := ar.getStore().Versions.ListRecentActivities(limit, typeFilter)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return

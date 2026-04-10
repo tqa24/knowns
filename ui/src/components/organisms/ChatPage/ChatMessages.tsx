@@ -11,8 +11,10 @@ interface ChatMessagesProps {
 	onSubmitQuestion: (messageId: string, blockId: string, answers: string[][]) => Promise<void> | void;
 	onRejectQuestion: (messageId: string, blockId: string) => Promise<void> | void;
 	onRevert?: (messageId: string) => void;
+	onFork?: (messageId: string) => void;
 	onPreviewTask?: (taskId: string) => void;
 	onPreviewDoc?: (docPath: string) => void;
+	focusedMessageId?: string | null;
 }
 
 export function ChatMessages({
@@ -22,8 +24,10 @@ export function ChatMessages({
 	onSubmitQuestion,
 	onRejectQuestion,
 	onRevert,
+	onFork,
 	onPreviewTask,
 	onPreviewDoc,
+	focusedMessageId,
 }: ChatMessagesProps) {
 	if (loading && session.messages.length === 0) {
 		return (
@@ -43,8 +47,10 @@ export function ChatMessages({
 			onSubmitQuestion={onSubmitQuestion}
 			onRejectQuestion={onRejectQuestion}
 			onRevert={onRevert}
+			onFork={onFork}
 			onPreviewTask={onPreviewTask}
 			onPreviewDoc={onPreviewDoc}
+			focusedMessageId={focusedMessageId}
 		/>
 	);
 }

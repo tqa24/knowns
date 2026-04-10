@@ -1,13 +1,16 @@
-import { Menu } from "lucide-react";
+import { Clock3, Menu, PanelRight } from "lucide-react";
 import type { ChatSession } from "../../../models/chat";
 import { getModelRefLabel } from "../../../lib/opencodeModels";
 
 interface ChatHeaderProps {
 	session: ChatSession;
 	onMenuToggle?: () => void;
+	onOpenTimeline?: () => void;
+	onToggleRightSidebar?: () => void;
+	rightSidebarOpen?: boolean;
 }
 
-export function ChatHeader({ session, onMenuToggle }: ChatHeaderProps) {
+export function ChatHeader({ session, onMenuToggle, onOpenTimeline, onToggleRightSidebar, rightSidebarOpen }: ChatHeaderProps) {
 	return (
 		<div className="flex shrink-0 items-center gap-3 border-b border-border/50 bg-background px-3 py-3 sm:px-5">
 			{onMenuToggle && (
@@ -34,6 +37,26 @@ export function ChatHeader({ session, onMenuToggle }: ChatHeaderProps) {
 					<span>{session.messages.length} message{session.messages.length !== 1 ? "s" : ""}</span>
 				</div>
 			</div>
+			{onOpenTimeline && (
+				<button
+					type="button"
+					onClick={onOpenTimeline}
+					className="shrink-0 rounded-md p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+					title="Open timeline"
+				>
+					<Clock3 className="h-4 w-4" />
+				</button>
+			)}
+			{onToggleRightSidebar && (
+				<button
+					type="button"
+					onClick={onToggleRightSidebar}
+					className={`hidden lg:flex shrink-0 items-center justify-center rounded-md p-2 transition-colors hover:bg-accent hover:text-foreground ${rightSidebarOpen ? "text-foreground bg-accent" : "text-muted-foreground"}`}
+					title={rightSidebarOpen ? "Hide session sidebar" : "Show session sidebar"}
+				>
+					<PanelRight className="h-4 w-4" />
+				</button>
+			)}
 		</div>
 	);
 }

@@ -2,7 +2,7 @@
 title: Custom Provider UI Design
 description: Research and UI design for adding custom OpenAI-compatible providers from the web UI
 createdAt: '2026-03-27T21:29:38.953Z'
-updatedAt: '2026-03-27T21:35:33.089Z'
+updatedAt: '2026-04-06T07:03:44.651Z'
 tags:
   - spec
   - approved
@@ -103,9 +103,9 @@ The form collects provider ID, display name, base URL, models, optional headers,
 ### Key Files to Modify
 | File | Change |
 |------|--------|
-| `ui/src/api/client.ts` | Add `patchConfig()` method |
-| `ui/src/contexts/OpenCodeContext.tsx` | Add `addCustomProvider()` action |
-| `ui/src/components/organisms/ProviderManagement/ProviderConnectDialog.tsx` | Add `CustomProviderStepView` + entry point in list |
+| @code/ui/src/api/client.ts | Add `patchConfig()` method |
+| @code/ui/src/contexts/OpenCodeContext.tsx | Add `addCustomProvider()` action |
+| @code/ui/src/components/organisms/ProviderManagement/ProviderConnectDialog.tsx | Add `CustomProviderStepView` + entry point in list |
 
 ### Config Structure Sent to OpenCode
 ```json
@@ -125,7 +125,6 @@ The form collects provider ID, display name, base URL, models, optional headers,
   }
 }
 ```
-
 ## Open Questions
 
 None — all gray areas resolved via D1–D3.

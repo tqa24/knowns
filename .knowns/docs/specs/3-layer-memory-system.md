@@ -2,7 +2,7 @@
 title: 3-Layer Memory System
 description: Specification for Working/Project/Global memory system — persistent knowledge layers for AI agents and users
 createdAt: '2026-04-02T07:40:13.536Z'
-updatedAt: '2026-04-02T07:48:27.081Z'
+updatedAt: '2026-04-06T07:03:42.551Z'
 tags:
   - spec
   - approved
@@ -165,20 +165,20 @@ Regex:          @memory-([a-z0-9]+)
 ```
 
 Existing ref regexes to extend:
-- `internal/server/routes/graph.go` — add `graphMemoryRefRE`
-- `internal/validate/validate.go` — add memory ref validation
-- `internal/storage/` — ref resolution in `--plain` output
+- @code/internal/server/routes/graph.go — add `graphMemoryRefRE`
+- @code/internal/validate/validate.go — add memory ref validation
+- @code/internal/storage/store.go — support ref resolution in `--plain` output
 
 ### GraphPage Integration
 - Node type: `"memory"` with shape distinct from task/doc/template (e.g., circle or star)
 - Node color varies by layer: working (gray), project (green), global (purple)
 - Data field includes `layer`, `category`, `tags`
 - Edges: `"mention"` type for `@memory-<id>` refs (same as existing task/doc mentions)
-- Filter toggle: add "memories" checkbox alongside tasks/docs/templates in `FilterState`
+- Filter toggle: add "memories" checkbox alongside other graph filters in `FilterState`
 - Files to modify:
-  - `internal/server/routes/graph.go` — add memory nodes + `@memory-` ref regex
-  - `ui/src/pages/GraphPage.tsx` — add memory node style + filter
-  - `ui/src/api/client.ts` — extend `GraphNode.type` to include `"memory"`
+  - @code/internal/server/routes/graph.go — add memory nodes + `@memory-` ref regex
+  - @code/ui/src/pages/GraphPage.tsx — add memory node style + filter
+  - @code/ui/src/api/client.ts — extend `GraphNode.type` to include `"memory"`
 
 ### Integration Points
 - Storage: new `MemoryStore` on `Store` coordinator (follows `DocStore` pattern)

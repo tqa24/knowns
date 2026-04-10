@@ -45,6 +45,7 @@
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "react-flip-numbers": "^3.0.9",
+    "react-force-graph-2d": "^1.29.1",
     "react-markdown": "^10.1.0",
     "react-markdown-editor-lite": "^1.4.2",
     "remark-gfm": "^4.0.1",
@@ -62,6 +63,7 @@
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.2",
+    "agentation": "^3.0.2",
     "tailwindcss": "^4.1.18",
     "typescript": "^5.7.2",
     "vite": "^7.3.0"
