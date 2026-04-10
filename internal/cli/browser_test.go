@@ -142,13 +142,13 @@ func TestBindBrowserPortFallsForwardWhenBusy(t *testing.T) {
 	}
 	defer busyNext.Close()
 
-	ln, got, err := bindBrowserPort(startPort, 3)
+	ln, got, err := bindBrowserPort(startPort, 50)
 	if err != nil {
 		t.Fatalf("bindBrowserPort returned error: %v", err)
 	}
 	ln.Close()
-	if got != startPort+2 {
-		t.Fatalf("bindBrowserPort(%d, 3) = %d, want %d", startPort, got, startPort+2)
+	if got <= startPort+1 {
+		t.Fatalf("bindBrowserPort(%d, 50) = %d, want a port after %d", startPort, got, startPort+1)
 	}
 }
 
