@@ -1,15 +1,21 @@
 package server
 
 import (
+	"encoding/base64"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/howznguyen/knowns/internal/agents/opencode"
 	"github.com/howznguyen/knowns/internal/models"
+	"github.com/howznguyen/knowns/internal/runtimememory"
+	"github.com/howznguyen/knowns/internal/storage"
 )
 
 func TestDeriveOpenCodePortCandidates(t *testing.T) {
@@ -299,5 +305,207 @@ func TestProxyOpenCodePreservesExistingDirectoryHeader(t *testing.T) {
 	}
 	if gotHeader != "/tmp/project-b" {
 		t.Fatalf("x-opencode-directory = %q, want %q", gotHeader, "/tmp/project-b")
+	}
+}
+
+func TestProxyOpenCodeInjectsRuntimeMemoryInAutoMode(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	projectRoot := t.TempDir()
+	store := storage.NewStore(filepath.Join(projectRoot, ".knowns"))
+	if err := store.Init("runtime-memory"); err != nil {
+		t.Fatalf("init store: %v", err)
+	}
+	now := time.Now().UTC()
+	if err := store.Memory.Create(&models.MemoryEntry{Title: "Runtime queue pattern", Layer: models.MemoryLayerProject, Category: "pattern", Content: "Use the runtime queue pattern when handling prompt execution.", Tags: []string{"runtime", "queue", "prompt"}, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("create memory: %v", err)
+	}
+
+	project, err := store.Config.Load()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	project.Settings.RuntimeMemory = &models.RuntimeMemorySettings{Mode: runtimememory.ModeAuto, MaxItems: 5, MaxBytes: 2500}
+	if err := store.Config.Save(project); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	var gotHeader, gotBody string
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHeader = r.Header.Get("x-opencode-directory")
+		data, _ := io.ReadAll(r.Body)
+		gotBody = string(data)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+
+	cfg := opencode.DefaultConfig()
+	serverURL := target.URL
+	cfg.Host = serverURL[len("http://"):strings.LastIndex(serverURL, ":")]
+	cfg.Port, err = strconv.Atoi(serverURL[strings.LastIndex(serverURL, ":")+1:])
+	if err != nil {
+		t.Fatalf("parse port: %v", err)
+	}
+
+	s := &Server{
+		store:           store,
+		projectRoot:     projectRoot,
+		runtimeOpenCode: &cfg,
+		opencodeProxy:   buildOpenCodeProxy(cfg),
+		runtimeStatus:   opencode.RuntimeStatus{Configured: true, Mode: opencode.RuntimeModeManaged, State: opencode.RuntimeStateReady, Ready: true},
+	}
+
+	body := `{"parts":[{"type":"text","text":"implement runtime queue prompt execution"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/opencode/session/abc/prompt_async", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	s.proxyOpenCode(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+	}
+	if gotHeader != projectRoot {
+		t.Fatalf("x-opencode-directory = %q, want %q", gotHeader, projectRoot)
+	}
+	if !strings.Contains(gotBody, "Knowns Memory Pack") || !strings.Contains(gotBody, "Runtime queue pattern") {
+		t.Fatalf("expected injected memory in body, got %s", gotBody)
+	}
+	if rr.Header().Get(runtimememory.HeaderStatus) != runtimememory.StatusInjected {
+		t.Fatalf("status header = %q, want %q", rr.Header().Get(runtimememory.HeaderStatus), runtimememory.StatusInjected)
+	}
+	if rr.Header().Get(runtimememory.HeaderPack) == "" {
+		t.Fatal("expected memory pack header")
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(rr.Header().Get(runtimememory.HeaderPack))
+	if err != nil {
+		t.Fatalf("decode pack header: %v", err)
+	}
+	if !strings.Contains(string(decoded), "Runtime queue pattern") {
+		t.Fatalf("decoded pack missing injected memory: %s", string(decoded))
+	}
+}
+
+func TestProxyOpenCodeSkipsInjectionWhenNoRelevantMemoryExists(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	projectRoot := t.TempDir()
+	store := storage.NewStore(filepath.Join(projectRoot, ".knowns"))
+	if err := store.Init("runtime-memory"); err != nil {
+		t.Fatalf("init store: %v", err)
+	}
+	project, err := store.Config.Load()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	project.Settings.RuntimeMemory = &models.RuntimeMemorySettings{Mode: runtimememory.ModeAuto}
+	if err := store.Config.Save(project); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+	if err := store.Memory.Create(&models.MemoryEntry{Title: "Landing page preference", Layer: models.MemoryLayerProject, Category: "preference", Content: "Prefer editorial serif typography for marketing pages.", Tags: []string{"design"}, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}); err != nil {
+		t.Fatalf("create memory: %v", err)
+	}
+
+	var gotBody string
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data, _ := io.ReadAll(r.Body)
+		gotBody = string(data)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+
+	cfg := opencode.DefaultConfig()
+	serverURL := target.URL
+	cfg.Host = serverURL[len("http://"):strings.LastIndex(serverURL, ":")]
+	cfg.Port, err = strconv.Atoi(serverURL[strings.LastIndex(serverURL, ":")+1:])
+	if err != nil {
+		t.Fatalf("parse port: %v", err)
+	}
+
+	s := &Server{store: store, projectRoot: projectRoot, runtimeOpenCode: &cfg, opencodeProxy: buildOpenCodeProxy(cfg), runtimeStatus: opencode.RuntimeStatus{Configured: true, Mode: opencode.RuntimeModeManaged, State: opencode.RuntimeStateReady, Ready: true}}
+	req := httptest.NewRequest(http.MethodPost, "/api/opencode/session/abc/prompt_async", strings.NewReader(`{"parts":[{"type":"text","text":"debug sqlite vector search"}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	s.proxyOpenCode(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+	}
+	if strings.Contains(gotBody, "Knowns Memory Pack") {
+		t.Fatalf("expected no injection, got body %s", gotBody)
+	}
+	if rr.Header().Get(runtimememory.HeaderStatus) != runtimememory.StatusNone {
+		t.Fatalf("status header = %q, want %q", rr.Header().Get(runtimememory.HeaderStatus), runtimememory.StatusNone)
+	}
+}
+
+func TestProxyOpenCodeSupportsManualAndDebugModes(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	projectRoot := t.TempDir()
+	store := storage.NewStore(filepath.Join(projectRoot, ".knowns"))
+	if err := store.Init("runtime-memory"); err != nil {
+		t.Fatalf("init store: %v", err)
+	}
+	if err := store.Memory.Create(&models.MemoryEntry{Title: "Prompt warning", Layer: models.MemoryLayerProject, Category: "warning", Content: "Prompt hooks should stay bounded in runtime execution.", Tags: []string{"prompt", "runtime"}, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}); err != nil {
+		t.Fatalf("create memory: %v", err)
+	}
+
+	var gotBody string
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data, _ := io.ReadAll(r.Body)
+		gotBody = string(data)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+
+	cfg := opencode.DefaultConfig()
+	serverURL := target.URL
+	var err error
+	cfg.Host = serverURL[len("http://"):strings.LastIndex(serverURL, ":")]
+	cfg.Port, err = strconv.Atoi(serverURL[strings.LastIndex(serverURL, ":")+1:])
+	if err != nil {
+		t.Fatalf("parse port: %v", err)
+	}
+
+	s := &Server{store: store, projectRoot: projectRoot, runtimeOpenCode: &cfg, opencodeProxy: buildOpenCodeProxy(cfg), runtimeStatus: opencode.RuntimeStatus{Configured: true, Mode: opencode.RuntimeModeManaged, State: opencode.RuntimeStateReady, Ready: true}}
+	body := `{"parts":[{"type":"text","text":"runtime prompt execution"}]}`
+
+	manualReq := httptest.NewRequest(http.MethodPost, "/api/opencode/session/abc/prompt_async", strings.NewReader(body))
+	manualReq.Header.Set("Content-Type", "application/json")
+	manualReq.Header.Set(runtimememory.HeaderMode, runtimememory.ModeManual)
+	manualRR := httptest.NewRecorder()
+	s.proxyOpenCode(manualRR, manualReq)
+	if strings.Contains(gotBody, "Knowns Memory Pack") {
+		t.Fatalf("manual mode should not inject without opt-in, got %s", gotBody)
+	}
+	if manualRR.Header().Get(runtimememory.HeaderStatus) != runtimememory.StatusCandidate {
+		t.Fatalf("manual status header = %q, want %q", manualRR.Header().Get(runtimememory.HeaderStatus), runtimememory.StatusCandidate)
+	}
+
+	debugReq := httptest.NewRequest(http.MethodPost, "/api/opencode/session/abc/prompt_async", strings.NewReader(body))
+	debugReq.Header.Set("Content-Type", "application/json")
+	debugReq.Header.Set(runtimememory.HeaderMode, runtimememory.ModeDebug)
+	debugRR := httptest.NewRecorder()
+	s.proxyOpenCode(debugRR, debugReq)
+	if strings.Contains(gotBody, "Knowns Memory Pack") {
+		t.Fatalf("debug mode should not inject, got %s", gotBody)
+	}
+	if debugRR.Header().Get(runtimememory.HeaderStatus) != runtimememory.StatusCandidate {
+		t.Fatalf("debug status header = %q, want %q", debugRR.Header().Get(runtimememory.HeaderStatus), runtimememory.StatusCandidate)
+	}
+	if debugRR.Header().Get(runtimememory.HeaderPack) == "" {
+		t.Fatal("expected debug pack header")
+	}
+
+	manualInjectReq := httptest.NewRequest(http.MethodPost, "/api/opencode/session/abc/prompt_async", strings.NewReader(body))
+	manualInjectReq.Header.Set("Content-Type", "application/json")
+	manualInjectReq.Header.Set(runtimememory.HeaderMode, runtimememory.ModeManual)
+	manualInjectReq.Header.Set(runtimememory.HeaderInject, "true")
+	manualInjectRR := httptest.NewRecorder()
+	s.proxyOpenCode(manualInjectRR, manualInjectReq)
+	if !strings.Contains(gotBody, "Knowns Memory Pack") {
+		t.Fatalf("manual mode with inject should modify body, got %s", gotBody)
+	}
+	if manualInjectRR.Header().Get(runtimememory.HeaderStatus) != runtimememory.StatusInjected {
+		t.Fatalf("manual inject status header = %q, want %q", manualInjectRR.Header().Get(runtimememory.HeaderStatus), runtimememory.StatusInjected)
 	}
 }

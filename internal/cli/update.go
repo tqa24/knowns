@@ -3,14 +3,22 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
+	"time"
 
+	"github.com/howznguyen/knowns/internal/runtimequeue"
 	"github.com/howznguyen/knowns/internal/util"
 	"github.com/spf13/cobra"
 )
+
+const updateDownloadTimeout = 30 * time.Second
 
 var updateCmd = &cobra.Command{
 	Use:   "update",
@@ -56,8 +64,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	)
 
 	if checkOnly {
-		installCmd := util.DetectInstallCmd()
-		fmt.Printf("\n  Run: %s\n", StyleInfo.Render(installCmd))
+		fmt.Printf("\n  Run: %s\n", StyleInfo.Render(recommendedUpdateCommand()))
 		return nil
 	}
 
@@ -74,6 +81,17 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 
 // runUpgrade detects the install method and runs the appropriate upgrade command.
 func runUpgrade() error {
+	meta, err := util.LoadInstallMetadata()
+	if err != nil {
+		return fmt.Errorf("read install metadata: %w", err)
+	}
+	if meta == nil {
+		meta = inferScriptInstallMetadata()
+	}
+	if meta != nil && meta.IsScriptManaged() {
+		return runScriptManagedUpgrade(meta)
+	}
+
 	installCmd := util.DetectInstallCmd()
 	fmt.Printf("%s Running: %s\n", StyleBold.Render("Upgrading..."), StyleInfo.Render(installCmd))
 
@@ -98,6 +116,281 @@ func runUpgrade() error {
 
 	fmt.Println(StyleSuccess.Render("✓") + " Upgrade complete.")
 	return nil
+}
+
+func recommendedUpdateCommand() string {
+	meta, err := util.LoadInstallMetadata()
+	if err == nil && meta != nil && meta.IsScriptManaged() {
+		return "knowns update"
+	}
+	return util.DetectInstallCmd()
+}
+
+func runScriptManagedUpgrade(meta *util.InstallMetadata) error {
+	if meta == nil {
+		return fmt.Errorf("missing install metadata for script-managed update")
+	}
+	binaryPath := strings.TrimSpace(meta.BinaryPath)
+	if binaryPath == "" {
+		exe, err := os.Executable()
+		if err != nil {
+			return fmt.Errorf("resolve binary path: %w", err)
+		}
+		binaryPath = exe
+	}
+	if !isUserWritable(binaryPath) {
+		return fmt.Errorf("script-managed install at %s is not writable by the current user; reinstall to ~/.knowns/bin or set KNOWNS_INSTALL_DIR to a user-writable path", binaryPath)
+	}
+	version := util.NormalizeVersionTag(util.FetchLatestVersion())
+	if version == "" {
+		return fmt.Errorf("could not determine latest version")
+	}
+	url, err := releaseArtifactURL(version)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%s Running: %s\n", StyleBold.Render("Upgrading..."), StyleInfo.Render(url))
+	if err := downloadAndReplaceBinary(url, binaryPath); err != nil {
+		return err
+	}
+	meta.Method = "script"
+	if meta.ManagedBy == "" {
+		meta.ManagedBy = "knowns-script"
+	}
+	meta.UpdateStrategy = "self-update"
+	meta.BinaryPath = binaryPath
+	meta.Version = strings.TrimPrefix(version, "v")
+	if meta.Channel == "" {
+		meta.Channel = "stable"
+	}
+	if err := util.SaveInstallMetadata(meta); err != nil {
+		return fmt.Errorf("persist install metadata: %w", err)
+	}
+	if err := restartRuntimeIfNeeded(version); err != nil {
+		return err
+	}
+	fmt.Println(StyleSuccess.Render("✓") + " Upgrade complete.")
+	return nil
+}
+
+func inferScriptInstallMetadata() *util.InstallMetadata {
+	exe, err := os.Executable()
+	if err != nil || exe == "" {
+		return nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return nil
+	}
+	defaultDir := filepath.Join(home, ".knowns", "bin")
+	exeDir := filepath.Dir(exe)
+	if !samePath(exeDir, defaultDir) {
+		return nil
+	}
+	return &util.InstallMetadata{
+		Method:         "script",
+		ManagedBy:      "knowns-script",
+		UpdateStrategy: "self-update",
+		Channel:        "stable",
+		BinaryPath:     exe,
+		Version:        util.Version,
+	}
+}
+
+func samePath(a, b string) bool {
+	cleanA := filepath.Clean(a)
+	cleanB := filepath.Clean(b)
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(cleanA, cleanB)
+	}
+	return cleanA == cleanB
+}
+
+func isUserWritable(path string) bool {
+	dir := filepath.Dir(path)
+	probe := filepath.Join(dir, ".knowns-write-test")
+	if err := os.WriteFile(probe, []byte("ok"), 0644); err != nil {
+		return false
+	}
+	_ = os.Remove(probe)
+	return true
+}
+
+func releaseArtifactURL(version string) (string, error) {
+	platform, err := releasePlatform()
+	if err != nil {
+		return "", err
+	}
+	archive := fmt.Sprintf("knowns-%s.tar.gz", platform)
+	return fmt.Sprintf("https://github.com/knowns-dev/knowns/releases/download/%s/%s", version, archive), nil
+}
+
+func releasePlatform() (string, error) {
+	var osName string
+	switch runtime.GOOS {
+	case "darwin":
+		osName = "darwin"
+	case "linux":
+		osName = "linux"
+	case "windows":
+		osName = "win"
+	default:
+		return "", fmt.Errorf("unsupported platform: %s", runtime.GOOS)
+	}
+	var arch string
+	switch runtime.GOARCH {
+	case "amd64":
+		arch = "x64"
+	case "arm64":
+		arch = "arm64"
+	default:
+		return "", fmt.Errorf("unsupported architecture: %s", runtime.GOARCH)
+	}
+	return osName + "-" + arch, nil
+}
+
+func downloadAndReplaceBinary(url, binaryPath string) error {
+	tmpDir, err := os.MkdirTemp("", "knowns-update-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmpDir)
+
+	archivePath := filepath.Join(tmpDir, filepath.Base(url))
+	if err := downloadFile(url, archivePath); err != nil {
+		return fmt.Errorf("download release artifact: %w", err)
+	}
+	if err := extractTarGz(archivePath, tmpDir); err != nil {
+		return fmt.Errorf("extract release artifact: %w", err)
+	}
+	binaryName := "knowns"
+	if runtime.GOOS == "windows" {
+		binaryName = "knowns.exe"
+	}
+	extractedPath, err := findFile(tmpDir, func(path string, info os.FileInfo) bool {
+		name := strings.ToLower(info.Name())
+		return !info.IsDir() && (name == strings.ToLower(binaryName) || strings.HasPrefix(name, "knowns-"))
+	})
+	if err != nil {
+		return err
+	}
+	if err := replaceBinary(extractedPath, binaryPath); err != nil {
+		return fmt.Errorf("replace binary: %w", err)
+	}
+	return nil
+}
+
+func downloadFile(url, dest string) error {
+	client := &http.Client{Timeout: updateDownloadTimeout}
+	resp, err := client.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status: %s", resp.Status)
+	}
+	file, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	_, err = io.Copy(file, resp.Body)
+	return err
+}
+
+func extractTarGz(archivePath, destDir string) error {
+	tarBin, err := exec.LookPath("tar")
+	if err != nil {
+		return fmt.Errorf("tar not found in PATH")
+	}
+	cmd := exec.Command(tarBin, "-xzf", archivePath, "-C", destDir)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func findFile(root string, match func(string, os.FileInfo) bool) (string, error) {
+	var found string
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info == nil {
+			return err
+		}
+		if match(path, info) {
+			found = path
+			return io.EOF
+		}
+		return nil
+	})
+	if err != nil && err != io.EOF {
+		return "", err
+	}
+	if found == "" {
+		return "", fmt.Errorf("updated binary not found in release artifact")
+	}
+	return found, nil
+}
+
+func replaceBinary(src, dest string) error {
+	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+		return err
+	}
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	tmp := dest + ".tmp"
+	if err := os.WriteFile(tmp, data, 0755); err != nil {
+		return err
+	}
+	if runtime.GOOS == "windows" {
+		_ = os.Remove(dest + ".old")
+		if _, err := os.Stat(dest); err == nil {
+			if err := os.Rename(dest, dest+".old"); err != nil {
+				_ = os.Remove(tmp)
+				return err
+			}
+		}
+	}
+	if err := os.Rename(tmp, dest); err != nil {
+		return err
+	}
+	return nil
+}
+
+func restartRuntimeIfNeeded(targetVersion string) error {
+	status, err := runtimequeue.LoadStatus()
+	if err != nil {
+		return nil
+	}
+	if !status.Running {
+		return nil
+	}
+	targetVersion = strings.TrimPrefix(targetVersion, "v")
+	if status.Version == "" || strings.TrimPrefix(status.Version, "v") == targetVersion {
+		return nil
+	}
+	pidFile := runtimequeue.PIDFile()
+	if pid, readErr := os.ReadFile(pidFile); readErr == nil {
+		if parsed := strings.TrimSpace(string(pid)); parsed != "" {
+			if process, findErr := os.FindProcess(mustAtoi(parsed)); findErr == nil {
+				_ = process.Kill()
+			}
+		}
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if !runtimequeue.IsRunning() {
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return fmt.Errorf("timed out waiting for shared runtime to stop after update")
+}
+
+func mustAtoi(value string) int {
+	n, _ := strconv.Atoi(value)
+	return n
 }
 
 // syncMCPConfigs updates MCP config files in the current project to use the

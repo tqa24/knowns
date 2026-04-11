@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -74,6 +76,13 @@ func NewEmbedder(cfg EmbedderConfig) (*Embedder, error) {
 		return nil, fmt.Errorf("session options: %w", err)
 	}
 	defer opts.Destroy()
+
+	if err := opts.SetIntraOpNumThreads(onnxThreadLimit("KNOWNS_ONNX_INTRA_OP_THREADS", 2)); err != nil {
+		return nil, fmt.Errorf("set intra-op threads: %w", err)
+	}
+	if err := opts.SetInterOpNumThreads(onnxThreadLimit("KNOWNS_ONNX_INTER_OP_THREADS", 1)); err != nil {
+		return nil, fmt.Errorf("set inter-op threads: %w", err)
+	}
 
 	session, err := ort.NewDynamicAdvancedSession(modelPath, inputNames, outputNames, opts)
 	if err != nil {
@@ -279,4 +288,23 @@ func (e *Embedder) ModelConfig() EmbeddingModelConfig {
 // Tokenizer returns the underlying tokenizer, or nil if not available.
 func (e *Embedder) GetTokenizer() Tokenizer {
 	return e.tokenizer
+}
+
+func onnxThreadLimit(envKey string, defaultValue int) int {
+	if raw := strings.TrimSpace(os.Getenv(envKey)); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			return n
+		}
+	}
+	if defaultValue > 0 {
+		maxThreads := runtime.NumCPU()
+		if maxThreads > 0 && defaultValue > maxThreads {
+			return maxThreads
+		}
+		return defaultValue
+	}
+	if n := runtime.NumCPU(); n > 0 {
+		return n
+	}
+	return 1
 }

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -14,7 +15,7 @@ import (
 
 // Daemon manages a shared OpenCode server process that persists across
 // Knowns server restarts. Only one daemon runs at a time, identified by
-// a PID file at ~/.knowns/opencode.pid.
+// a PID file under ~/.knowns scoped to the target host/port.
 type Daemon struct {
 	Host    string
 	Port    int
@@ -25,14 +26,24 @@ type Daemon struct {
 	startedByUs bool
 }
 
-// NewDaemon creates a Daemon targeting the given host:port.
-// The PID file defaults to ~/.knowns/opencode.pid.
-func NewDaemon(host string, port int) *Daemon {
+var pidFileSegmentSanitizer = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
+
+func defaultPIDFile(host string, port int) string {
 	home, _ := os.UserHomeDir()
+	safeHost := pidFileSegmentSanitizer.ReplaceAllString(host, "_")
+	if safeHost == "" {
+		safeHost = "127.0.0.1"
+	}
+	return filepath.Join(home, ".knowns", fmt.Sprintf("opencode-%s-%d.pid", safeHost, port))
+}
+
+// NewDaemon creates a Daemon targeting the given host:port.
+// The PID file defaults to ~/.knowns/opencode-<host>-<port>.pid.
+func NewDaemon(host string, port int) *Daemon {
 	return &Daemon{
 		Host:    host,
 		Port:    port,
-		PIDFile: filepath.Join(home, ".knowns", "opencode.pid"),
+		PIDFile: defaultPIDFile(host, port),
 	}
 }
 
@@ -204,5 +215,3 @@ func (d *Daemon) WritePID(pid int) error {
 	}
 	return os.WriteFile(d.PIDFile, []byte(strconv.Itoa(pid)), 0644)
 }
-
-

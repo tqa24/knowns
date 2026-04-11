@@ -531,7 +531,7 @@ func TestMCP_SemanticSearch(t *testing.T) {
 		context.Background(), bin, "model", "set", "all-MiniLM-L6-v2",
 	)
 	setModelCmd.Dir = dir
-	setModelCmd.Env = append(os.Environ(), "NO_COLOR=1")
+	setModelCmd.Env = append(os.Environ(), "NO_COLOR=1", "KNOWNS_RUNTIME_INLINE=1")
 	if out, err := setModelCmd.CombinedOutput(); err != nil {
 		t.Fatalf("model set failed: %v\n%s", err, string(out))
 	}

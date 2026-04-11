@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -18,72 +17,6 @@ import (
 
 // RegisterCodeTools registers MCP tools for code intelligence.
 func RegisterCodeTools(s *server.MCPServer, getStore func() *storage.Store) {
-	s.AddTool(
-		mcp.NewTool("code_ingest",
-			mcp.WithDescription("Index project code symbols and edges for code intelligence."),
-			mcp.WithBoolean("includeTests",
-				mcp.Description("Whether to include test files in indexing"),
-			),
-		),
-		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			store := getStore()
-			if store == nil {
-				return noProjectError()
-			}
-
-			includeTests := searchBoolArg(req.GetArguments(), "includeTests")
-			projectRoot := filepath.Dir(store.Root)
-			symbols, edges, err := search.IndexAllFiles(projectRoot, includeTests)
-			if err != nil {
-				return errFailed("index code", err)
-			}
-
-			fileCount := countUniqueFiles(symbols)
-			result := map[string]any{
-				"success":     true,
-				"fileCount":   fileCount,
-				"symbolCount": len(symbols),
-				"edgeCount":   len(edges),
-				"message":     fmt.Sprintf("Indexed %d symbols across %d files with %d edges", len(symbols), fileCount, len(edges)),
-			}
-
-			embedder, vecStore, initErr := search.InitSemantic(store)
-			if initErr == nil && embedder != nil && vecStore != nil {
-				defer embedder.Close()
-				defer vecStore.Close()
-
-				vecStore.RemoveByPrefix("code::")
-				chunks := make([]search.Chunk, 0, len(symbols))
-				for _, sym := range symbols {
-					chunk := sym.ToChunk()
-					vec, err := embedder.EmbedDocument(chunk.Content)
-					if err != nil {
-						continue
-					}
-					chunk.Embedding = vec
-					chunks = append(chunks, chunk)
-				}
-				vecStore.AddChunks(chunks)
-				if err := vecStore.Save(); err != nil {
-					return errFailed("save code index", err)
-				}
-				result["embeddedSymbolCount"] = len(chunks)
-			}
-
-			db := store.SemanticDB()
-			if db != nil {
-				defer db.Close()
-				resolvedEdges := search.ResolveCodeEdges(symbols, edges)
-				if err := search.SaveCodeEdges(db, resolvedEdges); err == nil {
-					result["resolvedEdgeCount"] = len(resolvedEdges)
-				}
-			}
-
-			out, _ := json.MarshalIndent(result, "", "  ")
-			return mcp.NewToolResultText(string(out)), nil
-		},
-	)
-
 	s.AddTool(
 		mcp.NewTool("code_graph",
 			mcp.WithDescription("Return the code graph (nodes and edges) from the current code index."),
@@ -305,12 +238,4 @@ func splitCSV(s string) []string {
 		}
 	}
 	return out
-}
-
-func countUniqueFiles(symbols []search.CodeSymbol) int {
-	unique := make(map[string]bool)
-	for _, s := range symbols {
-		unique[s.DocPath] = true
-	}
-	return len(unique)
 }

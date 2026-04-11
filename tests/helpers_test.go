@@ -137,7 +137,7 @@ func runCliWithTimeout(t *testing.T, dir string, timeout time.Duration, args ...
 
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "NO_COLOR=1")
+	cmd.Env = append(os.Environ(), "NO_COLOR=1", "KNOWNS_RUNTIME_INLINE=1")
 
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
@@ -228,7 +228,7 @@ func startMCPServer(t *testing.T) *MCPClient {
 
 	bin := getBinaryPath(t)
 	cmd := exec.Command(bin, "mcp")
-	cmd.Env = append(os.Environ(), "NO_COLOR=1")
+	cmd.Env = append(os.Environ(), "NO_COLOR=1", "KNOWNS_RUNTIME_INLINE=1")
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

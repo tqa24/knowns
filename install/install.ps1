@@ -12,6 +12,7 @@ $Repo = "knowns-dev/knowns"
 $Binary = "knowns.exe"
 $AliasBinary = "kn.exe"
 $DefaultInstallDir = Join-Path $env:USERPROFILE ".knowns\bin"
+$KnownsHome = Join-Path $env:USERPROFILE ".knowns"
 $InstallDir = if ($env:KNOWNS_INSTALL_DIR) { $env:KNOWNS_INSTALL_DIR } else { $DefaultInstallDir }
 
 # ─── Platform detection ───────────────────────────────────────────────
@@ -116,6 +117,21 @@ try {
     Copy-Item -Path $ExtractedBin.FullName -Destination (Join-Path $InstallDir $AliasBinary) -Force
     Write-Host "`r  + Installed to $InstallDir\$Binary        " -ForegroundColor Green
     Write-Host "  + Installed alias $InstallDir\$AliasBinary" -ForegroundColor Green
+
+    $metadata = @{
+        method = "script"
+        managedBy = "knowns-script"
+        updateStrategy = "self-update"
+        channel = "stable"
+        platform = "windows"
+        arch = if ($Platform -like "*-arm64") { "arm64" } else { "amd64" }
+        binaryPath = (Join-Path $InstallDir $Binary)
+        version = $Version.TrimStart('v')
+        installedAt = [DateTime]::UtcNow.ToString("o")
+    }
+    New-Item -ItemType Directory -Path $KnownsHome -Force | Out-Null
+    $metadata | ConvertTo-Json | Set-Content -Path (Join-Path $KnownsHome "install.json") -Encoding UTF8
+    Write-Host "  + Recorded install metadata in $KnownsHome\install.json" -ForegroundColor Green
 
     # Add to PATH if not already there
     $UserPath = [System.Environment]::GetEnvironmentVariable("Path", "User")

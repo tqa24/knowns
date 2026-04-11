@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"archive/zip"
 	"compress/gzip"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -17,6 +18,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/howznguyen/knowns/internal/models"
+	"github.com/howznguyen/knowns/internal/runtimequeue"
 	"github.com/howznguyen/knowns/internal/search"
 	"github.com/spf13/cobra"
 )
@@ -883,6 +885,32 @@ func runReindex() error {
 
 	if total == 0 {
 		fmt.Println(RenderWarning("No tasks or docs to index."))
+		return nil
+	}
+
+	if !runtimequeue.ShouldBypassDaemon() {
+		handle, err := runtimequeue.AcquireClient("cli-reindex", store.Root, false)
+		if err != nil {
+			return fmt.Errorf("start runtime reindex: %w", err)
+		}
+		defer handle.Release()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		runtimequeue.StartHeartbeat(ctx, handle)
+
+		job, err := runtimequeue.Enqueue(store.Root, runtimequeue.JobReindex, "")
+		if err != nil {
+			return fmt.Errorf("enqueue reindex: %w", err)
+		}
+		fmt.Printf("%s\n\n", RenderInfo(fmt.Sprintf("Queued runtime reindex (%d tasks, %d docs)...", taskCount, docCount)))
+		if _, err := runtimequeue.WaitForJob(store.Root, job.ID, 5*time.Minute); err != nil {
+			return fmt.Errorf("reindex failed: %w", err)
+		}
+		searchDir := filepath.Join(store.Root, ".search")
+		vs := search.NewSQLiteVectorStore(searchDir, "", 0)
+		count, _, _ := vs.Stats()
+		fmt.Println(searchSuccessStyle.Render(
+			fmt.Sprintf("✓ Search index rebuilt via runtime (%d tasks, %d docs, %d chunks)", taskCount, docCount, count)))
 		return nil
 	}
 
