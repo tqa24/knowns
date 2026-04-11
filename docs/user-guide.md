@@ -100,6 +100,13 @@ knowns task list
 knowns browser --open
 ```
 
+### New in v0.18.0
+
+- Run `knowns browser` outside a repo and switch between registered workspaces in the UI.
+- Build a code index with `knowns code ingest` and explore symbols, dependencies, and code search results.
+- Use `knowns browser --watch` or `knowns code watch` to keep code search data fresh while you work.
+- Explore richer chat history and runtime status from the browser chat page.
+
 ---
 
 ## CLI Command Reference

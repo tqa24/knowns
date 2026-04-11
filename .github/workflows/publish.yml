@@ -519,7 +519,7 @@ jobs:
                 \"fields\": [
                   {
                     \"name\": \"Install/Update\",
-                    \"value\": \"\`\`\`bash\\n# npm\\nnpm install -g knowns@${VERSION}\\n\\n# bun\\nbun add -g knowns@${VERSION}\\n\\n# brew\\nbrew upgrade knowns\\n\`\`\`\",
+                    \"value\": \"\`\`\`bash\\n# npm\\nnpm install -g knowns@${VERSION}\\n\\n# bun\\nbun add -g knowns@${VERSION}\\n\\n# brew\\nbrew upgrade knowns-dev/tap/knowns\\n\`\`\`\",
                     \"inline\": false
                   },
                   {
