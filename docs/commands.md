@@ -606,6 +606,132 @@ knowns model remove gte-small
 
 ---
 
+## Code Intelligence Commands
+
+### `knowns code`
+
+Code intelligence commands for AST-based indexing and graph analysis.
+
+```bash
+knowns code <command>
+```
+
+**Available subcommands:**
+
+- `knowns code ingest` - index supported code files into the local search/code graph
+- `knowns code watch` - watch code files and auto-index on changes
+- `knowns code search <query>` - search indexed code with optional neighbor expansion
+- `knowns code deps` - inspect indexed dependency edges such as `calls` or `imports`
+- `knowns code symbols` - inspect indexed symbols by file or kind
+
+### `knowns code ingest`
+
+Index code files using AST-based code intelligence.
+
+```bash
+knowns code ingest [options]
+```
+
+| Option            | Description                                          |
+| ----------------- | ---------------------------------------------------- |
+| `--dry-run`       | Preview what would be indexed without writing to disk |
+| `--include-tests` | Include test files in the code index                 |
+
+**Examples:**
+
+```bash
+knowns code ingest
+knowns code ingest --dry-run
+knowns code ingest --include-tests
+```
+
+### `knowns code watch`
+
+Watch code files and auto-index on changes.
+
+```bash
+knowns code watch [options]
+```
+
+| Option         | Description                           |
+| -------------- | ------------------------------------- |
+| `--debounce`   | Debounce delay in milliseconds        |
+
+**Examples:**
+
+```bash
+knowns code watch
+knowns code watch --debounce 500
+```
+
+### `knowns code search`
+
+Search indexed code and optionally expand related neighbors from the code graph.
+
+```bash
+knowns code search <query> [options]
+```
+
+| Option           | Description                              |
+| ---------------- | ---------------------------------------- |
+| `--limit`        | Limit direct code matches                |
+| `--neighbors`    | Max neighbors per match (1-hop)          |
+| `--edge-types`   | Comma-separated edge types to expand     |
+| `--keyword`      | Force keyword-only code search           |
+| `--show-snippet` | Show snippet/preview for each match      |
+
+**Examples:**
+
+```bash
+knowns code search "oauth login"
+knowns code search backfill --neighbors 5 --edge-types calls,imports
+knowns code search token --keyword --show-snippet
+```
+
+### `knowns code deps`
+
+Inspect indexed code dependency data.
+
+```bash
+knowns code deps [options]
+```
+
+| Option      | Description                  |
+| ----------- | ---------------------------- |
+| `--type`    | Filter dependency edge type  |
+| `--limit`   | Limit dependency results     |
+
+**Examples:**
+
+```bash
+knowns code deps
+knowns code deps --type calls
+```
+
+### `knowns code symbols`
+
+Inspect indexed code symbols.
+
+```bash
+knowns code symbols [options]
+```
+
+| Option      | Description                  |
+| ----------- | ---------------------------- |
+| `--path`    | Filter symbols by file path  |
+| `--kind`    | Filter symbols by kind       |
+| `--limit`   | Limit symbol results         |
+
+**Examples:**
+
+```bash
+knowns code symbols
+knowns code symbols --path internal/server/server.go
+knowns code symbols --kind function
+```
+
+---
+
 ## Template Commands
 
 ### `knowns template list`
@@ -820,6 +946,9 @@ knowns browser [options]
 | `--no-open`  | Don't automatically open browser         |
 | `--port`     | Custom port (default: `3001` or config)  |
 | `--restart`  | Restart server if already running        |
+| `--project`  | Open a specific project path directly    |
+| `--scan`     | Comma-separated directories to scan for projects |
+| `--watch`    | Enable code watcher for auto-indexing    |
 
 **Examples:**
 
@@ -829,6 +958,15 @@ knowns browser
 
 # Start and open browser
 knowns browser --open
+
+# Start outside a repo and scan common workspaces
+knowns browser --scan ~/Workspaces,~/Projects --open
+
+# Open a specific project directly
+knowns browser --project ~/Workspaces/my-app --open
+
+# Run browser with code auto-indexing enabled
+knowns browser --watch
 ```
 
 ### `knowns mcp`

@@ -173,7 +173,7 @@ func DetectInstallCmd() string {
 
 	// 1. Homebrew: binary in /homebrew/ or /Cellar/
 	if strings.Contains(exePath, "/homebrew/") || strings.Contains(exePath, "/cellar/") {
-		return "brew upgrade knowns"
+		return "brew upgrade knowns-dev/tap/knowns"
 	}
 
 	// 2. Check npm_config_user_agent (set when running via npx/npm scripts)

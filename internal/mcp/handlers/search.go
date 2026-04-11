@@ -196,6 +196,7 @@ func RegisterSearchTools(s *server.MCPServer, getStore func() *storage.Store) {
 			),
 			mcp.WithArray("sourceTypes",
 				mcp.Description("Optional source types: doc, task, memory"),
+				mcp.WithStringEnumItems([]string{"doc", "task", "memory"}),
 			),
 			mcp.WithBoolean("expandReferences",
 				mcp.Description("Whether to include linked docs/tasks/memories as expanded context"),

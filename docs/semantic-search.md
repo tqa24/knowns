@@ -1,12 +1,13 @@
 # Semantic Search Guide
 
-Search tasks and docs by **meaning**, not just keywords. Uses local AI models for privacy and offline capability.
+Search tasks, docs, memories, and optionally indexed code by **meaning**, not just keywords. Uses local AI models for privacy and offline capability.
 
 ## Table of Contents
 
 - [Getting Started](#getting-started)
 - [Model Management](#model-management)
 - [Search Usage](#search-usage)
+- [Code Intelligence](#code-intelligence)
 - [Configuration](#configuration)
 - [How It Works](#how-it-works)
 - [Troubleshooting](#troubleshooting)
@@ -205,6 +206,7 @@ Index includes:
 - **Local docs** - All docs in `.knowns/docs/`
 - **Imported docs** - All docs from `.knowns/imports/*/docs/`
 - **Memories** - All memory entries in `.knowns/memories/`
+- **Code** - Indexed symbols and relationships after running `knowns code ingest`
 
 Index updates automatically when:
 
@@ -239,6 +241,57 @@ Combines two approaches:
 2. **Keyword**: Exact term matching for precision
 
 Results are merged and ranked by combined score.
+
+---
+
+## Code Intelligence
+
+`v0.18.0` adds an optional AST-based code intelligence layer on top of semantic search.
+
+### Build the code index
+
+```bash
+knowns code ingest
+```
+
+This indexes supported code files and stores symbols plus dependency edges for:
+
+- Go
+- TypeScript
+- JavaScript
+- Python
+
+Preview without writing:
+
+```bash
+knowns code ingest --dry-run
+```
+
+### Keep code index fresh
+
+```bash
+knowns code watch
+```
+
+Or run the browser with the watcher enabled:
+
+```bash
+knowns browser --watch
+```
+
+### Search indexed code
+
+```bash
+knowns code search "oauth login" --neighbors 5
+knowns code deps --type calls
+knowns code symbols --kind function
+```
+
+### When code appears in results
+
+Code results are opt-in. They appear only after you build the code index with `knowns code ingest`.
+
+If you never run ingest, normal search behavior stays the same.
 
 ---
 

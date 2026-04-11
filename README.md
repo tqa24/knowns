@@ -113,6 +113,13 @@ Transform AI from a tool into a true engineering collaborator.
 
 Keep your knowledge private and fully under your control.
 
+## What's New In v0.18.0
+
+- Workspace-aware browser mode: run `knowns browser` outside a repo, scan for projects, and switch workspaces from the UI without restarting the server.
+- AST code intelligence: index Go, TypeScript, JavaScript, and Python symbols with `knowns code ingest`, keep them fresh with `knowns code watch`, and inspect relationships with `knowns code search`, `knowns code deps`, and `knowns code symbols`.
+- Code graph support: the browser graph can now include indexed code nodes and dependency edges alongside tasks, docs, and memories.
+- Chat runtime upgrades: the chat UI includes stronger tool-output rendering, timeline/history navigation, and clearer OpenCode runtime status.
+
 ---
 
 ## How It Works
@@ -147,11 +154,17 @@ curl -fsSL https://knowns.sh/script/install | sh
 
 # Or with wget
 wget -qO- https://knowns.sh/script/install | sh
+
+# Install a specific version
+curl -fsSL https://knowns.sh/script/install | KNOWNS_VERSION=0.18.0 sh
 ```
 
 ```powershell
 # PowerShell installer (Windows)
 irm https://knowns.sh/script/install.ps1 | iex
+
+# Install a specific version
+$env:KNOWNS_VERSION = "0.18.0"; irm https://knowns.sh/script/install.ps1 | iex
 ```
 
 ### Uninstall
@@ -213,8 +226,9 @@ knowns browser --open   # Start Web UI and open browser
 | **Memory System**   | 3-layer memory (project/working/global) for AI recall |
 | **AI Integration**  | Full MCP Server with AC/plan/notes operations      |
 | **AI Workspaces**   | Multi-phase agent orchestration with live terminal |
+| **Code Intelligence** | AST indexing, code search, and dependency graph   |
 | **Web UI**          | Kanban board, doc browser, mermaid diagrams        |
-| **Knowledge Graph** | Visual graph of tasks, docs, memories + relationships (search, impact analysis, clusters) |
+| **Knowledge Graph** | Visual graph of tasks, docs, memories, and optional code relationships |
 
 ---
 
@@ -248,6 +262,12 @@ knowns import list                          # List imports
 knowns time start <id> && knowns time stop
 knowns search "query" --plain
 knowns validate                             # Check broken refs
+
+# Code intelligence
+knowns code ingest
+knowns code search "oauth login" --neighbors 5
+knowns code deps --type calls
+knowns code symbols --kind function
 
 # AI Guidelines
 knowns agents --sync                        # Sync/generate instruction files
