@@ -88,6 +88,9 @@ func (cr *ConfigRoutes) get(w http.ResponseWriter, r *http.Request) {
 	if s.EnableChatUI != nil {
 		flat["enableChatUI"] = *s.EnableChatUI
 	}
+	if s.RuntimeMemory != nil {
+		flat["runtimeMemory"] = s.RuntimeMemory
+	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"config": flat,
@@ -217,6 +220,17 @@ func applySettingsUpdate(settings *models.ProjectSettings, payload map[string]js
 				return err
 			}
 			settings.OpenCodeModels = cfg
+		}
+	}
+	if raw, ok := payload["runtimeMemory"]; ok {
+		if string(raw) == "null" {
+			settings.RuntimeMemory = nil
+		} else {
+			cfg := new(models.RuntimeMemorySettings)
+			if err := json.Unmarshal(raw, cfg); err != nil {
+				return err
+			}
+			settings.RuntimeMemory = cfg
 		}
 	}
 	if raw, ok := payload["enableChatUI"]; ok {

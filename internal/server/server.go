@@ -3,6 +3,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -30,6 +31,7 @@ import (
 	"github.com/howznguyen/knowns/internal/agents/opencode"
 	"github.com/howznguyen/knowns/internal/models"
 	"github.com/howznguyen/knowns/internal/registry"
+	"github.com/howznguyen/knowns/internal/runtimememory"
 	"github.com/howznguyen/knowns/internal/server/routes"
 	"github.com/howznguyen/knowns/internal/storage"
 	"github.com/howznguyen/knowns/internal/util"
@@ -466,7 +468,6 @@ func (s *Server) reinitOpenCode(projectPath string) {
 	})
 }
 
-
 func (s *Server) cleanupOpenCodeServer() {
 	if s.opencodeDaemon != nil && s.opencodeDaemon.StartedByUs() {
 		if err := s.opencodeDaemon.Stop(); err != nil {
@@ -867,7 +868,166 @@ func (s *Server) proxyOpenCode(w http.ResponseWriter, r *http.Request) {
 		r2.Header.Set("x-opencode-directory", activeRoot)
 	}
 
+	inspection, err := s.prepareOpenCodeRuntimeMemory(r2, activeRoot)
+	if err != nil {
+		http.Error(w, "could not prepare runtime memory: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	setRuntimeMemoryHeaders(w.Header(), inspection)
+
 	proxy.ServeHTTP(w, r2)
+}
+
+func (s *Server) activeStore() *storage.Store {
+	if s.manager != nil && s.manager.GetStore() != nil {
+		return s.manager.GetStore()
+	}
+	return s.store
+}
+
+type runtimeMemoryInspection struct {
+	Mode string
+	Pack runtimememory.Pack
+}
+
+func (s *Server) prepareOpenCodeRuntimeMemory(r *http.Request, activeRoot string) (runtimeMemoryInspection, error) {
+	inspection := runtimeMemoryInspection{Mode: runtimememory.ModeAuto, Pack: runtimememory.Pack{Runtime: "opencode", Mode: runtimememory.ModeAuto, Status: runtimememory.StatusNone}}
+	store := s.activeStore()
+	if store == nil || !shouldPrepareRuntimeMemory(r) {
+		return inspection, nil
+	}
+	settings := runtimememory.NormalizeSettings(nil)
+	if project, err := store.Config.Load(); err == nil {
+		settings = runtimememory.NormalizeSettings(project.Settings.RuntimeMemory)
+	}
+	mode := settings.Mode
+	if override := runtimememory.NormalizeMode(r.Header.Get(runtimememory.HeaderMode)); override != "" {
+		mode = override
+	}
+	inspection.Mode = mode
+	inspection.Pack = runtimememory.Pack{Runtime: "opencode", Mode: mode, Status: runtimememory.StatusNone}
+	if mode == runtimememory.ModeOff {
+		return inspection, nil
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return inspection, err
+	}
+	resetRequestBody(r, body)
+	if len(body) == 0 {
+		return inspection, nil
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return inspection, nil
+	}
+	pack, err := runtimememory.Build(store, runtimememory.Input{
+		Runtime:     "opencode",
+		ProjectRoot: activeRoot,
+		WorkingDir:  activeRoot,
+		ActionType:  inferOpenCodeActionType(r.URL.Path),
+		UserPrompt:  extractOpenCodePrompt(payload),
+		Mode:        mode,
+		MaxItems:    settings.MaxItems,
+		MaxBytes:    settings.MaxBytes,
+	})
+	if err != nil {
+		return inspection, err
+	}
+	inspection.Pack = pack
+	if len(pack.Items) == 0 {
+		return inspection, nil
+	}
+
+	requested := headerTruthy(r.Header.Get(runtimememory.HeaderInject))
+	switch mode {
+	case runtimememory.ModeDebug:
+		inspection.Pack.Status = runtimememory.StatusCandidate
+		return inspection, nil
+	case runtimememory.ModeManual:
+		if !requested {
+			inspection.Pack.Status = runtimememory.StatusCandidate
+			return inspection, nil
+		}
+	}
+
+	payload["system"] = runtimememory.InjectSystemPrompt(stringValue(payload["system"]), pack.Serialized)
+	updated, err := json.Marshal(payload)
+	if err != nil {
+		return inspection, err
+	}
+	resetRequestBody(r, updated)
+	inspection.Pack.Status = runtimememory.StatusInjected
+	return inspection, nil
+}
+
+func shouldPrepareRuntimeMemory(r *http.Request) bool {
+	if r.Method != http.MethodPost {
+		return false
+	}
+	path := r.URL.Path
+	return strings.HasSuffix(path, "/prompt_async") || strings.HasSuffix(path, "/message")
+}
+
+func inferOpenCodeActionType(path string) string {
+	path = strings.TrimSpace(path)
+	if strings.HasSuffix(path, "/prompt_async") {
+		return "prompt_async"
+	}
+	if strings.HasSuffix(path, "/message") {
+		return "message"
+	}
+	return strings.Trim(path, "/")
+}
+
+func extractOpenCodePrompt(payload map[string]any) string {
+	parts, ok := payload["parts"].([]any)
+	if !ok {
+		return ""
+	}
+	chunks := make([]string, 0, len(parts))
+	for _, raw := range parts {
+		part, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		text := strings.TrimSpace(stringValue(part["text"]))
+		if text == "" {
+			continue
+		}
+		chunks = append(chunks, text)
+	}
+	return strings.Join(chunks, "\n")
+}
+
+func stringValue(v any) string {
+	s, _ := v.(string)
+	return s
+}
+
+func headerTruthy(v string) bool {
+	v = strings.TrimSpace(strings.ToLower(v))
+	return v == "1" || v == "true" || v == "yes" || v == "on"
+}
+
+func resetRequestBody(r *http.Request, body []byte) {
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	r.ContentLength = int64(len(body))
+	r.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(body)), nil
+	}
+	r.Header.Set("Content-Length", strconv.Itoa(len(body)))
+}
+
+func setRuntimeMemoryHeaders(header http.Header, inspection runtimeMemoryInspection) {
+	header.Set(runtimememory.HeaderMode, inspection.Mode)
+	header.Set(runtimememory.HeaderStatus, inspection.Pack.Status)
+	header.Set(runtimememory.HeaderItems, strconv.Itoa(len(inspection.Pack.Items)))
+	if inspection.Pack.Status == runtimememory.StatusNone {
+		return
+	}
+	header.Set(runtimememory.HeaderPack, runtimememory.EncodePackHeader(inspection.Pack))
 }
 
 // getAgentStatus returns the OpenCode CLI installation status.

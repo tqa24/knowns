@@ -3,22 +3,154 @@
 package mcp
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/howznguyen/knowns/internal/mcp/handlers"
+	"github.com/howznguyen/knowns/internal/runtimequeue"
 	"github.com/howznguyen/knowns/internal/storage"
 	"github.com/mark3labs/mcp-go/server"
 )
 
-// mcpLog writes to stderr so it doesn't interfere with stdio JSON-RPC transport.
-var mcpLog = log.New(os.Stderr, "[knowns-mcp] ", log.LstdFlags)
+// mcpLog writes to stderr and a log file without touching stdout JSON-RPC transport.
+var mcpLog = newMCPLogger()
 
 const version = "0.1.0"
+
+const (
+	defaultMCPLogMaxSizeBytes = 10 * 1024 * 1024
+	defaultMCPLogMaxBackups   = 3
+)
+
+func newMCPLogger() *log.Logger {
+	writers := []io.Writer{os.Stderr}
+	pid := os.Getpid()
+
+	home, err := os.UserHomeDir()
+	if err == nil && home != "" {
+		logDir := filepath.Join(home, ".knowns", "logs")
+		if mkdirErr := os.MkdirAll(logDir, 0755); mkdirErr == nil {
+			logPath := filepath.Join(logDir, fmt.Sprintf("mcp-%d.log", pid))
+			if writer, openErr := newRotatingFileWriter(logPath, mcpLogMaxSizeBytes(), mcpLogMaxBackups()); openErr == nil {
+				writers = append(writers, writer)
+			}
+		}
+	}
+
+	return log.New(io.MultiWriter(writers...), fmt.Sprintf("[knowns-mcp pid=%d] ", pid), log.LstdFlags)
+}
+
+type rotatingFileWriter struct {
+	path       string
+	maxSize    int64
+	maxBackups int
+
+	mu   sync.Mutex
+	file *os.File
+	size int64
+}
+
+func newRotatingFileWriter(path string, maxSize int64, maxBackups int) (*rotatingFileWriter, error) {
+	if maxSize <= 0 {
+		maxSize = defaultMCPLogMaxSizeBytes
+	}
+	if maxBackups < 0 {
+		maxBackups = 0
+	}
+
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil, err
+	}
+
+	info, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return nil, err
+	}
+
+	return &rotatingFileWriter{
+		path:       path,
+		maxSize:    maxSize,
+		maxBackups: maxBackups,
+		file:       file,
+		size:       info.Size(),
+	}, nil
+}
+
+func (w *rotatingFileWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if w.file == nil {
+		return 0, fmt.Errorf("log file is closed")
+	}
+
+	if w.maxSize > 0 && w.size+int64(len(p)) > w.maxSize {
+		if err := w.rotate(); err != nil {
+			return 0, err
+		}
+	}
+
+	n, err := w.file.Write(p)
+	w.size += int64(n)
+	return n, err
+}
+
+func (w *rotatingFileWriter) rotate() error {
+	if w.file != nil {
+		if err := w.file.Close(); err != nil {
+			return err
+		}
+		w.file = nil
+	}
+
+	if w.maxBackups > 0 {
+		oldest := fmt.Sprintf("%s.%d", w.path, w.maxBackups)
+		_ = os.Remove(oldest)
+		for i := w.maxBackups - 1; i >= 1; i-- {
+			src := fmt.Sprintf("%s.%d", w.path, i)
+			dst := fmt.Sprintf("%s.%d", w.path, i+1)
+			_ = os.Rename(src, dst)
+		}
+		_ = os.Rename(w.path, fmt.Sprintf("%s.1", w.path))
+	} else {
+		_ = os.Remove(w.path)
+	}
+
+	file, err := os.OpenFile(w.path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	w.file = file
+	w.size = 0
+	return nil
+}
+
+func mcpLogMaxSizeBytes() int64 {
+	if raw := os.Getenv("KNOWNS_MCP_LOG_MAX_SIZE_MB"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			return int64(n) * 1024 * 1024
+		}
+	}
+	return defaultMCPLogMaxSizeBytes
+}
+
+func mcpLogMaxBackups() int {
+	if raw := os.Getenv("KNOWNS_MCP_LOG_MAX_BACKUPS"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n >= 0 {
+			return n
+		}
+	}
+	return defaultMCPLogMaxBackups
+}
 
 // MCPServer wraps the mcp-go server and holds a reference to the active Store.
 // The store is nil until set_project is called.
@@ -134,10 +266,32 @@ func (s *MCPServer) autoDetectProject(setStore func(*storage.Store, string), hin
 func (s *MCPServer) Start() error {
 	s.mu.RLock()
 	project := s.root
+	store := s.store
 	s.mu.RUnlock()
 
 	mcpLog.Printf("starting (version=%s, project=%q, pid=%d)", version, project, os.Getpid())
 	startedAt := time.Now()
+	var lease *runtimequeue.ClientHandle
+	var leaseCtx context.Context
+	var cancel context.CancelFunc
+	if store != nil && !runtimequeue.ShouldBypassDaemon() {
+		var err error
+		lease, err = runtimequeue.AcquireClient("mcp", store.Root, false)
+		if err != nil {
+			mcpLog.Printf("runtime lease unavailable: %v", err)
+		} else {
+			leaseCtx, cancel = context.WithCancel(context.Background())
+			runtimequeue.StartHeartbeat(leaseCtx, lease)
+		}
+	}
+	defer func() {
+		if cancel != nil {
+			cancel()
+		}
+		if lease != nil {
+			_ = lease.Release()
+		}
+	}()
 
 	err := server.ServeStdio(
 		s.srv,

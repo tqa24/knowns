@@ -3,8 +3,35 @@ package opencode
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestDefaultPIDFileScopesByHostAndPort(t *testing.T) {
+	pidA := defaultPIDFile("127.0.0.1", 4096)
+	pidB := defaultPIDFile("127.0.0.1", 54240)
+	pidC := defaultPIDFile("localhost", 4096)
+
+	if pidA == pidB {
+		t.Fatal("defaultPIDFile should differ for different ports")
+	}
+	if pidA == pidC {
+		t.Fatal("defaultPIDFile should differ for different hosts")
+	}
+	if !strings.HasSuffix(pidA, "opencode-127.0.0.1-4096.pid") {
+		t.Fatalf("unexpected pid file path: %s", pidA)
+	}
+}
+
+func TestDefaultPIDFileSanitizesHost(t *testing.T) {
+	pidFile := defaultPIDFile("http://127.0.0.1", 4096)
+	if strings.Contains(pidFile, "://") {
+		t.Fatalf("defaultPIDFile should sanitize host, got %s", pidFile)
+	}
+	if !strings.HasSuffix(pidFile, "opencode-http_127.0.0.1-4096.pid") {
+		t.Fatalf("unexpected sanitized pid file path: %s", pidFile)
+	}
+}
 
 func TestDaemonPIDReadWrite(t *testing.T) {
 	tmpDir := t.TempDir()

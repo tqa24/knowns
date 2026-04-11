@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/howznguyen/knowns/internal/models"
+	"github.com/howznguyen/knowns/internal/runtimequeue"
 	"github.com/howznguyen/knowns/internal/search"
 	"github.com/howznguyen/knowns/internal/storage"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -162,9 +164,19 @@ func RegisterSearchTools(s *server.MCPServer, getStore func() *storage.Store) {
 				return mcp.NewToolResultText(string(out)), nil
 			}
 
-			engine := search.NewEngine(store, embedder, vecStore)
-			if err := engine.Reindex(nil); err != nil {
-				return errFailed("reindex", err)
+			if !runtimequeue.ShouldBypassDaemon() {
+				job, err := runtimequeue.Enqueue(store.Root, runtimequeue.JobReindex, "")
+				if err != nil {
+					return errFailed("enqueue reindex", err)
+				}
+				if _, err := runtimequeue.WaitForJob(store.Root, job.ID, 5*time.Minute); err != nil {
+					return errFailed("reindex", err)
+				}
+			} else {
+				engine := search.NewEngine(store, embedder, vecStore)
+				if err := engine.Reindex(nil); err != nil {
+					return errFailed("reindex", err)
+				}
 			}
 			chunkCount := vecStore.Count()
 

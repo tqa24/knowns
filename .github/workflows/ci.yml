@@ -32,6 +32,10 @@ jobs:
       - name: Build UI
         run: cd ui && bun install --frozen-lockfile && bun run build
 
+      - name: Run npm installer tests
+        if: runner.os == 'Windows'
+        run: bun test npm/knowns/install.test.js
+
       - name: Build Go binary (Unix)
         if: runner.os != 'Windows'
         run: make build

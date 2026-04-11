@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/howznguyen/knowns/internal/runtimequeue"
 	"github.com/spf13/cobra"
 
 	"github.com/howznguyen/knowns/internal/search"
@@ -64,73 +65,16 @@ func runWatch(cmd *cobra.Command, args []string) error {
 	// projectRoot is the parent of knDir
 	projectRoot := filepath.Dir(knDir)
 	debounce := time.Duration(watchDebounceMs) * time.Millisecond
-	fmt.Printf("Watching code files in %s (debounce: %v)...\n", projectRoot, debounce)
-	fmt.Println("Press Ctrl+C to stop.")
-
-	watcher, err := fsnotify.NewWatcher()
+	handle, err := runtimequeue.AcquireClient("cli-watch", knDir, true)
 	if err != nil {
-		return fmt.Errorf("create watcher: %w", err)
+		return fmt.Errorf("start shared runtime watch: %w", err)
 	}
-	defer watcher.Close()
-
-	// Watch all subdirectories for code file changes
-	if err := watchDirs(watcher, projectRoot); err != nil {
-		return fmt.Errorf("watch dirs: %w", err)
-	}
-
-	// Event channel with debouncing
-	type pendingEvent struct {
-		path    string
-		removed bool
-		at      time.Time
-	}
-	var pendingMu sync.Mutex
-	pending := make(map[string]pendingEvent)
-
-	// Process events in a loop
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case event, ok := <-watcher.Events:
-			if !ok {
-				return nil
-			}
-			if !isWatchedCodeEvent(event) {
-				continue
-			}
-			rel, _ := filepath.Rel(projectRoot, event.Name)
-			if rel != "" && !strings.HasPrefix(rel, "..") {
-				pendingMu.Lock()
-				if event.Has(fsnotify.Remove) {
-					pending[rel] = pendingEvent{path: rel, removed: true, at: time.Now()}
-				} else {
-					pending[rel] = pendingEvent{path: rel, removed: false, at: time.Now()}
-				}
-				pendingMu.Unlock()
-			}
-
-		case <-ticker.C:
-			pendingMu.Lock()
-			now := time.Now()
-			for path, pe := range pending {
-				if now.Sub(pe.at) >= debounce {
-					delete(pending, path)
-					go func(p string, removed bool) {
-						handleWatchEvent(store, projectRoot, p, removed)
-					}(path, pe.removed)
-				}
-			}
-			pendingMu.Unlock()
-
-		case err, ok := <-watcher.Errors:
-			if !ok {
-				return nil
-			}
-			fmt.Fprintf(os.Stderr, "watcher error: %v\n", err)
-		}
-	}
+	defer handle.Release()
+	runtimequeue.StartHeartbeat(cmd.Context(), handle)
+	fmt.Printf("Watching code files in %s (debounce: %v)...\n", projectRoot, debounce)
+	fmt.Println("Shared runtime watcher active. Press Ctrl+C to stop.")
+	<-cmd.Context().Done()
+	return nil
 }
 
 // watchDirs recursively adds directories to the watcher.

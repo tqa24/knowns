@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "description": "Knowns binary for win x64",
   "os": [
-    "windows"
+    "win32"
   ],
   "cpu": [
     "x64"

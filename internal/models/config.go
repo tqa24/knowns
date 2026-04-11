@@ -54,6 +54,21 @@ type ProjectSettings struct {
 
 	// OpenCodeModels holds project-level model manager preferences for OpenCode.
 	OpenCodeModels *OpenCodeModelSettings `json:"opencodeModels,omitempty"`
+
+	// RuntimeMemory configures bounded memory injection for supported runtimes.
+	RuntimeMemory *RuntimeMemorySettings `json:"runtimeMemory,omitempty"`
+}
+
+// RuntimeMemorySettings configures runtime-level memory injection.
+type RuntimeMemorySettings struct {
+	// Mode controls runtime memory behavior: off, auto, manual, debug.
+	Mode string `json:"mode,omitempty"`
+
+	// MaxItems limits the number of injected memory items.
+	MaxItems int `json:"maxItems,omitempty"`
+
+	// MaxBytes caps the serialized memory payload size.
+	MaxBytes int `json:"maxBytes,omitempty"`
 }
 
 // OpenCodeServerConfig holds settings for the OpenCode server API.

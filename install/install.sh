@@ -5,7 +5,7 @@
 #   wget -qO- https://raw.githubusercontent.com/knowns-dev/knowns/main/install/install.sh | sh
 #
 # Options (via env vars):
-#   KNOWNS_INSTALL_DIR  — install directory (default: /usr/local/bin)
+#   KNOWNS_INSTALL_DIR  — install directory (default: ~/.knowns/bin)
 #   KNOWNS_VERSION      — specific version (default: latest)
 #   KNOWNS_NO_SYMLINK   — set to 1 to skip creating 'kn' symlink
 
@@ -13,8 +13,9 @@ set -e
 
 REPO="knowns-dev/knowns"
 BINARY="knowns"
-DEFAULT_INSTALL_DIR="/usr/local/bin"
+DEFAULT_INSTALL_DIR="${HOME}/.knowns/bin"
 INSTALL_DIR="${KNOWNS_INSTALL_DIR:-$DEFAULT_INSTALL_DIR}"
+KNOWN_DIR="${HOME}/.knowns"
 
 # ─── Colors ───────────────────────────────────────────────────────────
 
@@ -96,6 +97,23 @@ download() {
     else
         error "curl or wget is required"
     fi
+}
+
+write_install_metadata() {
+    mkdir -p "$KNOWN_DIR"
+    cat > "${KNOWN_DIR}/install.json" <<EOF
+{
+  "method": "script",
+  "managedBy": "knowns-script",
+  "updateStrategy": "self-update",
+  "channel": "stable",
+  "platform": "${OS}",
+  "arch": "${ARCH}",
+  "binaryPath": "${INSTALL_DIR}/${BINARY}",
+  "version": "${VERSION#v}",
+  "installedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+EOF
 }
 
 # ─── Checksum verification ───────────────────────────────────────────
@@ -180,26 +198,20 @@ main() {
     printf "  ${DIM}⠋${RESET} Installing to ${INSTALL_DIR}...\r"
     mkdir -p "$INSTALL_DIR" 2>/dev/null || true
 
-    if [ -w "$INSTALL_DIR" ]; then
-        cp "$EXTRACTED_BIN" "${INSTALL_DIR}/${BINARY}"
-        chmod +x "${INSTALL_DIR}/${BINARY}"
-    else
-        sudo cp "$EXTRACTED_BIN" "${INSTALL_DIR}/${BINARY}"
-        sudo chmod +x "${INSTALL_DIR}/${BINARY}"
-    fi
+    cp "$EXTRACTED_BIN" "${INSTALL_DIR}/${BINARY}"
+    chmod +x "${INSTALL_DIR}/${BINARY}"
     success "Installed to ${INSTALL_DIR}/${BINARY}"
 
     # Create 'kn' symlink
     if [ "${KNOWNS_NO_SYMLINK:-0}" != "1" ]; then
-        if [ -w "$INSTALL_DIR" ]; then
-            ln -sf "${INSTALL_DIR}/${BINARY}" "${INSTALL_DIR}/kn" 2>/dev/null || true
-        else
-            sudo ln -sf "${INSTALL_DIR}/${BINARY}" "${INSTALL_DIR}/kn" 2>/dev/null || true
-        fi
+        ln -sf "${INSTALL_DIR}/${BINARY}" "${INSTALL_DIR}/kn" 2>/dev/null || true
         if [ -L "${INSTALL_DIR}/kn" ]; then
             success "Created symlink: kn → knowns"
         fi
     fi
+
+    write_install_metadata
+    success "Recorded install metadata in ${KNOWN_DIR}/install.json"
 
     # Verify installation
     printf "\n"
