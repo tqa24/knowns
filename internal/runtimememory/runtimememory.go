@@ -367,12 +367,12 @@ func allowedCategory(category string) bool {
 func scoreEntry(entry *models.MemoryEntry, input Input) (float64, []string) {
 	mode := NormalizeMode(input.Mode)
 	_ = mode
-	tokens := uniqueTokens(
+	promptTokens := uniqueTokens(input.UserPrompt)
+	contextTokens := uniqueTokens(
 		input.Runtime,
 		filepathBase(input.ProjectRoot),
 		filepathBase(input.WorkingDir),
 		input.ActionType,
-		input.UserPrompt,
 	)
 	textTokens := uniqueTokens(entry.Title, entry.Category, strings.Join(entry.Tags, " "), entry.Content)
 	textSet := make(map[string]struct{}, len(textTokens))
@@ -390,18 +390,26 @@ func scoreEntry(entry *models.MemoryEntry, input Input) (float64, []string) {
 		reasons = append(reasons, "global-memory")
 	}
 
-	overlaps := 0
-	for _, token := range tokens {
+	promptOverlaps := 0
+	for _, token := range promptTokens {
 		if _, ok := textSet[token]; ok {
-			overlaps++
+			promptOverlaps++
 		}
 	}
-	if overlaps == 0 {
+	if promptOverlaps == 0 {
 		return 0, nil
 	}
-	if overlaps > 0 {
-		score += float64(overlaps) * 0.35
-		reasons = append(reasons, fmt.Sprintf("keyword-overlap:%d", overlaps))
+	score += float64(promptOverlaps) * 0.35
+	reasons = append(reasons, fmt.Sprintf("keyword-overlap:%d", promptOverlaps))
+
+	contextOverlaps := 0
+	for _, token := range contextTokens {
+		if _, ok := textSet[token]; ok {
+			contextOverlaps++
+		}
+	}
+	if contextOverlaps > 0 {
+		score += float64(contextOverlaps) * 0.05
 	}
 	if tokenMatches(textSet, strings.ToLower(strings.TrimSpace(input.Runtime))) {
 		score += 0.08
