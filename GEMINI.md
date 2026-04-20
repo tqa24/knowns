@@ -21,7 +21,7 @@ Compatibility entrypoint for runtimes that auto-detect `GEMINI.md`.
 - Use Knowns as the canonical system for tasks, docs, templates, and workflow state.
 - Never manually edit Knowns-managed task or doc markdown.
 - Search first, then read only relevant docs and code.
-- Use `knowns search` for discovery; use MCP `retrieve` tool when a workflow needs structured context with citations. Fall back to CLI `knowns retrieve` if MCP is unavailable.
+- Use `search` for discovery; use MCP `retrieve` tool when a workflow needs structured context with citations. Fall back to CLI `knowns retrieve` if MCP is unavailable.
 - For code context retrieval, prefer MCP tools over CLI: use `code_search` first, then `code_symbols`, then `code_deps`. Treat CLI `knowns code ...` as fallback for manual inspection or debugging.
 - Plan before implementation unless the user explicitly overrides that workflow.
 - Validate before considering work complete.

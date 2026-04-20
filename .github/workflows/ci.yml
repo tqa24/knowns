@@ -44,6 +44,40 @@ jobs:
         if: runner.os == 'Windows'
         run: go build -ldflags "-s -w -X github.com/howznguyen/knowns/internal/util.Version=${env:GITHUB_SHA}" -o bin/knowns.exe ./cmd/knowns
 
+      - name: Build sidecar bundle (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Set-Location sidecar
+          bun install --frozen-lockfile
+          bun run build.ts bun-windows-x64
+
+      - name: Stage and smoke test sidecar (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Copy-Item sidecar/dist/knowns-embed-win-x64/* bin/ -Force
+
+          $sidecar = "bin/knowns-embed.exe"
+          if (-not (Test-Path $sidecar)) {
+            throw "Missing sidecar binary: $sidecar"
+          }
+
+          $response = '{"jsonrpc":"2.0","id":1,"method":"ping","params":{}}' | & $sidecar 2>&1
+          if ($LASTEXITCODE -ne 0) {
+            throw "knowns-embed.exe exited with code $LASTEXITCODE`n$response"
+          }
+
+          $jsonLine = $response | Where-Object { $_ -match '^\{.*\}$' } | Select-Object -Last 1
+          if (-not $jsonLine) {
+            throw "knowns-embed.exe did not return a JSON-RPC response`n$response"
+          }
+
+          $parsed = $jsonLine | ConvertFrom-Json
+          if (-not $parsed.result.ok) {
+            throw "Unexpected sidecar ping response: $jsonLine"
+          }
+
       - name: Go vet
         run: go vet ./...
 
