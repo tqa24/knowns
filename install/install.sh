@@ -179,14 +179,13 @@ main() {
     tar -xzf "${TMP_DIR}/${ARCHIVE}" -C "$TMP_DIR"
     success "Extracted"
 
-    # Find the binary in extracted files
+    # Find the main binary in extracted files
     EXTRACTED_BIN=""
     if [ -f "${TMP_DIR}/${BINARY}" ]; then
         EXTRACTED_BIN="${TMP_DIR}/${BINARY}"
     elif [ -f "${TMP_DIR}/${BINARY}-${PLATFORM}" ]; then
         EXTRACTED_BIN="${TMP_DIR}/${BINARY}-${PLATFORM}"
     else
-        # Search for it
         EXTRACTED_BIN=$(find "$TMP_DIR" -name "${BINARY}" -o -name "${BINARY}-${PLATFORM}" | head -1)
     fi
 
@@ -194,12 +193,24 @@ main() {
         error "Binary not found in archive"
     fi
 
-    # Install
+    EXTRACT_ROOT=$(dirname "$EXTRACTED_BIN")
+
+    # Install bundle (main binary + sidecar + native libs)
     printf "  ${DIM}⠋${RESET} Installing to ${INSTALL_DIR}...\r"
     mkdir -p "$INSTALL_DIR" 2>/dev/null || true
 
     cp "$EXTRACTED_BIN" "${INSTALL_DIR}/${BINARY}"
     chmod +x "${INSTALL_DIR}/${BINARY}"
+
+    # Install sidecar binary + colocated native libs (dylib/so/.node)
+    for f in "${EXTRACT_ROOT}/knowns-embed" \
+             "${EXTRACT_ROOT}"/libonnxruntime* \
+             "${EXTRACT_ROOT}/onnxruntime_binding.node"; do
+        [ -e "$f" ] || continue
+        cp "$f" "${INSTALL_DIR}/"
+    done
+    [ -f "${INSTALL_DIR}/knowns-embed" ] && chmod +x "${INSTALL_DIR}/knowns-embed"
+
     success "Installed to ${INSTALL_DIR}/${BINARY}"
 
     # Create 'kn' symlink
@@ -212,15 +223,6 @@ main() {
 
     write_install_metadata
     success "Recorded install metadata in ${KNOWN_DIR}/install.json"
-
-    # Install ONNX Runtime for semantic search
-    printf "\n"
-    printf "  ${DIM}⠋${RESET} Installing ONNX Runtime for semantic search...\r"
-    if "${INSTALL_DIR}/${BINARY}" search --install-runtime >/dev/null 2>&1; then
-        success "Installed ONNX Runtime"
-    else
-        info "ONNX Runtime install failed; run 'knowns search --install-runtime' later to enable semantic search"
-    fi
 
     # Verify installation
     printf "\n"

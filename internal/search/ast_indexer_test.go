@@ -208,6 +208,93 @@ func SaveHelper() {}
 	t.Fatalf("expected same-package call edge across files")
 }
 
+func TestListCodeCandidateFiles_RespectsIgnoresAndTests(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tmpDir, "pkg"), 0o755); err != nil {
+		t.Fatalf("mkdir pkg: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(tmpDir, "ignoredir"), 0o755); err != nil {
+		t.Fatalf("mkdir ignoredir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(tmpDir, "ui", "dist"), 0o755); err != nil {
+		t.Fatalf("mkdir ui/dist: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(tmpDir, ".knowns"), 0o755); err != nil {
+		t.Fatalf("mkdir .knowns: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, ".gitignore"), []byte("ignoredir/\nui/dist/\n"), 0o644); err != nil {
+		t.Fatalf("write .gitignore: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, ".knowns", "config.json"), []byte(`{"settings":{"codeIntelligenceIgnore":["skip.go"]}}`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	files := map[string]string{
+		"pkg/main.go":         "package pkg\nfunc Main() {}\n",
+		"pkg/main_test.go":    "package pkg\nfunc TestMain() {}\n",
+		"ignoredir/hidden.go": "package ignoredir\nfunc Hidden() {}\n",
+		"ui/dist/bundle.js":   "function bundle() {}\n",
+		"skip.go":             "package main\nfunc Skip() {}\n",
+		"pkg/component.ts":    "export function component() {}\n",
+	}
+	for rel, src := range files {
+		abs := filepath.Join(tmpDir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", rel, err)
+		}
+		if err := os.WriteFile(abs, []byte(src), 0o644); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+	}
+
+	got, err := ListCodeCandidateFiles(tmpDir, false)
+	if err != nil {
+		t.Fatalf("ListCodeCandidateFiles: %v", err)
+	}
+	joined := strings.Join(got, "\n")
+	for _, want := range []string{"pkg/main.go", "pkg/component.ts"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing candidate %s in %v", want, got)
+		}
+	}
+	for _, unwanted := range []string{"pkg/main_test.go", "ignoredir/hidden.go", "ui/dist/bundle.js", "skip.go"} {
+		if strings.Contains(joined, unwanted) {
+			t.Fatalf("unexpected candidate %s in %v", unwanted, got)
+		}
+	}
+
+	gotWithTests, err := ListCodeCandidateFiles(tmpDir, true)
+	if err != nil {
+		t.Fatalf("ListCodeCandidateFiles(includeTests): %v", err)
+	}
+	if !strings.Contains(strings.Join(gotWithTests, "\n"), "pkg/main_test.go") {
+		t.Fatalf("expected test file when includeTests=true, got %v", gotWithTests)
+	}
+}
+
+func TestIndexAllFilesWithProgress_CallbackPerCandidate(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "a.go"), []byte("package sample\nfunc A() {}\n"), 0o644); err != nil {
+		t.Fatalf("write a.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "b.go"), []byte("package sample\nfunc B() {}\n"), 0o644); err != nil {
+		t.Fatalf("write b.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "c_test.go"), []byte("package sample\nfunc TestC() {}\n"), 0o644); err != nil {
+		t.Fatalf("write c_test.go: %v", err)
+	}
+
+	var seen []string
+	_, _, err := IndexAllFilesWithProgress(tmpDir, false, func(rel string) {
+		seen = append(seen, rel)
+	})
+	if err != nil {
+		t.Fatalf("IndexAllFilesWithProgress: %v", err)
+	}
+	if strings.Join(seen, ",") != "a.go,b.go" {
+		t.Fatalf("progress callback files = %v, want [a.go b.go]", seen)
+	}
+}
+
 func TestIndexFile_ExtractsFunctionValuedVariableDeclarations(t *testing.T) {
 	tmpDir := t.TempDir()
 	absPath := filepath.Join(tmpDir, "sample.ts")

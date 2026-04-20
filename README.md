@@ -214,7 +214,7 @@ go install github.com/howznguyen/knowns/cmd/knowns@latest
 # Or clone and build
 git clone https://github.com/knowns-dev/knowns.git
 cd knowns
-make build        # Output: dist/knowns
+make build        # Output: bin/knowns
 make install      # Install to GOPATH/bin
 ```
 
@@ -404,7 +404,7 @@ Optional self-hosted sync server for shared visibility without giving up local-f
 Requires **Go 1.24.2+** and optionally **Node.js + pnpm** for UI development.
 
 ```bash
-make build              # Build binary → dist/knowns
+make build              # Build binary → bin/knowns
 make dev                # Build with race detector
 make test               # Run unit tests
 make test-e2e           # Run CLI + MCP E2E tests

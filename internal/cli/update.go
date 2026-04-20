@@ -414,6 +414,9 @@ func restartRuntimeIfNeeded(targetVersion string) error {
 	if status.Version == "" || strings.TrimPrefix(status.Version, "v") == targetVersion {
 		return nil
 	}
+	if err := runtimequeue.RequestShutdown(5 * time.Second); err == nil {
+		return nil
+	}
 	pidFile := runtimequeue.PIDFile()
 	if pid, readErr := os.ReadFile(pidFile); readErr == nil {
 		if parsed := strings.TrimSpace(string(pid)); parsed != "" {

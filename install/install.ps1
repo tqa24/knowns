@@ -99,22 +99,26 @@ try {
     tar -xzf (Join-Path $TmpDir $Archive) -C $TmpDir
     Write-Host "`r  + Extracted                  " -ForegroundColor Green
 
-    # Find the binary
-    $ExtractedBin = Get-ChildItem -Path $TmpDir -Filter "knowns*.exe" -Recurse | Select-Object -First 1
+    # Find the main binary (knowns.exe specifically — avoid matching knowns-embed.exe)
+    $ExtractedBin = Get-ChildItem -Path $TmpDir -Filter "knowns.exe" -Recurse | Select-Object -First 1
     if (-not $ExtractedBin) {
-        # Try without .exe extension (might be named differently in tarball)
-        $ExtractedBin = Get-ChildItem -Path $TmpDir -Filter "knowns-win*" -Recurse | Select-Object -First 1
-    }
-    if (-not $ExtractedBin) {
-        Write-Host "  x Binary not found in archive" -ForegroundColor Red
+        Write-Host "  x knowns.exe not found in archive" -ForegroundColor Red
         exit 1
     }
+    $ExtractRoot = $ExtractedBin.Directory.FullName
 
-    # Install
+    # Install bundle
     Write-Host "  . Installing to $InstallDir..." -NoNewline -ForegroundColor DarkGray
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
     Copy-Item -Path $ExtractedBin.FullName -Destination (Join-Path $InstallDir $Binary) -Force
     Copy-Item -Path $ExtractedBin.FullName -Destination (Join-Path $InstallDir $AliasBinary) -Force
+
+    # Sidecar binary + colocated DLLs/.node addon
+    foreach ($pattern in @("knowns-embed.exe", "onnxruntime*.dll", "onnxruntime_binding.node")) {
+        Get-ChildItem -Path $ExtractRoot -Filter $pattern -ErrorAction SilentlyContinue | ForEach-Object {
+            Copy-Item -Path $_.FullName -Destination (Join-Path $InstallDir $_.Name) -Force
+        }
+    }
     Write-Host "`r  + Installed to $InstallDir\$Binary        " -ForegroundColor Green
     Write-Host "  + Installed alias $InstallDir\$AliasBinary" -ForegroundColor Green
 
@@ -139,21 +143,6 @@ try {
         [System.Environment]::SetEnvironmentVariable("Path", "$InstallDir;$UserPath", "User")
         $env:Path = "$InstallDir;$env:Path"
         Write-Host "  + Added $InstallDir to PATH" -ForegroundColor Green
-    }
-
-    # Install ONNX Runtime for semantic search
-    Write-Host ""
-    Write-Host "  . Installing ONNX Runtime for semantic search..." -NoNewline -ForegroundColor DarkGray
-    try {
-        & (Join-Path $InstallDir $Binary) search --install-runtime
-        if ($LASTEXITCODE -ne 0) {
-            throw "knowns search --install-runtime exited with code $LASTEXITCODE"
-        }
-        Write-Host "`r  + Installed ONNX Runtime          " -ForegroundColor Green
-    } catch {
-        Write-Host "`r  - ONNX Runtime install failed     " -ForegroundColor Yellow
-        Write-Host "    Semantic search will stay unavailable until you run:" -ForegroundColor Yellow
-        Write-Host "    knowns search --install-runtime" -ForegroundColor Yellow
     }
 
     # Verify

@@ -129,14 +129,14 @@ func TestBindBrowserPortReturnsRequestedPortWhenFree(t *testing.T) {
 }
 
 func TestBindBrowserPortFallsForwardWhenBusy(t *testing.T) {
-	first, err := net.Listen("tcp", "127.0.0.1:0")
+	first, err := net.Listen("tcp", "0.0.0.0:0")
 	if err != nil {
 		t.Fatalf("listen first: %v", err)
 	}
 	startPort := first.Addr().(*net.TCPAddr).Port
 	defer first.Close()
 
-	busyNext, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", startPort+1))
+	busyNext, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", startPort+1))
 	if err != nil {
 		t.Skipf("could not reserve consecutive port %d: %v", startPort+1, err)
 	}

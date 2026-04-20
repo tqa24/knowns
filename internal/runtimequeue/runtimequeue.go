@@ -54,6 +54,9 @@ type Job struct {
 	StartedAt   *time.Time `json:"startedAt,omitempty"`
 	Attempts    int        `json:"attempts,omitempty"`
 	LastError   string     `json:"lastError,omitempty"`
+	Phase       string     `json:"phase,omitempty"`
+	Processed   int        `json:"processed,omitempty"`
+	Total       int        `json:"total,omitempty"`
 }
 
 type JobResult struct {
@@ -80,6 +83,7 @@ type Lease struct {
 	ClientKind  string    `json:"clientKind"`
 	ProjectRoot string    `json:"projectRoot"`
 	Watch       bool      `json:"watch"`
+	PID         int       `json:"pid,omitempty"`
 	CreatedAt   time.Time `json:"createdAt"`
 	UpdatedAt   time.Time `json:"updatedAt"`
 	ExpiresAt   time.Time `json:"expiresAt"`
@@ -173,7 +177,69 @@ func statusPath() string {
 }
 
 func runtimeLogPath() string {
+	return RuntimeLogPath()
+}
+
+// RuntimeLogPath returns the absolute path of the shared runtime daemon log.
+func RuntimeLogPath() string {
 	return filepath.Join(GlobalRoot(), "logs", "runtime.log")
+}
+
+// MCPLogPath returns the absolute path of the MCP server log.
+func MCPLogPath() string {
+	return filepath.Join(GlobalRoot(), "logs", "mcp.log")
+}
+
+func stopFlagPath() string {
+	return filepath.Join(RuntimeRoot(), "stop.flag")
+}
+
+// runningDaemonVersion returns the version persisted by the running daemon in
+// status.json. Empty string if the file is missing or unreadable.
+func runningDaemonVersion() string {
+	raw, err := os.ReadFile(statusPath())
+	if err != nil {
+		return ""
+	}
+	var persisted struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(raw, &persisted); err != nil {
+		return ""
+	}
+	return persisted.Version
+}
+
+// requestDaemonShutdown writes a stop flag and waits up to timeout for the
+// daemon to exit. Returns nil once the daemon is gone.
+func requestDaemonShutdown(timeout time.Duration) error {
+	return RequestShutdown(timeout)
+}
+
+// RequestShutdown signals the running daemon to stop via a file flag and waits
+// up to timeout for it to exit. Cross-platform alternative to sending signals.
+func RequestShutdown(timeout time.Duration) error {
+	if err := os.MkdirAll(RuntimeRoot(), 0755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(stopFlagPath(), []byte(time.Now().UTC().Format(time.RFC3339)), 0644); err != nil {
+		return err
+	}
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if !IsRunning() {
+			_ = os.Remove(stopFlagPath())
+			return nil
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
+	return errors.New("timed out waiting for outdated runtime to stop")
+}
+
+// ShouldStop reports whether the daemon was asked to shut down via stop flag.
+func ShouldStop() bool {
+	_, err := os.Stat(stopFlagPath())
+	return err == nil
 }
 
 func EnsureDaemon() error {
@@ -181,7 +247,13 @@ func EnsureDaemon() error {
 		return nil
 	}
 	if IsRunning() {
-		return nil
+		if v := runningDaemonVersion(); v != "" && v != util.Version {
+			if err := requestDaemonShutdown(10 * time.Second); err != nil {
+				return fmt.Errorf("stop outdated runtime (v%s, want v%s): %w", v, util.Version, err)
+			}
+		} else {
+			return nil
+		}
 	}
 	if err := os.MkdirAll(RuntimeRoot(), 0755); err != nil {
 		return err
@@ -338,6 +410,25 @@ func MarkJobStarted(storeRoot, jobID string) (Job, error) {
 	return started, err
 }
 
+// ReportProgress updates the phase / processed / total fields of a queued job.
+// Safe to call frequently; errors are non-fatal for callers.
+func ReportProgress(storeRoot, jobID, phase string, processed, total int) error {
+	return updateQueue(storeRoot, func(state *QueueState) error {
+		for _, job := range state.Jobs {
+			if job.ID != jobID {
+				continue
+			}
+			if phase != "" {
+				job.Phase = phase
+			}
+			job.Processed = processed
+			job.Total = total
+			return nil
+		}
+		return nil
+	})
+}
+
 func CompleteJob(storeRoot string, job Job, err error) error {
 	return updateQueue(storeRoot, func(state *QueueState) error {
 		jobs := state.Jobs[:0]
@@ -392,6 +483,7 @@ func AcquireClient(kind, projectRoot string, watch bool) (*ClientHandle, error) 
 		ClientKind:  kind,
 		ProjectRoot: projectRoot,
 		Watch:       watch,
+		PID:         os.Getpid(),
 		CreatedAt:   now,
 		UpdatedAt:   now,
 		ExpiresAt:   now.Add(leaseTTL()),
@@ -502,6 +594,10 @@ func ActiveLeases() ([]Lease, error) {
 			_ = os.Remove(filepath.Join(leaseDir(), entry.Name()))
 			continue
 		}
+		if lease.PID > 0 && !isProcessAlive(lease.PID) {
+			_ = os.Remove(filepath.Join(leaseDir(), entry.Name()))
+			continue
+		}
 		leases = append(leases, lease)
 	}
 	sort.Slice(leases, func(i, j int) bool {
@@ -524,6 +620,7 @@ func RunDaemon(ctx context.Context, executor Executor, watcherFactory WatcherFac
 		return err
 	}
 	defer os.Remove(PIDFile())
+	_ = os.Remove(stopFlagPath())
 
 	watchers := map[string]context.CancelFunc{}
 	ticker := time.NewTicker(defaultPollInterval)
@@ -566,6 +663,12 @@ func RunDaemon(ctx context.Context, executor Executor, watcherFactory WatcherFac
 		}
 
 		_ = writeStatusFile(leases, projects)
+
+		if ShouldStop() {
+			stopAllWatchers(watchers)
+			_ = os.Remove(stopFlagPath())
+			return nil
+		}
 
 		if len(leases) == 0 && pendingJobs == 0 && running == nil {
 			if idleSince.IsZero() {

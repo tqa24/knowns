@@ -20,6 +20,7 @@ import (
 	"github.com/howznguyen/knowns/internal/search"
 	"github.com/howznguyen/knowns/internal/server"
 	"github.com/howznguyen/knowns/internal/storage"
+	"github.com/howznguyen/knowns/internal/tunnel/cloudflared"
 	"github.com/howznguyen/knowns/internal/util"
 )
 
@@ -87,6 +88,7 @@ func runBrowser(cmd *cobra.Command, args []string) error {
 	restart, _ := cmd.Flags().GetBool("restart")
 	dev, _ := cmd.Flags().GetBool("dev")
 	watchFlag, _ := cmd.Flags().GetBool("watch")
+	tunnelFlag, _ := cmd.Flags().GetBool("tunnel")
 
 	store, projectRoot := resolveProject(cmd)
 
@@ -138,6 +140,16 @@ func runBrowser(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  %s  %s\n", StyleWarning.Render("◇"), StyleWarning.Render("No project — workspace picker mode"))
 	}
 	fmt.Println()
+
+	if tunnelFlag {
+		if err := startTunnel(port); err != nil {
+			fmt.Printf("  %s  %s\n", StyleError.Render("✗"), StyleError.Render("tunnel failed"))
+			for _, line := range strings.Split(err.Error(), "\n") {
+				fmt.Printf("     %s\n", StyleDim.Render(line))
+			}
+			fmt.Println()
+		}
+	}
 
 	// Start file watcher if --watch is enabled
 	if watchFlag && store != nil && projectRoot != "" {
@@ -198,7 +210,7 @@ func getLocalIP() string {
 func bindBrowserPort(startPort int, attempts int) (net.Listener, int, error) {
 	for offset := 0; offset < attempts; offset++ {
 		port := startPort + offset
-		listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		listener, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", port))
 		if err == nil {
 			return listener, port, nil
 		}
@@ -302,6 +314,28 @@ func init() {
 	browserCmd.Flags().String("project", "", "Project path to open directly")
 	browserCmd.Flags().String("scan", "", "Comma-separated directories to scan for projects")
 	browserCmd.Flags().Bool("watch", false, "Enable file watcher for auto-indexing on code changes")
+	browserCmd.Flags().Bool("tunnel", false, "Expose via a Cloudflare Quick Tunnel (requires cloudflared)")
 
 	rootCmd.AddCommand(browserCmd)
+}
+
+func startTunnel(port int) error {
+	d := cloudflared.NewDaemon(port)
+	if err := d.EnsureRunning(); err != nil {
+		return err
+	}
+	url, err := d.PublicURL()
+	if err != nil {
+		return fmt.Errorf("tunnel started but no URL captured: %w", err)
+	}
+	tag := "reused"
+	if d.StartedByUs() {
+		tag = "new"
+	}
+	fmt.Printf("  %s  %s  %s\n",
+		StyleSuccess.Render("⇄"),
+		StyleBold.Render(url),
+		StyleDim.Render("(cloudflared "+tag+")"))
+	fmt.Println()
+	return nil
 }

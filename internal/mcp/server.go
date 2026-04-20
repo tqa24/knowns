@@ -8,9 +8,12 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/howznguyen/knowns/internal/mcp/handlers"
@@ -38,7 +41,8 @@ func newMCPLogger() *log.Logger {
 	if err == nil && home != "" {
 		logDir := filepath.Join(home, ".knowns", "logs")
 		if mkdirErr := os.MkdirAll(logDir, 0755); mkdirErr == nil {
-			logPath := filepath.Join(logDir, fmt.Sprintf("mcp-%d.log", pid))
+			cleanupOldMCPLogs(logDir, 7*24*time.Hour)
+			logPath := filepath.Join(logDir, "mcp.log")
 			if writer, openErr := newRotatingFileWriter(logPath, mcpLogMaxSizeBytes(), mcpLogMaxBackups()); openErr == nil {
 				writers = append(writers, writer)
 			}
@@ -46,6 +50,35 @@ func newMCPLogger() *log.Logger {
 	}
 
 	return log.New(io.MultiWriter(writers...), fmt.Sprintf("[knowns-mcp pid=%d] ", pid), log.LstdFlags)
+}
+
+// cleanupOldMCPLogs deletes legacy per-PID log files older than maxAge.
+// Keeps the shared mcp.log and its rotated backups.
+func cleanupOldMCPLogs(dir string, maxAge time.Duration) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	cutoff := time.Now().Add(-maxAge)
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if name == "mcp.log" {
+			continue
+		}
+		if !strings.HasPrefix(name, "mcp-") || !strings.HasSuffix(name, ".log") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		if info.ModTime().Before(cutoff) {
+			_ = os.Remove(filepath.Join(dir, name))
+		}
+	}
 }
 
 type rotatingFileWriter struct {
@@ -272,6 +305,10 @@ func (s *MCPServer) Start() error {
 
 	mcpLog.Printf("starting (version=%s, project=%q, pid=%d)", version, project, os.Getpid())
 	startedAt := time.Now()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
 	var lease *runtimequeue.ClientHandle
 	var leaseCtx context.Context
 	var cancel context.CancelFunc
@@ -285,14 +322,28 @@ func (s *MCPServer) Start() error {
 			runtimequeue.StartHeartbeat(leaseCtx, lease)
 		}
 	}
-	defer func() {
+
+	cleanup := func(reason string) {
+		mcpLog.Printf("shutdown: %s", reason)
+		signal.Stop(sigCh)
 		if cancel != nil {
 			cancel()
 		}
 		if lease != nil {
 			_ = lease.Release()
 		}
+	}
+
+	go func() {
+		sig, ok := <-sigCh
+		if !ok {
+			return
+		}
+		cleanup(fmt.Sprintf("signal %s", sig))
+		os.Exit(0)
 	}()
+
+	defer cleanup("serve returned")
 
 	err := server.ServeStdio(
 		s.srv,

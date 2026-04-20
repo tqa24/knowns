@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
 
+	"github.com/howznguyen/knowns/internal/runtimequeue"
 	"github.com/howznguyen/knowns/internal/search"
 	"github.com/howznguyen/knowns/internal/storage"
 )
@@ -35,10 +36,12 @@ Examples:
 
 var ingestDryRun bool
 var ingestIncludeTests bool
+var ingestBackground bool
 
 func registerIngestFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&ingestDryRun, "dry-run", false, "Print what would be indexed without writing to disk")
 	cmd.Flags().BoolVar(&ingestIncludeTests, "include-tests", false, "Include test files in indexing")
+	cmd.Flags().BoolVar(&ingestBackground, "background", false, "Enqueue to shared runtime daemon and return; follow with `knowns runtime ps --watch`")
 }
 
 func init() {
@@ -183,13 +186,20 @@ func (m *ingestModel) View() tea.View {
 	}
 
 	info := fmt.Sprintf("Indexing %s (%d/%d)%s", phase, processed, total, eta)
-	b.WriteString(fmt.Sprintf("  %s%s\n", m.bar.View(), searchDimStyle.Render(info)))
+	b.WriteString(fmt.Sprintf("  %s  %s\n", m.bar.View(), searchDimStyle.Render(info)))
 	return tea.NewView(b.String())
 }
 
 // runIngestWithProgress runs the ingest with a bubbletea progress UI.
 func runIngestWithProgress(projectRoot string, includeTests bool) (symCount, fileCount, edgeCount int, err error) {
-	state := &ingestState{phase: "parsing files", total: 1}
+	candidates, err := search.ListCodeCandidateFiles(projectRoot, includeTests)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	state := &ingestState{phase: "parsing files", total: len(candidates)}
+	if state.total == 0 {
+		state.total = 1
+	}
 
 	bar := NewBrandProgressBar()
 	m := &ingestModel{
@@ -203,7 +213,9 @@ func runIngestWithProgress(projectRoot string, includeTests bool) (symCount, fil
 	m.prog = p
 
 	go func() {
-		syms, edges, err := search.IndexAllFiles(projectRoot, includeTests)
+		syms, edges, err := search.IndexAllFilesWithProgress(projectRoot, includeTests, func(string) {
+			state.processed++
+		})
 		if err != nil {
 			p.Send(ingestDoneMsg{err: err})
 			return
@@ -306,14 +318,28 @@ func runIngest(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	symCount, fileCount, edgeCount, err := runIngestWithProgress(projectRoot, ingestIncludeTests)
-	if err != nil {
-		return err
+	// Default: in-process so the user sees the rich bubbletea progress bar.
+	// `--background` routes through the shared runtime daemon and returns
+	// immediately so the user can follow with `knowns runtime ps --watch`.
+	if !ingestBackground || ingestIncludeTests || runtimequeue.ShouldBypassDaemon() {
+		symCount, fileCount, edgeCount, err := runIngestWithProgress(projectRoot, ingestIncludeTests)
+		if err != nil {
+			return err
+		}
+		fmt.Println()
+		fmt.Println(searchSuccessStyle.Render(fmt.Sprintf(
+			"✓ Indexed %d symbols (%d files, %d edges)", symCount, fileCount, edgeCount)))
+		return nil
 	}
 
-	fmt.Println()
-	fmt.Println(searchSuccessStyle.Render(fmt.Sprintf(
-		"✓ Indexed %d symbols (%d files, %d edges)", symCount, fileCount, edgeCount)))
+	job, err := runtimequeue.Enqueue(store.Root, runtimequeue.JobIndexAll, projectRoot)
+	if err != nil {
+		return fmt.Errorf("enqueue ingest job: %w", err)
+	}
+	fmt.Printf("  %s queued ingest job %s — follow with: %s\n",
+		searchDimStyle.Render("·"),
+		job.ID,
+		searchDimStyle.Render("knowns runtime ps --watch"))
 	return nil
 }
 

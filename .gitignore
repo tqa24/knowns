@@ -18,8 +18,10 @@ npm/knowns-*/knowns.exe
 release
 
 # UI
+**/node_modules/
 ui/node_modules/
 ui/dist/
+sidecar/dist/
 ui/playwright-report/
 ui/test-results/
 playwright-report/

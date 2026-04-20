@@ -95,13 +95,16 @@ func ExecuteRuntimeJob(storeRoot string, job runtimequeue.Job) error {
 	case runtimequeue.JobIndexAll:
 		projectRoot := filepath.Dir(storeRoot)
 		return executeRuntimeCode(store, string(job.Kind)+" "+projectRoot, func(embedder *Embedder, vecStore VectorStore) error {
+			_ = runtimequeue.ReportProgress(storeRoot, job.ID, "parsing", 0, 0)
 			syms, edges, err := IndexAllFiles(projectRoot, false)
 			if err != nil {
 				return err
 			}
 			vecStore.RemoveByPrefix("code::")
 			var chunks []Chunk
-			for _, sym := range syms {
+			total := len(syms)
+			_ = runtimequeue.ReportProgress(storeRoot, job.ID, "embedding", 0, total)
+			for i, sym := range syms {
 				chunk := sym.ToChunk()
 				vec, embedErr := embedder.EmbedDocument(chunk.Content)
 				if embedErr != nil {
@@ -109,7 +112,11 @@ func ExecuteRuntimeJob(storeRoot string, job runtimequeue.Job) error {
 				}
 				chunk.Embedding = vec
 				chunks = append(chunks, chunk)
+				if total > 0 && (i+1)%25 == 0 {
+					_ = runtimequeue.ReportProgress(storeRoot, job.ID, "embedding", i+1, total)
+				}
 			}
+			_ = runtimequeue.ReportProgress(storeRoot, job.ID, "saving", total, total)
 			vecStore.AddChunks(chunks)
 			if err := vecStore.Save(); err != nil {
 				return err
@@ -138,7 +145,9 @@ func ExecuteRuntimeJob(storeRoot string, job runtimequeue.Job) error {
 		}
 		defer embedder.Close()
 		defer vecStore.Close()
-		return NewEngine(store, embedder, vecStore).Reindex(nil)
+		return NewEngine(store, embedder, vecStore).Reindex(func(phase string, current, total int) {
+			_ = runtimequeue.ReportProgress(storeRoot, job.ID, phase, current, total)
+		})
 	default:
 		return fmt.Errorf("unsupported runtime job kind: %s", job.Kind)
 	}

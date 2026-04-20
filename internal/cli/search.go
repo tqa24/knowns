@@ -1,16 +1,9 @@
 package cli
 
 import (
-	"archive/tar"
-	"archive/zip"
-	"compress/gzip"
 	"context"
 	"fmt"
-	"io"
-	"os"
-	pathpkg "path"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 	"unicode"
@@ -43,11 +36,6 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	reindex, _ := cmd.Flags().GetBool("reindex")
 	setup, _ := cmd.Flags().GetBool("setup")
 	statusCheck, _ := cmd.Flags().GetBool("status-check")
-	installRuntime, _ := cmd.Flags().GetBool("install-runtime")
-
-	if installRuntime {
-		return runInstallRuntime()
-	}
 
 	if statusCheck {
 		return runStatusCheck()
@@ -512,19 +500,19 @@ func runStatusCheck() error {
 	store := getStore()
 	cfg, _ := store.Config.Load()
 
-	onnxAvail, onnxPath := search.IsONNXAvailable()
+	sidecarAvail, sidecarPath := search.IsSidecarAvailable()
 
 	fmt.Println()
 	fmt.Println(StyleBold.Render("Semantic Search Status"))
 	fmt.Println(RenderSeparator(40))
 
-	// ONNX Runtime.
-	if onnxAvail {
-		fmt.Println(searchSuccessStyle.Render("  ONNX Runtime: installed"))
-		fmt.Println(searchDimStyle.Render(fmt.Sprintf("    Path: %s", onnxPath)))
+	// Embedding sidecar.
+	if sidecarAvail {
+		fmt.Println(searchSuccessStyle.Render("  Embedding sidecar: installed"))
+		fmt.Println(searchDimStyle.Render(fmt.Sprintf("    Path: %s", sidecarPath)))
 	} else {
-		fmt.Println(searchWarnStyle.Render("  ONNX Runtime: not found"))
-		fmt.Println(searchDimStyle.Render("    Install: knowns search --install-runtime"))
+		fmt.Println(searchWarnStyle.Render("  Embedding sidecar: not found"))
+		fmt.Println(searchDimStyle.Render("    Reinstall knowns to restore the bundled knowns-embed binary"))
 	}
 
 	// Model.
@@ -553,9 +541,9 @@ func runStatusCheck() error {
 
 	// Overall status.
 	fmt.Println()
-	if onnxAvail && cfg != nil && cfg.Settings.SemanticSearch != nil && cfg.Settings.SemanticSearch.Enabled && count > 0 {
+	if sidecarAvail && cfg != nil && cfg.Settings.SemanticSearch != nil && cfg.Settings.SemanticSearch.Enabled && count > 0 {
 		fmt.Println(searchSuccessStyle.Render("  Status: ready (hybrid search active)"))
-	} else if onnxAvail && cfg != nil && cfg.Settings.SemanticSearch != nil && cfg.Settings.SemanticSearch.Enabled {
+	} else if sidecarAvail && cfg != nil && cfg.Settings.SemanticSearch != nil && cfg.Settings.SemanticSearch.Enabled {
 		fmt.Println(searchWarnStyle.Render("  Status: needs search reindex (run: knowns search --reindex)"))
 	} else {
 		fmt.Println(searchDimStyle.Render("  Status: keyword-only mode"))
@@ -574,13 +562,12 @@ func runSetup() error {
 		return err
 	}
 
-	// Check ONNX Runtime.
-	onnxAvail, _ := search.IsONNXAvailable()
-	if !onnxAvail {
-		fmt.Println(searchWarnStyle.Render("ONNX Runtime not found."))
+	// Check embedding sidecar.
+	sidecarAvail, _ := search.IsSidecarAvailable()
+	if !sidecarAvail {
+		fmt.Println(searchWarnStyle.Render("Embedding sidecar (knowns-embed) not found."))
 		fmt.Println()
-		fmt.Println(RenderHint("Install ONNX Runtime first:"))
-		fmt.Println(RenderHint("  " + RenderCmd("knowns search --install-runtime")))
+		fmt.Println(RenderHint("Reinstall knowns to restore the bundled binary, or set KNOWNS_EMBED_BIN."))
 		fmt.Println()
 		return nil
 	}
@@ -613,237 +600,6 @@ func runSetup() error {
 	return nil
 }
 
-// ─── install runtime ─────────────────────────────────────────────────
-
-func runInstallRuntime() error {
-	avail, path := search.IsONNXAvailable()
-	if avail {
-		fmt.Println(searchSuccessStyle.Render("ONNX Runtime is already installed."))
-		fmt.Println(searchDimStyle.Render(fmt.Sprintf("  Path: %s", path)))
-		return nil
-	}
-
-	url, libName, err := search.ONNXRuntimeDownloadURL()
-	if err != nil {
-		return err
-	}
-
-	home, _ := os.UserHomeDir()
-	destDir := filepath.Join(home, ".knowns", "lib")
-	if err := os.MkdirAll(destDir, 0755); err != nil {
-		return err
-	}
-
-	fmt.Printf("%s\n\n", RenderInfo(fmt.Sprintf("Downloading ONNX Runtime for %s/%s...", runtime.GOOS, runtime.GOARCH)))
-
-	// Download to temp file.
-	tmpFile, err := os.CreateTemp("", "onnxruntime-*"+onnxArchiveSuffix(url))
-	if err != nil {
-		return err
-	}
-	tmpPath := tmpFile.Name()
-	defer os.Remove(tmpPath)
-
-	_, dlErr := downloadWithProgress("ONNX Runtime", url, tmpPath)
-	if dlErr != nil {
-		tmpFile.Close()
-		// Fallback.
-		_, dlErr = downloadSimple(url, tmpPath)
-	} else {
-		tmpFile.Close()
-	}
-	if dlErr != nil {
-		return fmt.Errorf("download failed: %w", dlErr)
-	}
-	fmt.Println()
-
-	// Extract the library from the archive.
-	destPath := filepath.Join(destDir, libName)
-	if err := extractONNXLib(tmpPath, libName, destPath); err != nil {
-		return fmt.Errorf("extract failed: %w", err)
-	}
-
-	fmt.Println(searchSuccessStyle.Render("ONNX Runtime installed successfully."))
-	fmt.Println(searchDimStyle.Render(fmt.Sprintf("  Path: %s", destPath)))
-	fmt.Println()
-	fmt.Println(RenderHint("Next: " + RenderCmd("knowns search --setup")))
-	return nil
-}
-
-func onnxArchiveSuffix(url string) string {
-	if strings.HasSuffix(strings.ToLower(url), ".zip") {
-		return ".zip"
-	}
-	return ".tgz"
-}
-
-// extractONNXLib extracts the shared library from an ONNX Runtime archive.
-func extractONNXLib(archivePath, libName, destPath string) error {
-	if strings.HasSuffix(strings.ToLower(archivePath), ".zip") {
-		zr, err := zip.OpenReader(archivePath)
-		if err != nil {
-			return err
-		}
-		defer zr.Close()
-
-		for _, f := range zr.File {
-			if filepath.Base(f.Name) != libName || f.FileInfo().IsDir() {
-				continue
-			}
-
-			rc, err := f.Open()
-			if err != nil {
-				return err
-			}
-			out, err := os.Create(destPath)
-			if err != nil {
-				rc.Close()
-				return err
-			}
-			if _, err := io.Copy(out, rc); err != nil {
-				out.Close()
-				rc.Close()
-				return err
-			}
-			out.Close()
-			rc.Close()
-			_ = os.Chmod(destPath, 0755)
-			return nil
-		}
-
-		return fmt.Errorf("%s not found in archive", libName)
-	}
-
-	targetName, err := resolveONNXTarTarget(archivePath, libName)
-	if err != nil {
-		return err
-	}
-
-	f, err := os.Open(archivePath)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	gz, err := gzip.NewReader(f)
-	if err != nil {
-		return err
-	}
-	defer gz.Close()
-
-	tr := tar.NewReader(gz)
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-		if cleanTarPath(hdr.Name) != targetName || !isTarRegularFile(hdr.Typeflag) {
-			continue
-		}
-		out, err := os.Create(destPath)
-		if err != nil {
-			return err
-		}
-		if _, err := io.Copy(out, tr); err != nil {
-			out.Close()
-			return err
-		}
-		out.Close()
-		_ = os.Chmod(destPath, 0755)
-		return nil
-	}
-
-	return fmt.Errorf("%s not found in archive", libName)
-}
-
-func resolveONNXTarTarget(archivePath, libName string) (string, error) {
-	f, err := os.Open(archivePath)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-
-	gz, err := gzip.NewReader(f)
-	if err != nil {
-		return "", err
-	}
-	defer gz.Close()
-
-	links := make(map[string]string)
-	regulars := make(map[string]struct{})
-	var directTarget string
-
-	tr := tar.NewReader(gz)
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return "", err
-		}
-		name := cleanTarPath(hdr.Name)
-		base := pathpkg.Base(name)
-		switch hdr.Typeflag {
-		case tar.TypeSymlink, tar.TypeLink:
-			resolved := cleanTarPath(pathpkg.Join(pathpkg.Dir(name), hdr.Linkname))
-			links[name] = resolved
-			if base == libName {
-				directTarget = resolved
-			}
-		case tar.TypeReg, tar.TypeRegA:
-			regulars[name] = struct{}{}
-			if base == libName {
-				directTarget = name
-			}
-		}
-	}
-
-	if directTarget == "" {
-		return "", fmt.Errorf("%s not found in archive", libName)
-	}
-
-	resolved, ok := resolveTarLinkTarget(directTarget, links, regulars)
-	if !ok {
-		return "", fmt.Errorf("%s not found in archive", libName)
-	}
-	return resolved, nil
-}
-
-func resolveTarLinkTarget(target string, links map[string]string, regulars map[string]struct{}) (string, bool) {
-	seen := map[string]struct{}{}
-	current := cleanTarPath(target)
-	for current != "" {
-		if _, ok := regulars[current]; ok {
-			return current, true
-		}
-		next, ok := links[current]
-		if !ok {
-			return "", false
-		}
-		if _, exists := seen[current]; exists {
-			return "", false
-		}
-		seen[current] = struct{}{}
-		current = cleanTarPath(next)
-	}
-	return "", false
-}
-
-func cleanTarPath(name string) string {
-	cleaned := pathpkg.Clean(strings.ReplaceAll(name, "\\", "/"))
-	if cleaned == "." {
-		return ""
-	}
-	return strings.TrimPrefix(cleaned, "./")
-}
-
-func isTarRegularFile(typeflag byte) bool {
-	return typeflag == tar.TypeReg || typeflag == tar.TypeRegA
-}
 
 // ─── reindex with bubbletea progress ─────────────────────────────────
 
@@ -1025,15 +781,15 @@ func runReindex() error {
 		return nil
 	}
 
-	// Auto-install ONNX Runtime if needed.
-	if err := ensureONNXRuntime(); err != nil {
-		fmt.Println(searchWarnStyle.Render(fmt.Sprintf("  Warning: ONNX Runtime install failed: %s", err)))
+	// Verify embedding sidecar is available.
+	if !ensureSidecar() {
+		fmt.Println(searchWarnStyle.Render("  Warning: knowns-embed sidecar not found"))
 		fmt.Println(searchDimStyle.Render("  Falling back to keyword-only search."))
 		fmt.Println()
 	}
 
-	// Auto-download default model if ONNX is available but no model configured.
-	if avail, _ := search.IsONNXAvailable(); avail {
+	// Auto-download default model if sidecar is available but no model configured.
+	if avail, _ := search.IsSidecarAvailable(); avail {
 		cfg, _ := store.Config.Load()
 		if cfg != nil && (cfg.Settings.SemanticSearch == nil || cfg.Settings.SemanticSearch.Model == "") {
 			defaultModel := "multilingual-e5-small"
@@ -1230,7 +986,6 @@ func init() {
 	searchCmd.Flags().Bool("reindex", false, "Rebuild the search index")
 	searchCmd.Flags().Bool("setup", false, "Set up semantic search")
 	searchCmd.Flags().Bool("status-check", false, "Show semantic search status")
-	searchCmd.Flags().Bool("install-runtime", false, "Download and install ONNX Runtime")
 
 	retrieveCmd.Flags().String("status", "", "Filter tasks by status")
 	retrieveCmd.Flags().String("priority", "", "Filter tasks by priority")

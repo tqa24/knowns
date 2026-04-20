@@ -57,6 +57,8 @@ jobs:
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ">=1.3.10"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -186,8 +188,9 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Setup Bun
-        if: matrix.goos == 'windows'
         uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ">=1.3.10"
 
       - name: Download UI artifact
         uses: actions/download-artifact@v4
@@ -226,11 +229,57 @@ jobs:
 
           go build -ldflags "$LDFLAGS" -o "artifacts/${{ matrix.npm_pkg }}/knowns${{ matrix.ext }}" ./cmd/knowns
 
+      - name: Derive sidecar bun target
+        id: sidecar
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          NPM_PKG: ${{ matrix.npm_pkg }}
+        run: |
+          case "${GOOS}-${GOARCH}" in
+            darwin-amd64) BUN_TARGET=bun-darwin-x64; BUNDLE=knowns-embed-darwin-x64 ;;
+            darwin-arm64) BUN_TARGET=bun-darwin-arm64; BUNDLE=knowns-embed-darwin-arm64 ;;
+            linux-amd64)  BUN_TARGET=bun-linux-x64; BUNDLE=knowns-embed-linux-x64 ;;
+            linux-arm64)  BUN_TARGET=bun-linux-arm64; BUNDLE=knowns-embed-linux-arm64 ;;
+            windows-amd64) BUN_TARGET=bun-windows-x64; BUNDLE=knowns-embed-win-x64 ;;
+            windows-arm64) BUN_TARGET=skip; BUNDLE=skip ;;
+            *) echo "Unknown ${GOOS}-${GOARCH}"; exit 1 ;;
+          esac
+          echo "bun_target=${BUN_TARGET}" >> "$GITHUB_OUTPUT"
+          echo "bundle=${BUNDLE}" >> "$GITHUB_OUTPUT"
+
+      - name: Build sidecar bundle
+        if: steps.sidecar.outputs.bun_target != 'skip'
+        env:
+          BUN_TARGET: ${{ steps.sidecar.outputs.bun_target }}
+        run: |
+          cd sidecar
+          bun install --frozen-lockfile
+          bun run build.ts "$BUN_TARGET"
+
+      - name: Bundle sidecar into artifact
+        if: steps.sidecar.outputs.bun_target != 'skip'
+        env:
+          BUNDLE: ${{ steps.sidecar.outputs.bundle }}
+          NPM_PKG: ${{ matrix.npm_pkg }}
+        run: |
+          BUNDLE_DIR="sidecar/dist/${BUNDLE}"
+          if [ ! -d "$BUNDLE_DIR" ]; then
+            echo "Sidecar bundle not found: $BUNDLE_DIR"
+            ls -la sidecar/dist/ || true
+            exit 1
+          fi
+          echo "Bundle contents:"
+          ls -la "$BUNDLE_DIR"
+          # Copy every file from bundle dir into the artifact dir
+          cp -R "$BUNDLE_DIR"/. "artifacts/${NPM_PKG}/"
+          chmod +x "artifacts/${NPM_PKG}/knowns-embed"* 2>/dev/null || true
+
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.npm_pkg }}
-          path: artifacts/${{ matrix.npm_pkg }}/knowns*
+          path: artifacts/${{ matrix.npm_pkg }}/
           retention-days: 1
 
   publish:
@@ -284,14 +333,17 @@ jobs:
 
           for dir in artifacts/knowns-*/; do
             pkg=$(basename "$dir")
-            binary=$(ls "$dir"/knowns* 2>/dev/null | head -1)
-            if [ -z "$binary" ]; then
-              echo "Missing binary for $pkg"
+            mkdir -p "npm/$pkg"
+            # Copy every file (main binary + sidecar bundle contents) to npm package dir
+            cp -R "$dir"/. "npm/$pkg/"
+            # Mark executables
+            for exe in "npm/$pkg/knowns" "npm/$pkg/knowns.exe" "npm/$pkg/knowns-embed" "npm/$pkg/knowns-embed.exe"; do
+              [ -f "$exe" ] && chmod +x "$exe" 2>/dev/null || true
+            done
+            if [ ! -f "npm/$pkg/knowns" ] && [ ! -f "npm/$pkg/knowns.exe" ]; then
+              echo "Missing main binary for $pkg"
               exit 1
             fi
-            dest="npm/$pkg/$(basename "$binary")"
-            cp "$binary" "$dest"
-            chmod +x "$dest" 2>/dev/null || true
           done
 
           node <<'EOF'
@@ -387,41 +439,55 @@ jobs:
 
       - name: Create tarballs
         run: |
-          for bin in \
-            npm/knowns-darwin-arm64/knowns \
-            npm/knowns-darwin-x64/knowns \
-            npm/knowns-linux-arm64/knowns \
-            npm/knowns-linux-x64/knowns \
-            npm/knowns-win-arm64/knowns.exe \
-            npm/knowns-win-x64/knowns.exe; do
-            base=$(basename "$bin")
-            pkg=$(basename "$(dirname "$bin")")
-            cp "$bin" "$base"
-            tar -czvf "${pkg}.tar.gz" "$base"
+          for pkgdir in \
+            npm/knowns-darwin-arm64 \
+            npm/knowns-darwin-x64 \
+            npm/knowns-linux-arm64 \
+            npm/knowns-linux-x64 \
+            npm/knowns-win-arm64 \
+            npm/knowns-win-x64; do
+            pkg=$(basename "$pkgdir")
+            staging=$(mktemp -d)
+            # Copy everything except npm metadata
+            find "$pkgdir" -maxdepth 1 -mindepth 1 \
+              ! -name 'package.json' \
+              ! -name 'README.md' \
+              -exec cp -R {} "$staging/" \;
+            tar -czvf "${pkg}.tar.gz" -C "$staging" .
             shasum -a 256 "${pkg}.tar.gz" > "${pkg}.tar.gz.sha256"
-            rm "$base"
+            rm -rf "$staging"
           done
 
       - name: Verify tarball contents
         run: |
           for archive in \
             knowns-darwin-arm64.tar.gz \
-            knowns-darwin-x64.tar.gz \
-            knowns-linux-arm64.tar.gz \
-            knowns-linux-x64.tar.gz; do
-            tar -tzf "$archive" | grep -Fx "knowns" >/dev/null || {
-              echo "Expected $archive to contain 'knowns'"
-              exit 1
-            }
+            knowns-darwin-x64.tar.gz; do
+            tar -tzf "$archive" | grep -Fx "./knowns" >/dev/null || { echo "$archive missing knowns"; exit 1; }
+            tar -tzf "$archive" | grep -Fx "./knowns-embed" >/dev/null || { echo "$archive missing knowns-embed"; exit 1; }
+            tar -tzf "$archive" | grep -E "^\./libonnxruntime.*\.dylib$" >/dev/null || { echo "$archive missing libonnxruntime dylib"; exit 1; }
+            tar -tzf "$archive" | grep -Fx "./onnxruntime_binding.node" >/dev/null || { echo "$archive missing onnxruntime_binding.node"; exit 1; }
           done
 
           for archive in \
-            knowns-win-arm64.tar.gz \
-            knowns-win-x64.tar.gz; do
-            tar -tzf "$archive" | grep -Fx "knowns.exe" >/dev/null || {
-              echo "Expected $archive to contain 'knowns.exe'"
-              exit 1
-            }
+            knowns-linux-arm64.tar.gz \
+            knowns-linux-x64.tar.gz; do
+            tar -tzf "$archive" | grep -Fx "./knowns" >/dev/null || { echo "$archive missing knowns"; exit 1; }
+            tar -tzf "$archive" | grep -Fx "./knowns-embed" >/dev/null || { echo "$archive missing knowns-embed"; exit 1; }
+            tar -tzf "$archive" | grep -E "^\./libonnxruntime\.so" >/dev/null || { echo "$archive missing libonnxruntime.so"; exit 1; }
+            tar -tzf "$archive" | grep -Fx "./onnxruntime_binding.node" >/dev/null || { echo "$archive missing onnxruntime_binding.node"; exit 1; }
+          done
+
+          for archive in knowns-win-x64.tar.gz; do
+            tar -tzf "$archive" | grep -Fx "./knowns.exe" >/dev/null || { echo "$archive missing knowns.exe"; exit 1; }
+            tar -tzf "$archive" | grep -Fx "./knowns-embed.exe" >/dev/null || { echo "$archive missing knowns-embed.exe"; exit 1; }
+            tar -tzf "$archive" | grep -Fx "./onnxruntime.dll" >/dev/null || { echo "$archive missing onnxruntime.dll"; exit 1; }
+            tar -tzf "$archive" | grep -Fx "./onnxruntime_binding.node" >/dev/null || { echo "$archive missing onnxruntime_binding.node"; exit 1; }
+          done
+
+          for archive in knowns-win-arm64.tar.gz; do
+            tar -tzf "$archive" | grep -Fx "./knowns.exe" >/dev/null || { echo "$archive missing knowns.exe"; exit 1; }
+            echo "Note: $archive does not ship knowns-embed (Bun has no windows-arm64 compile target yet)"
           done
 
       - name: Ensure GitHub release exists
@@ -487,13 +553,13 @@ jobs:
             end
 
             def install
-              if OS.mac? && Hardware::CPU.arm?
-                bin.install "knowns" => "knowns"
-              elsif OS.mac? && Hardware::CPU.intel?
-                bin.install "knowns" => "knowns"
-              elsif OS.linux? && Hardware::CPU.intel?
-                bin.install "knowns" => "knowns"
-              end
+              # Sidecar bundle goes into libexec so @loader_path resolves the dylib
+              # and the .node addon as siblings of knowns-embed.
+              libexec.install "knowns-embed"
+              libexec.install Dir["libonnxruntime*"]
+              libexec.install "onnxruntime_binding.node" if File.exist?("onnxruntime_binding.node")
+              bin.install "knowns"
+              bin.install_symlink libexec/"knowns-embed"
               bin.install_symlink "knowns" => "kn"
             end
 

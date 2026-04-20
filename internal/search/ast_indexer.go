@@ -56,67 +56,33 @@ func (s *CodeSymbol) ToChunk() Chunk {
 // IndexAllFiles walks projectRoot, indexes all supported code files, returns symbols and edges.
 // Does NOT persist to the vector store — caller embeds and saves.
 func IndexAllFiles(projectRoot string, includeTests bool) ([]CodeSymbol, []CodeEdge, error) {
-	patterns := loadCodeIgnorePatterns(projectRoot)
-	matcher := newCodeMatcher(patterns)
+	return indexAllFiles(projectRoot, includeTests, nil)
+}
 
-	codeExts := map[string]bool{".go": true, ".ts": true, ".tsx": true, ".js": true, ".jsx": true, ".py": true}
-	testSuffixes := []string{"_test.go", ".spec.ts", ".test.ts", ".spec.js", ".test.js"}
+// IndexAllFilesWithProgress walks projectRoot and invokes onFile after each candidate file is attempted.
+func IndexAllFilesWithProgress(projectRoot string, includeTests bool, onFile func(string)) ([]CodeSymbol, []CodeEdge, error) {
+	return indexAllFiles(projectRoot, includeTests, onFile)
+}
+
+func indexAllFiles(projectRoot string, includeTests bool, onFile func(string)) ([]CodeSymbol, []CodeEdge, error) {
+	files, err := listCodeCandidateFiles(projectRoot, includeTests)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	var symbols []CodeSymbol
 	var edges []CodeEdge
-	walkErr := filepath.Walk(projectRoot, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil
+	for _, rel := range files {
+		absPath := filepath.Join(projectRoot, filepath.FromSlash(rel))
+		syms, eds, parseErr := parseRawFile(rel, absPath)
+		if onFile != nil {
+			onFile(rel)
 		}
-
-		rel, _ := filepath.Rel(projectRoot, path)
-		if rel == "." {
-			return nil
-		}
-
-		if info.IsDir() {
-			base := filepath.Base(rel)
-			if base == "node_modules" || base == "__pycache__" || base == ".git" {
-				return filepath.SkipDir
-			}
-			if matcher.ShouldIgnore(rel) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		if matcher.ShouldIgnore(rel) {
-			return nil
-		}
-
-		ext := strings.ToLower(filepath.Ext(rel))
-		if !codeExts[ext] {
-			return nil
-		}
-
-		if !includeTests {
-			skip := false
-			for _, suffix := range testSuffixes {
-				if strings.HasSuffix(rel, suffix) {
-					skip = true
-					break
-				}
-			}
-			if skip {
-				return nil
-			}
-		}
-
-		syms, eds, err := parseRawFile(rel, path)
-		if err != nil {
-			return nil
+		if parseErr != nil {
+			continue
 		}
 		symbols = append(symbols, syms...)
 		edges = append(edges, eds...)
-		return nil
-	})
-	if walkErr != nil {
-		return nil, nil, walkErr
 	}
 	return finalizeCodeParse(symbols, edges)
 }

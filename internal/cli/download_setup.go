@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -311,54 +310,12 @@ func buildSemanticDownloadSteps(modelID string) ([]initStep, bool, error) {
 		return nil, false, fmt.Errorf("unknown model %q", modelID)
 	}
 
+	// Model files are downloaded lazily by the sidecar on first embed call,
+	// using transformers.js's own cache layout.
 	if isModelInstalled(selected) {
-		onnxOK, _ := search.IsONNXAvailable()
-		if onnxOK {
-			return nil, true, nil
-		}
+		return nil, true, nil
 	}
-
-	var steps []initStep
-
-	// ONNX Runtime (if not available)
-	if avail, _ := search.IsONNXAvailable(); !avail {
-		url, libName, err := search.ONNXRuntimeDownloadURL()
-		if err != nil {
-			return nil, false, fmt.Errorf("unsupported platform: %w", err)
-		}
-
-		home, _ := os.UserHomeDir()
-		destDir := filepath.Join(home, ".knowns", "lib")
-		_ = os.MkdirAll(destDir, 0755)
-		tmpPath := filepath.Join(os.TempDir(), fmt.Sprintf("onnxruntime-%d%s", time.Now().UnixNano(), onnxArchiveSuffix(url)))
-		destPath := filepath.Join(destDir, libName)
-
-		steps = append(steps, initStep{
-			label: fmt.Sprintf("ONNX Runtime (%s/%s)", runtime.GOOS, runtime.GOARCH),
-			url:   url,
-			dst:   tmpPath,
-			postHook: func(dst string) error {
-				defer os.Remove(dst)
-				return extractONNXLib(dst, libName, destPath)
-			},
-		})
-	}
-
-	// Model files
-	if !isModelInstalled(selected) {
-		modelDir := getModelDir(selected.HuggingFace)
-		for _, file := range selected.Files {
-			url := fmt.Sprintf("https://huggingface.co/%s/resolve/main/%s", selected.HuggingFace, file)
-			dst := filepath.Join(modelDir, file)
-			steps = append(steps, initStep{
-				label: fmt.Sprintf("%s — %s", selected.Name, file),
-				url:   url,
-				dst:   dst,
-			})
-		}
-	}
-
-	return steps, false, nil
+	return nil, true, nil
 }
 
 // runSemanticSetup downloads ONNX Runtime (if needed) and the embedding model
@@ -380,41 +337,15 @@ func runSemanticSetup(modelID string, force ...bool) error {
 	}
 
 	if !forceDownload && isModelInstalled(selected) {
-		onnxOK, _ := search.IsONNXAvailable()
-		if onnxOK {
-			fmt.Println(StyleSuccess.Render(fmt.Sprintf("✓ Semantic search ready (model: %s, ONNX Runtime: installed)", modelID)))
-			return nil
-		}
+		fmt.Println(StyleSuccess.Render(fmt.Sprintf("✓ Semantic search ready (model: %s)", modelID)))
+		return nil
 	}
 
 	// Build download steps
 	var steps []downloadStep
 
-	// Step 1: ONNX Runtime (if not available)
-	if avail, _ := search.IsONNXAvailable(); !avail {
-		url, libName, err := search.ONNXRuntimeDownloadURL()
-		if err != nil {
-			return fmt.Errorf("unsupported platform: %w", err)
-		}
-
-		home, _ := os.UserHomeDir()
-		destDir := filepath.Join(home, ".knowns", "lib")
-		_ = os.MkdirAll(destDir, 0755)
-		tmpPath := filepath.Join(os.TempDir(), fmt.Sprintf("onnxruntime-%d%s", time.Now().UnixNano(), onnxArchiveSuffix(url)))
-		destPath := filepath.Join(destDir, libName)
-
-		steps = append(steps, downloadStep{
-			label: fmt.Sprintf("ONNX Runtime (%s/%s)", runtime.GOOS, runtime.GOARCH),
-			url:   url,
-			dst:   tmpPath,
-			postHook: func(dst string) error {
-				defer os.Remove(dst)
-				return extractONNXLib(dst, libName, destPath)
-			},
-		})
-	}
-
-	// Step 2+: Model files
+	// Model files (sidecar will lazy-download via transformers.js cache;
+	// pre-download is optional, intended for offline-prep).
 	if forceDownload || !isModelInstalled(selected) {
 		modelDir := getModelDir(selected.HuggingFace)
 		for _, file := range selected.Files {
@@ -455,55 +386,12 @@ func runSemanticSetup(modelID string, force ...bool) error {
 	return nil
 }
 
-// ensureONNXRuntime downloads and installs ONNX Runtime if not already present.
-// Returns nil immediately if already available. Shows a progress UI during download.
-func ensureONNXRuntime() error {
-	if avail, _ := search.IsONNXAvailable(); avail {
-		return nil
-	}
-
-	url, libName, err := search.ONNXRuntimeDownloadURL()
-	if err != nil {
-		return fmt.Errorf("unsupported platform: %w", err)
-	}
-
-	home, _ := os.UserHomeDir()
-	destDir := filepath.Join(home, ".knowns", "lib")
-	_ = os.MkdirAll(destDir, 0755)
-	tmpPath := filepath.Join(os.TempDir(), fmt.Sprintf("onnxruntime-%d%s", time.Now().UnixNano(), onnxArchiveSuffix(url)))
-	destPath := filepath.Join(destDir, libName)
-
-	steps := []downloadStep{
-		{
-			label: fmt.Sprintf("ONNX Runtime (%s/%s)", runtime.GOOS, runtime.GOARCH),
-			url:   url,
-			dst:   tmpPath,
-			postHook: func(dst string) error {
-				defer os.Remove(dst)
-				return extractONNXLib(dst, libName, destPath)
-			},
-		},
-	}
-
-	fmt.Println()
-	fmt.Println(RenderInfo("Installing ONNX Runtime..."))
-	fmt.Println()
-
-	drainStdin()
-
-	m := newSetupModel(steps)
-	p := tea.NewProgram(m, tea.WithInput(os.Stdin))
-	if _, err := p.Run(); err != nil {
-		return err
-	}
-
-	if m.err != nil {
-		return m.err
-	}
-
-	fmt.Println()
-	fmt.Println(StyleSuccess.Render("✓ ONNX Runtime installed"))
-	return nil
+// ensureSidecar reports whether the knowns-embed sidecar binary is available.
+// Returns false if the binary cannot be found in any of the standard locations.
+// The sidecar is shipped alongside the knowns binary; users do not install it manually.
+func ensureSidecar() bool {
+	avail, _ := search.IsSidecarAvailable()
+	return avail
 }
 
 func ensureSemanticStoreReady(store *storage.Store, defaultModelID string) (bool, error) {

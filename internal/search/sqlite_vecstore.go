@@ -112,11 +112,10 @@ func (s *SQLiteVectorStore) createSchema() error {
 		var hasCol int
 		row = s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('chunks') WHERE name=?`, col)
 		if err := row.Scan(&hasCol); err == nil && hasCol == 0 {
-			var hasMemoryRows int
-			row2 := s.db.QueryRow(`SELECT COUNT(*) FROM chunks WHERE type='memory'`)
-			if err := row2.Scan(&hasMemoryRows); err == nil && hasMemoryRows > 0 {
-				s.db.Exec("DROP TABLE IF EXISTS chunks")
-				break
+			if _, alterErr := s.db.Exec(`ALTER TABLE chunks ADD COLUMN ` + col + ` TEXT`); alterErr != nil {
+				// Fallback: if ALTER fails (e.g. table doesn't exist yet), let
+				// the CREATE TABLE below handle it.
+				_ = alterErr
 			}
 		}
 	}

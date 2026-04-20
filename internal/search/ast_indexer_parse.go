@@ -145,29 +145,6 @@ func detectLang(path string) *sitter.Language {
 	}
 }
 
-func isCodeFile(path string) bool {
-	ext := strings.ToLower(filepath.Ext(path))
-	switch ext {
-	case ".go", ".ts", ".tsx", ".js", ".jsx", ".py":
-		return true
-	}
-	return false
-}
-
-func isTestFile(path string) bool {
-	base := filepath.Base(path)
-	return strings.HasSuffix(path, "_test.go") ||
-		strings.HasSuffix(path, ".spec.ts") ||
-		strings.HasSuffix(path, ".test.ts") ||
-		strings.HasSuffix(path, ".spec.js") ||
-		strings.HasSuffix(path, ".test.js") ||
-		strings.HasSuffix(base, "_test.go") ||
-		strings.HasSuffix(base, ".spec.ts") ||
-		strings.HasSuffix(base, ".test.ts") ||
-		strings.HasSuffix(base, ".spec.js") ||
-		strings.HasSuffix(base, ".test.js")
-}
-
 func isHiddenFile(path string) bool {
 	base := filepath.Base(path)
 	return strings.HasPrefix(base, ".") || base == "node_modules" || base == "__pycache__"
