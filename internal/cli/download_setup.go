@@ -367,6 +367,27 @@ func runSemanticSetup(modelID string, force ...bool) error {
 	fmt.Println()
 	fmt.Printf("  %s\n\n", RenderInfo(fmt.Sprintf("Setting up semantic search (%d downloads)...", len(steps))))
 
+	if !isTTY() {
+		for i, step := range steps {
+			if err := os.MkdirAll(filepath.Dir(step.dst), 0755); err != nil {
+				return err
+			}
+			n, err := downloadSimple(step.url, step.dst)
+			if err != nil {
+				return err
+			}
+			if step.postHook != nil {
+				if err := step.postHook(step.dst); err != nil {
+					return err
+				}
+			}
+			fmt.Printf("  %s %s (%d/%d, %s)\n", StyleSuccess.Render("✓"), step.label, i+1, len(steps), formatBytes(n))
+		}
+		fmt.Println()
+		fmt.Println(StyleSuccess.Render("✓ Semantic search ready"))
+		return nil
+	}
+
 	// Drain any pending terminal escape responses from prior bubbletea/huh
 	// programs to prevent ^[[?2026;2$y leak in output.
 	drainStdin()

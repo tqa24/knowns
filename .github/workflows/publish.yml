@@ -277,6 +277,30 @@ jobs:
           cp -R "$BUNDLE_DIR"/. "artifacts/${NPM_PKG}/"
           chmod +x "artifacts/${NPM_PKG}/knowns-embed"* 2>/dev/null || true
 
+      - name: Smoke test Windows sidecar
+        if: matrix.goos == 'windows' && matrix.goarch == 'amd64'
+        shell: pwsh
+        run: |
+          $sidecar = "artifacts/${{ matrix.npm_pkg }}/knowns-embed.exe"
+          if (-not (Test-Path $sidecar)) {
+            throw "Missing sidecar binary: $sidecar"
+          }
+
+          $response = '{"jsonrpc":"2.0","id":1,"method":"ping","params":{}}' | & $sidecar 2>&1
+          if ($LASTEXITCODE -ne 0) {
+            throw "knowns-embed.exe exited with code $LASTEXITCODE`n$response"
+          }
+
+          $jsonLine = $response | Where-Object { $_ -match '^\{.*\}$' } | Select-Object -Last 1
+          if (-not $jsonLine) {
+            throw "knowns-embed.exe did not return a JSON-RPC response`n$response"
+          }
+
+          $parsed = $jsonLine | ConvertFrom-Json
+          if (-not $parsed.result.ok) {
+            throw "Unexpected sidecar ping response: $jsonLine"
+          }
+
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
