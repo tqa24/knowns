@@ -100,7 +100,14 @@ jobs:
           mkdir -p sidecar-smoke
           cp -R "sidecar/dist/${{ matrix.bundle }}"/. sidecar-smoke/
           chmod +x "sidecar-smoke/${{ matrix.sidecar_bin }}"
-          response=$(printf '{"jsonrpc":"2.0","id":1,"method":"ping","params":{}}\n' | "./sidecar-smoke/${{ matrix.sidecar_bin }}" 2>&1)
+          bundle_dir="$PWD/sidecar-smoke"
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            export DYLD_LIBRARY_PATH="$bundle_dir${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+            export DYLD_FALLBACK_LIBRARY_PATH="$bundle_dir${DYLD_FALLBACK_LIBRARY_PATH:+:$DYLD_FALLBACK_LIBRARY_PATH}"
+          else
+            export LD_LIBRARY_PATH="$bundle_dir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          fi
+          response=$(printf '{"jsonrpc":"2.0","id":1,"method":"ping","params":{}}\n' | "$bundle_dir/${{ matrix.sidecar_bin }}" 2>&1)
           status=$?
           if [ $status -ne 0 ]; then
             echo "$response"
