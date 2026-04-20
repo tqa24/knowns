@@ -362,6 +362,35 @@ func TestCLI_ReopenWorkflow(t *testing.T) {
 // TestCLI_SemanticSearch tests the semantic search workflow:
 // model list → model download → model set → status check → reindex → semantic search → keyword search
 // Requires ONNX Runtime + network access. Skip unless TEST_SEMANTIC=1.
+func TestCLI_Sync(t *testing.T) {
+	t.Run("sync instructions", func(t *testing.T) {
+		dir := setupTestProject(t)
+		res := runCli(t, dir, "sync", "--instructions", "--platform", "claude")
+		requireSuccess(t, res)
+		output := res.Stdout + res.Stderr
+		assertContains(t, output, "Checking agent instruction files", "sync instructions output")
+		assertContains(t, output, "CLAUDE.md", "sync instructions output")
+		assertContains(t, output, "Sync complete.", "sync instructions output")
+		if _, err := os.Stat(dir + "/CLAUDE.md"); err != nil {
+			t.Fatalf("expected CLAUDE.md to exist after sync: %v", err)
+		}
+	})
+
+	t.Run("sync skills", func(t *testing.T) {
+		dir := setupTestProject(t)
+		res := runCli(t, dir, "sync", "--skills")
+		requireSuccess(t, res)
+		output := res.Stdout + res.Stderr
+		assertContains(t, output, "Syncing", "sync skills output")
+		assertContains(t, output, "skill(s)", "sync skills output")
+		assertContains(t, output, "Synced", "sync skills output")
+		assertContains(t, output, "Sync complete.", "sync skills output")
+	})
+}
+
+// TestCLI_SemanticSearch tests the semantic search workflow:
+// model list → model download → model set → status check → reindex → semantic search → keyword search
+// Requires ONNX Runtime + network access. Skip unless TEST_SEMANTIC=1.
 func TestCLI_SemanticSearch(t *testing.T) {
 	if os.Getenv("TEST_SEMANTIC") != "1" {
 		t.Skip("skipping semantic search test (set TEST_SEMANTIC=1 to enable)")
