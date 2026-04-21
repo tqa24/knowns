@@ -278,19 +278,36 @@ jobs:
         if: matrix.goos == 'windows' && matrix.goarch == 'amd64'
         shell: pwsh
         run: |
-          $sidecar = "artifacts/${{ matrix.npm_pkg }}/knowns-embed.exe"
+          $sidecar = Resolve-Path "artifacts/${{ matrix.npm_pkg }}/knowns-embed.exe"
           if (-not (Test-Path $sidecar)) {
             throw "Missing sidecar binary: $sidecar"
           }
 
-          $response = '{"jsonrpc":"2.0","id":1,"method":"ping","params":{}}' | & $sidecar 2>&1
-          if ($LASTEXITCODE -ne 0) {
-            throw "knowns-embed.exe exited with code $LASTEXITCODE`n$response"
+          $psi = New-Object System.Diagnostics.ProcessStartInfo
+          $psi.FileName = $sidecar
+          $psi.UseShellExecute = $false
+          $psi.RedirectStandardInput = $true
+          $psi.RedirectStandardOutput = $true
+          $psi.RedirectStandardError = $true
+          $psi.CreateNoWindow = $true
+
+          $proc = New-Object System.Diagnostics.Process
+          $proc.StartInfo = $psi
+          $proc.Start() | Out-Null
+          $proc.StandardInput.WriteLine('{"jsonrpc":"2.0","id":1,"method":"ping","params":{}}')
+          $proc.StandardInput.Close()
+
+          $stdout = $proc.StandardOutput.ReadToEnd()
+          $stderr = $proc.StandardError.ReadToEnd()
+          $proc.WaitForExit()
+
+          if ($proc.ExitCode -ne 0) {
+            throw "knowns-embed.exe exited with code $($proc.ExitCode)`nSTDERR:`n$stderr`nSTDOUT:`n$stdout"
           }
 
-          $jsonLine = $response | Where-Object { $_ -match '^\{.*\}$' } | Select-Object -Last 1
+          $jsonLine = ($stdout -split "`r?`n") | Where-Object { $_ -match '^\{.*\}$' } | Select-Object -Last 1
           if (-not $jsonLine) {
-            throw "knowns-embed.exe did not return a JSON-RPC response`n$response"
+            throw "knowns-embed.exe did not return a JSON-RPC response`nSTDERR:`n$stderr`nSTDOUT:`n$stdout"
           }
 
           $parsed = $jsonLine | ConvertFrom-Json
