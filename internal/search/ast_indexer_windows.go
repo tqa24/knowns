@@ -1,4 +1,4 @@
-//go:build windows
+//go:build windows && tree_sitter_stub
 
 package search
 

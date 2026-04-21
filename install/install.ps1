@@ -113,8 +113,8 @@ try {
     Copy-Item -Path $ExtractedBin.FullName -Destination (Join-Path $InstallDir $Binary) -Force
     Copy-Item -Path $ExtractedBin.FullName -Destination (Join-Path $InstallDir $AliasBinary) -Force
 
-    # Sidecar binary + colocated DLLs/.node addon
-    foreach ($pattern in @("knowns-embed.exe", "onnxruntime*.dll", "onnxruntime_binding.node")) {
+    # Sidecar binary + colocated runtime DLLs
+    foreach ($pattern in @("knowns-embed.exe", "onnxruntime*.dll")) {
         Get-ChildItem -Path $ExtractRoot -Filter $pattern -ErrorAction SilentlyContinue | ForEach-Object {
             Copy-Item -Path $_.FullName -Destination (Join-Path $InstallDir $_.Name) -Force
         }

@@ -1,6 +1,6 @@
-# knowns-go - GitHub Copilot Instructions
+# knowns - GitHub Copilot Instructions
 
-Compatibility entrypoint for runtimes that auto-detect `.github/copilot-instructions.md`.
+Compatibility entrypoint for runtimes that auto-detect `.github\copilot-instructions.md`.
 
 <!-- KNOWNS GUIDELINES START -->
 
