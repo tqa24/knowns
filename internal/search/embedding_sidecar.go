@@ -39,6 +39,13 @@ type EmbedderConfig struct {
 	LibPath    string // unused for sidecar; kept for source compat
 }
 
+type sidecarCommand struct {
+	command string
+	args    []string
+	label   string
+	envDir  string
+}
+
 type rpcReq struct {
 	JSONRPC string      `json:"jsonrpc"`
 	ID      int64       `json:"id"`
@@ -93,13 +100,14 @@ func NewEmbedder(cfg EmbedderConfig) (*Embedder, error) {
 		return nil, fmt.Errorf("unknown embedding model %q", cfg.ModelName)
 	}
 
-	bin, err := findSidecarBinary()
+	sidecarCmd, err := resolveSidecarCommand()
 	if err != nil {
 		return nil, err
 	}
 
-	cmd := exec.Command(bin)
-	cmd.Env = sidecarEnv(bin)
+	cmd := exec.Command(sidecarCmd.command, sidecarCmd.args...)
+	configureSidecarCommand(cmd)
+	cmd.Env = sidecarEnv(sidecarCmd.envDir)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("sidecar stdin: %w", err)
@@ -318,21 +326,31 @@ func (e *Embedder) Close() {
 	}
 }
 
-// IsSidecarAvailable reports whether the knowns-embed sidecar binary can be found.
+// IsSidecarAvailable reports whether a usable sidecar command can be found.
 func IsSidecarAvailable() (bool, string) {
-	p, err := findSidecarBinary()
+	cmd, err := resolveSidecarCommand()
 	if err != nil {
 		return false, ""
 	}
-	return true, p
+	return true, cmd.label
 }
 
-// findSidecarBinary locates the knowns-embed binary. Search order:
+func resolveSidecarCommand() (sidecarCommand, error) {
+	if p, ok, err := findSidecarBinary(); err != nil {
+		return sidecarCommand{}, err
+	} else if ok {
+		return sidecarCommand{command: p, label: p, envDir: p}, nil
+	}
+
+	return sidecarCommand{}, fmt.Errorf("knowns-embed sidecar binary not found (looked next to knowns binary, in ~/.knowns/bin, and on PATH)")
+}
+
+// findSidecarBinary locates the packaged knowns-embed binary. Search order:
 //  1. KNOWNS_EMBED_BIN env var
 //  2. Same directory as the current executable
 //  3. ~/.knowns/bin/
 //  4. $PATH
-func findSidecarBinary() (string, error) {
+func findSidecarBinary() (string, bool, error) {
 	name := "knowns-embed"
 	if runtime.GOOS == "windows" {
 		name = "knowns-embed.exe"
@@ -340,9 +358,9 @@ func findSidecarBinary() (string, error) {
 
 	if p := os.Getenv("KNOWNS_EMBED_BIN"); p != "" {
 		if isExecutable(p) {
-			return p, nil
+			return p, true, nil
 		}
-		return "", fmt.Errorf("KNOWNS_EMBED_BIN=%q not executable", p)
+		return "", false, fmt.Errorf("KNOWNS_EMBED_BIN=%q not executable", p)
 	}
 
 	if exe, err := os.Executable(); err == nil {
@@ -351,22 +369,22 @@ func findSidecarBinary() (string, error) {
 		}
 		candidate := filepath.Join(filepath.Dir(exe), name)
 		if isExecutable(candidate) {
-			return candidate, nil
+			return candidate, true, nil
 		}
 	}
 
 	if home, err := os.UserHomeDir(); err == nil {
 		candidate := filepath.Join(home, ".knowns", "bin", name)
 		if isExecutable(candidate) {
-			return candidate, nil
+			return candidate, true, nil
 		}
 	}
 
 	if p, err := exec.LookPath(name); err == nil {
-		return p, nil
+		return p, true, nil
 	}
 
-	return "", fmt.Errorf("knowns-embed sidecar binary not found (looked next to knowns binary, in ~/.knowns/bin, and on PATH)")
+	return "", false, nil
 }
 
 func isExecutable(p string) bool {
@@ -383,10 +401,13 @@ func isExecutable(p string) bool {
 // sidecarEnv builds the environment for the sidecar process. The bun-compiled
 // binary cannot have its rpath patched (LINKEDIT layout breaks install_name_tool),
 // so we point dyld/ld.so at the bundle directory containing the native ONNX libs.
-func sidecarEnv(bin string) []string {
-	dir := filepath.Dir(bin)
-	if real, err := filepath.EvalSymlinks(bin); err == nil {
-		dir = filepath.Dir(real)
+func sidecarEnv(path string) []string {
+	dir := path
+	if info, err := os.Stat(path); err == nil && !info.IsDir() {
+		dir = filepath.Dir(path)
+	}
+	if real, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = real
 	}
 	env := os.Environ()
 	switch runtime.GOOS {

@@ -1,5 +1,3 @@
-//go:build !windows
-
 package search
 
 import (

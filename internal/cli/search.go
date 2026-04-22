@@ -3,8 +3,10 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -620,11 +622,41 @@ type reindexDoneMsg struct {
 
 // reindexState is shared between the bubbletea model and the reindex goroutine.
 type reindexState struct {
+	mu        sync.RWMutex
 	phase     string
 	processed int
 	total     int
 	done      bool
 	err       error
+}
+
+func (s *reindexState) snapshot() (string, int, int, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.phase, s.processed, s.total, s.done, s.err
+}
+
+func (s *reindexState) setProgress(phase string, processed, total int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if phase != "" {
+		s.phase = phase
+	}
+	s.processed = processed
+	s.total = total
+}
+
+func (s *reindexState) complete(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.done = true
+	s.err = err
+}
+
+func (s *reindexState) errValue() error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.err
 }
 
 // completedPhase records a finished indexing phase.
@@ -666,20 +698,20 @@ func (m *reindexModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.quit {
 			return m, nil
 		}
-		// Detect phase transition.
-		if m.state.phase != m.lastPhase && m.lastPhase != "" {
+		phase, processed, total, _, _ := m.state.snapshot()
+		if phase != m.lastPhase && m.lastPhase != "" {
 			m.completedPhases = append(m.completedPhases, completedPhase{
 				name:  m.lastPhase,
 				count: m.lastTotal,
 			})
 			m.phaseStartTime = time.Now()
 		}
-		m.lastPhase = m.state.phase
-		m.lastTotal = m.state.total
+		m.lastPhase = phase
+		m.lastTotal = total
 
 		pct := 0.0
-		if m.state.total > 0 {
-			pct = float64(m.state.processed) / float64(m.state.total)
+		if total > 0 {
+			pct = float64(processed) / float64(total)
 		}
 		cmd := m.bar.SetPercent(pct)
 		return m, tea.Batch(cmd, reindexTickCmd())
@@ -690,8 +722,7 @@ func (m *reindexModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				count: m.lastTotal,
 			})
 		}
-		m.state.done = true
-		m.state.err = msg.err
+		m.state.complete(msg.err)
 		m.quit = true
 		cmd := m.bar.SetPercent(1.0)
 		return m, tea.Batch(cmd, tea.Quit)
@@ -721,9 +752,7 @@ func (m *reindexModel) View() tea.View {
 	}
 
 	// Active phase bar.
-	processed := m.state.processed
-	total := m.state.total
-	phase := m.state.phase
+	phase, processed, total, _, _ := m.state.snapshot()
 
 	elapsed := time.Since(m.phaseStartTime)
 	eta := ""
@@ -739,6 +768,55 @@ func (m *reindexModel) View() tea.View {
 		phase, processed, total, eta)
 	b.WriteString(fmt.Sprintf("  %s%s\n", m.bar.View(), searchDimStyle.Render(info)))
 	return tea.NewView(b.String())
+}
+
+func runRuntimeReindexWithProgress(storeRoot, jobID string) error {
+	state := &reindexState{phase: "queued", total: 1}
+	m := &reindexModel{
+		bar:            NewBrandProgressBar(),
+		state:          state,
+		startTime:      time.Now(),
+		phaseStartTime: time.Now(),
+	}
+	p := tea.NewProgram(m, tea.WithInput(os.Stdin))
+	m.prog = p
+
+	go func() {
+		ticker := time.NewTicker(200 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			if _, _, _, done, _ := state.snapshot(); done {
+				return
+			}
+			snapshot, err := runtimequeue.LoadJobSnapshot(storeRoot, jobID)
+			if err == nil && snapshot.Found && !snapshot.Completed {
+				phase := snapshot.Phase()
+				if phase == "" {
+					phase = "queued"
+				}
+				processed := snapshot.Processed()
+				total := snapshot.Total()
+				if total <= 0 {
+					total = 1
+				}
+				state.setProgress(phase, processed, total)
+			}
+			<-ticker.C
+		}
+	}()
+
+	go func() {
+		_, err := runtimequeue.WaitForJob(storeRoot, jobID, 5*time.Minute)
+		p.Send(reindexDoneMsg{err: err})
+	}()
+
+	if _, err := p.Run(); err != nil {
+		return err
+	}
+	if err := state.errValue(); err != nil {
+		return err
+	}
+	return nil
 }
 
 func runReindex() error {
@@ -770,7 +848,7 @@ func runReindex() error {
 			return fmt.Errorf("enqueue reindex: %w", err)
 		}
 		fmt.Printf("%s\n\n", RenderInfo(fmt.Sprintf("Queued runtime reindex (%d tasks, %d docs)...", taskCount, docCount)))
-		if _, err := runtimequeue.WaitForJob(store.Root, job.ID, 5*time.Minute); err != nil {
+		if err := runRuntimeReindexWithProgress(store.Root, job.ID); err != nil {
 			return fmt.Errorf("reindex failed: %w", err)
 		}
 		searchDir := filepath.Join(store.Root, ".search")

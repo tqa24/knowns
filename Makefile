@@ -105,9 +105,12 @@ npm-build: clean
 ui:
 	cd ui && bun install && bun run build
 
-# Build sidecar binaries for all 6 platforms (requires Bun)
+# Build sidecar binaries for non-Windows platforms and prepare Windows runtime assets
 sidecar:
 	cd sidecar && bun install --frozen-lockfile && bun run build.ts
+
+sidecar-windows:
+	cd sidecar && bun install --frozen-lockfile
 
 # Full release build: UI + sidecar + cross-compiled Go binaries + npm staging
 release: clean ui sidecar cross-compile npm-build

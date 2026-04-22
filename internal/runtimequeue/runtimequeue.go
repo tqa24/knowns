@@ -78,6 +78,75 @@ type QueueState struct {
 	Updated time.Time   `json:"updatedAt"`
 }
 
+type JobSnapshot struct {
+	Job       *Job
+	Result    *JobResult
+	Found     bool
+	Completed bool
+}
+
+func LoadJobSnapshot(storeRoot, jobID string) (JobSnapshot, error) {
+	state, err := LoadQueue(storeRoot)
+	if err != nil {
+		return JobSnapshot{}, err
+	}
+	for _, job := range state.Jobs {
+		if job.ID == jobID {
+			clone := *job
+			return JobSnapshot{Job: &clone, Found: true}, nil
+		}
+	}
+	for i := range state.Recent {
+		if state.Recent[i].JobID == jobID {
+			clone := state.Recent[i]
+			return JobSnapshot{Result: &clone, Found: true, Completed: true}, nil
+		}
+	}
+	return JobSnapshot{}, nil
+}
+
+func (s JobSnapshot) Phase() string {
+	if s.Job != nil {
+		return s.Job.Phase
+	}
+	return ""
+}
+
+func (s JobSnapshot) Processed() int {
+	if s.Job != nil {
+		return s.Job.Processed
+	}
+	return 0
+}
+
+func (s JobSnapshot) Total() int {
+	if s.Job != nil {
+		return s.Job.Total
+	}
+	return 0
+}
+
+func (s JobSnapshot) Error() string {
+	if s.Result != nil {
+		return s.Result.Error
+	}
+	return ""
+}
+
+func (s JobSnapshot) Success() bool {
+	if s.Result != nil {
+		return s.Result.Success
+	}
+	return false
+}
+
+func (s JobSnapshot) JobResult() JobResult {
+	if s.Result != nil {
+		return *s.Result
+	}
+	return JobResult{}
+}
+
 type Lease struct {
 	ID          string    `json:"id"`
 	ClientKind  string    `json:"clientKind"`

@@ -147,14 +147,6 @@ jobs:
             cgo_enabled: "1"
             llvm_mingw_archive: llvm-mingw-20260407-ucrt-x86_64.zip
             llvm_mingw_prefix: x86_64-w64-mingw32
-          - runner: windows-11-arm
-            goos: windows
-            goarch: arm64
-            npm_pkg: knowns-win-arm64
-            ext: ".exe"
-            cgo_enabled: "1"
-            llvm_mingw_archive: llvm-mingw-20260407-ucrt-aarch64.zip
-            llvm_mingw_prefix: aarch64-w64-mingw32
     runs-on: ${{ matrix.runner }}
     defaults:
       run:
@@ -243,7 +235,7 @@ jobs:
             darwin-arm64) BUN_TARGET=bun-darwin-arm64; BUNDLE=knowns-embed-darwin-arm64 ;;
             linux-amd64)  BUN_TARGET=bun-linux-x64; BUNDLE=knowns-embed-linux-x64 ;;
             linux-arm64)  BUN_TARGET=bun-linux-arm64; BUNDLE=knowns-embed-linux-arm64 ;;
-            windows-amd64) BUN_TARGET=bun-windows-x64; BUNDLE=knowns-embed-win-x64 ;;
+            windows-amd64) BUN_TARGET=windows-native; BUNDLE=knowns-embed-win-x64 ;;
             windows-arm64) BUN_TARGET=skip; BUNDLE=skip ;;
             *) echo "Unknown ${GOOS}-${GOARCH}"; exit 1 ;;
           esac
@@ -251,7 +243,7 @@ jobs:
           echo "bundle=${BUNDLE}" >> "$GITHUB_OUTPUT"
 
       - name: Build sidecar bundle
-        if: steps.sidecar.outputs.bun_target != 'skip'
+        if: steps.sidecar.outputs.bun_target != 'skip' && steps.sidecar.outputs.bun_target != 'windows-native'
         env:
           BUN_TARGET: ${{ steps.sidecar.outputs.bun_target }}
         run: |
@@ -259,8 +251,16 @@ jobs:
           bun install --frozen-lockfile
           bun run build.ts "$BUN_TARGET"
 
+      - name: Build Windows native sidecar
+        if: steps.sidecar.outputs.bun_target == 'windows-native'
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          LDFLAGS="-s -w -H windowsgui -X github.com/howznguyen/knowns/internal/util.Version=${VERSION}"
+          go build -ldflags "$LDFLAGS" -o "artifacts/${{ matrix.npm_pkg }}/knowns-embed.exe" ./cmd/knowns-embed
+
       - name: Bundle sidecar into artifact
-        if: steps.sidecar.outputs.bun_target != 'skip'
+        if: steps.sidecar.outputs.bun_target != 'skip' && steps.sidecar.outputs.bun_target != 'windows-native'
         env:
           BUNDLE: ${{ steps.sidecar.outputs.bundle }}
           NPM_PKG: ${{ matrix.npm_pkg }}
@@ -273,7 +273,6 @@ jobs:
           fi
           echo "Bundle contents:"
           ls -la "$BUNDLE_DIR"
-          # Copy every file from bundle dir into the artifact dir
           cp -R "$BUNDLE_DIR"/. "artifacts/${NPM_PKG}/"
           chmod +x "artifacts/${NPM_PKG}/knowns-embed"* 2>/dev/null || true
 
@@ -281,19 +280,36 @@ jobs:
         if: matrix.goos == 'windows' && matrix.goarch == 'amd64'
         shell: pwsh
         run: |
-          $sidecar = "artifacts/${{ matrix.npm_pkg }}/knowns-embed.exe"
+          $sidecar = Resolve-Path "artifacts/${{ matrix.npm_pkg }}/knowns-embed.exe"
           if (-not (Test-Path $sidecar)) {
             throw "Missing sidecar binary: $sidecar"
           }
 
-          $response = '{"jsonrpc":"2.0","id":1,"method":"ping","params":{}}' | & $sidecar 2>&1
-          if ($LASTEXITCODE -ne 0) {
-            throw "knowns-embed.exe exited with code $LASTEXITCODE`n$response"
+          $psi = New-Object System.Diagnostics.ProcessStartInfo
+          $psi.FileName = $sidecar
+          $psi.UseShellExecute = $false
+          $psi.RedirectStandardInput = $true
+          $psi.RedirectStandardOutput = $true
+          $psi.RedirectStandardError = $true
+          $psi.CreateNoWindow = $true
+
+          $proc = New-Object System.Diagnostics.Process
+          $proc.StartInfo = $psi
+          $proc.Start() | Out-Null
+          $proc.StandardInput.WriteLine('{"jsonrpc":"2.0","id":1,"method":"ping","params":{}}')
+          $proc.StandardInput.Close()
+
+          $stdout = $proc.StandardOutput.ReadToEnd()
+          $stderr = $proc.StandardError.ReadToEnd()
+          $proc.WaitForExit()
+
+          if ($proc.ExitCode -ne 0) {
+            throw "knowns-embed.exe exited with code $($proc.ExitCode)`nSTDERR:`n$stderr`nSTDOUT:`n$stdout"
           }
 
-          $jsonLine = $response | Where-Object { $_ -match '^\{.*\}$' } | Select-Object -Last 1
+          $jsonLine = ($stdout -split "`r?`n") | Where-Object { $_ -match '^\{.*\}$' } | Select-Object -Last 1
           if (-not $jsonLine) {
-            throw "knowns-embed.exe did not return a JSON-RPC response`n$response"
+            throw "knowns-embed.exe did not return a JSON-RPC response`nSTDERR:`n$stderr`nSTDOUT:`n$stdout"
           }
 
           $parsed = $jsonLine | ConvertFrom-Json
@@ -345,9 +361,11 @@ jobs:
         run: |
           cp README.md npm/knowns/README.md
 
-          for pkg in npm/knowns-*/; do
+          PLATFORM_PKGS="knowns-darwin-arm64 knowns-darwin-x64 knowns-linux-arm64 knowns-linux-x64 knowns-win-x64"
+
+          for pkg in $PLATFORM_PKGS; do
             (
-              cd "$pkg"
+              cd "npm/$pkg"
               npm version "$VERSION" --no-git-tag-version --allow-same-version
             )
           done
@@ -359,6 +377,10 @@ jobs:
 
           for dir in artifacts/knowns-*/; do
             pkg=$(basename "$dir")
+            case " $PLATFORM_PKGS " in
+              *" $pkg "*) ;;
+              *) continue ;;
+            esac
             mkdir -p "npm/$pkg"
             # Copy every file (main binary + sidecar bundle contents) to npm package dir
             cp -R "$dir"/. "npm/$pkg/"
@@ -390,7 +412,6 @@ jobs:
                 '@knowns/darwin-x64': version,
                 '@knowns/linux-arm64': version,
                 '@knowns/linux-x64': version,
-                '@knowns/win-arm64': version,
                 '@knowns/win-x64': version,
               };
             }
@@ -402,9 +423,10 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          for pkg in npm/knowns-*/; do
+          PLATFORM_PKGS="knowns-darwin-arm64 knowns-darwin-x64 knowns-linux-arm64 knowns-linux-x64 knowns-win-x64"
+          for pkg in $PLATFORM_PKGS; do
             (
-              cd "$pkg"
+              cd "npm/$pkg"
               PKG_NAME=$(node -p "require('./package.json').name")
               PKG_VERSION=$(node -p "require('./package.json').version")
 
@@ -470,7 +492,6 @@ jobs:
             npm/knowns-darwin-x64 \
             npm/knowns-linux-arm64 \
             npm/knowns-linux-x64 \
-            npm/knowns-win-arm64 \
             npm/knowns-win-x64; do
             pkg=$(basename "$pkgdir")
             staging=$(mktemp -d)
@@ -508,12 +529,6 @@ jobs:
             tar -tzf "$archive" | grep -Fx "./knowns.exe" >/dev/null || { echo "$archive missing knowns.exe"; exit 1; }
             tar -tzf "$archive" | grep -Fx "./knowns-embed.exe" >/dev/null || { echo "$archive missing knowns-embed.exe"; exit 1; }
             tar -tzf "$archive" | grep -Fx "./onnxruntime.dll" >/dev/null || { echo "$archive missing onnxruntime.dll"; exit 1; }
-            tar -tzf "$archive" | grep -Fx "./onnxruntime_binding.node" >/dev/null || { echo "$archive missing onnxruntime_binding.node"; exit 1; }
-          done
-
-          for archive in knowns-win-arm64.tar.gz; do
-            tar -tzf "$archive" | grep -Fx "./knowns.exe" >/dev/null || { echo "$archive missing knowns.exe"; exit 1; }
-            echo "Note: $archive does not ship knowns-embed (Bun has no windows-arm64 compile target yet)"
           done
 
       - name: Ensure GitHub release exists
