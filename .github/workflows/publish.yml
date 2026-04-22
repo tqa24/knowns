@@ -240,13 +240,17 @@ jobs:
           echo "bun_target=${BUN_TARGET}" >> "$GITHUB_OUTPUT"
           echo "bundle=${BUNDLE}" >> "$GITHUB_OUTPUT"
 
+      - name: Install sidecar dependencies
+        run: |
+          cd sidecar
+          bun install --frozen-lockfile
+
       - name: Build sidecar bundle
         if: steps.sidecar.outputs.bun_target != 'skip' && steps.sidecar.outputs.bun_target != 'windows-native'
         env:
           BUN_TARGET: ${{ steps.sidecar.outputs.bun_target }}
         run: |
           cd sidecar
-          bun install --frozen-lockfile
           bun run build.ts "$BUN_TARGET"
 
       - name: Build Windows native sidecar
@@ -256,6 +260,14 @@ jobs:
         run: |
           LDFLAGS="-s -w -H windowsgui -X github.com/howznguyen/knowns/internal/util.Version=${VERSION}"
           go build -ldflags "$LDFLAGS" -o "artifacts/${{ matrix.npm_pkg }}/knowns-embed.exe" ./cmd/knowns-embed
+
+          ORT_MOD_DIR=$(go list -m -f '{{.Dir}}' github.com/yalue/onnxruntime_go | tr '\\' '/')
+          ORT_DLL="$ORT_MOD_DIR/test_data/onnxruntime.dll"
+          if [ ! -f "$ORT_DLL" ]; then
+            echo "Missing onnxruntime.dll for onnxruntime_go at $ORT_DLL"
+            exit 1
+          fi
+          cp "$ORT_DLL" "artifacts/${{ matrix.npm_pkg }}/onnxruntime.dll"
 
       - name: Bundle sidecar into artifact
         if: steps.sidecar.outputs.bun_target != 'skip' && steps.sidecar.outputs.bun_target != 'windows-native'
