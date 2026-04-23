@@ -196,7 +196,19 @@ func ensureORTEnvironment() error {
 		ort.SetSharedLibraryPath(lib)
 	} else {
 		libName := ortSharedLibName()
-		fmt.Fprintf(os.Stderr, "warning: bundled %s not found next to executable, sibling lib dirs, or ~/.knowns/bin; falling back to system search which may load an incompatible version\n", libName)
+		// Check if a library file exists but was skipped due to arch mismatch.
+		archMismatch := false
+		if home, err := os.UserHomeDir(); err == nil {
+			candidate := filepath.Join(home, ".knowns", "bin", libName)
+			if ortIsFile(candidate) && !ortMatchesArch(candidate) {
+				archMismatch = true
+			}
+		}
+		if archMismatch {
+			fmt.Fprintf(os.Stderr, "warning: %s found but has wrong CPU architecture (expected %s); reinstall knowns for the correct platform or set KNOWNS_ORT_LIB\n", libName, runtime.GOARCH)
+		} else {
+			fmt.Fprintf(os.Stderr, "warning: bundled %s not found next to executable, sibling lib dirs, or ~/.knowns/bin; falling back to system search which may load an incompatible version\n", libName)
+		}
 	}
 	if err := ort.InitializeEnvironment(); err != nil {
 		hint := ""
@@ -230,38 +242,51 @@ func ResolveORTLibraryPath() string {
 
 	name := ortSharedLibName()
 
+	// ortCandidate checks that the file exists and matches the current arch.
+	ortCandidate := func(path string) bool {
+		return ortIsFile(path) && ortMatchesArch(path)
+	}
+
 	if exe, err := os.Executable(); err == nil {
 		if real, err := filepath.EvalSymlinks(exe); err == nil {
 			exe = real
 		}
 		dir := filepath.Dir(exe)
 		candidate := filepath.Join(dir, name)
-		if ortIsFile(candidate) {
+		if ortCandidate(candidate) {
 			return candidate
 		}
 		// Check sibling directories relative to the binary's parent.
 		// Homebrew uses ../libexec, other package managers may use ../lib.
 		for _, sibling := range []string{"libexec", "lib"} {
 			candidate = filepath.Join(dir, "..", sibling, name)
-			if ortIsFile(candidate) {
+			if ortCandidate(candidate) {
 				return candidate
 			}
 		}
 		if runtime.GOOS == "linux" {
 			if matches, _ := filepath.Glob(filepath.Join(dir, "libonnxruntime.so*")); len(matches) > 0 {
-				return matches[0]
+				for _, m := range matches {
+					if ortMatchesArch(m) {
+						return m
+					}
+				}
 			}
 		}
 	}
 
 	if home, err := os.UserHomeDir(); err == nil {
 		candidate := filepath.Join(home, ".knowns", "bin", name)
-		if ortIsFile(candidate) {
+		if ortCandidate(candidate) {
 			return candidate
 		}
 		if runtime.GOOS == "linux" {
 			if matches, _ := filepath.Glob(filepath.Join(home, ".knowns", "bin", "libonnxruntime.so*")); len(matches) > 0 {
-				return matches[0]
+				for _, m := range matches {
+					if ortMatchesArch(m) {
+						return m
+					}
+				}
 			}
 		}
 	}
@@ -453,4 +478,45 @@ func readPadTokenID(modelDir string) (int64, error) {
 func ortIsFile(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
+}
+
+// ortMatchesArch returns true if the shared library at path matches the
+// current process architecture. On Linux it reads the ELF header (first 20
+// bytes) and compares e_machine. On other platforms it always returns true
+// (no cheap pre-check available).
+func ortMatchesArch(path string) bool {
+	if runtime.GOOS != "linux" {
+		return true
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	// ELF header: 0-3 magic, 4 class, 5 data, ..., 18-19 e_machine (LE).
+	var hdr [20]byte
+	if n, err := f.Read(hdr[:]); err != nil || n < 20 {
+		return false
+	}
+	// Verify ELF magic.
+	if hdr[0] != 0x7f || hdr[1] != 'E' || hdr[2] != 'L' || hdr[3] != 'F' {
+		return false
+	}
+	// e_machine at offset 18, little-endian.
+	machine := uint16(hdr[18]) | uint16(hdr[19])<<8
+
+	// Map current GOARCH to expected ELF e_machine.
+	var expected uint16
+	switch runtime.GOARCH {
+	case "amd64":
+		expected = 0x3E // EM_X86_64
+	case "arm64":
+		expected = 0xB7 // EM_AARCH64
+	case "386":
+		expected = 0x03 // EM_386
+	default:
+		return true // unknown arch, skip check
+	}
+	return machine == expected
 }

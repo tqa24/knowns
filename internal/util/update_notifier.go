@@ -166,41 +166,125 @@ func CompareVersions(a, b string) int {
 	return 0
 }
 
-// DetectInstallCmd returns the appropriate upgrade command based on how knowns was installed.
-func DetectInstallCmd() string {
-	exe, _ := os.Executable()
-	exePath := strings.ToLower(exe)
+// InstallMethod describes how knowns was installed.
+type InstallMethod string
 
-	// 1. Homebrew: binary in /homebrew/ or /Cellar/
-	if strings.Contains(exePath, "/homebrew/") || strings.Contains(exePath, "/cellar/") {
-		return "brew upgrade knowns-dev/tap/knowns"
+const (
+	InstallMethodScript  InstallMethod = "script"
+	InstallMethodBrew    InstallMethod = "brew"
+	InstallMethodNPM     InstallMethod = "npm"
+	InstallMethodBun     InstallMethod = "bun"
+	InstallMethodYarn    InstallMethod = "yarn"
+	InstallMethodPNPM    InstallMethod = "pnpm"
+	InstallMethodUnknown InstallMethod = "unknown"
+)
+
+// DetectInstallMethod returns the detected install method and the corresponding
+// upgrade command. It prioritizes runtime detection (binary path, environment)
+// over persisted metadata, so switching install methods (e.g. script → brew)
+// is detected correctly without stale install.json data.
+func DetectInstallMethod() (InstallMethod, string) {
+	// 1. Collect candidate paths: current executable + resolved symlink.
+	candidates := []string{}
+	if exe, err := os.Executable(); err == nil {
+		candidates = append(candidates, exe)
+		if real, err := filepath.EvalSymlinks(exe); err == nil && real != exe {
+			candidates = append(candidates, real)
+		}
+	}
+	// Also check persisted binary path from install.json.
+	meta, _ := LoadInstallMetadata()
+	if meta != nil && meta.BinaryPath != "" {
+		candidates = append(candidates, meta.BinaryPath)
 	}
 
-	// 2. Check npm_config_user_agent (set when running via npx/npm scripts)
+	home, _ := os.UserHomeDir()
+
+	// 2. Detect from binary path (most reliable).
+	// Normalize to forward slashes for consistent matching across platforms.
+	for _, path := range candidates {
+		pathLower := strings.ToLower(filepath.ToSlash(path))
+
+		// Homebrew (macOS/Linux only)
+		if strings.Contains(pathLower, "/homebrew/") || strings.Contains(pathLower, "/cellar/") || strings.Contains(pathLower, "/linuxbrew/") {
+			return InstallMethodBrew, "brew upgrade knowns-dev/tap/knowns"
+		}
+
+		// Package managers from path
+		switch {
+		case strings.Contains(pathLower, "/pnpm/") || strings.Contains(pathLower, "/pnpm-global/") || strings.Contains(pathLower, "\\pnpm\\"):
+			return InstallMethodPNPM, "pnpm add -g knowns"
+		case strings.Contains(pathLower, "/.yarn/") || strings.Contains(pathLower, "/yarn/"):
+			return InstallMethodYarn, "yarn global add knowns"
+		case strings.Contains(pathLower, "/.bun/") || strings.Contains(pathLower, "/bun/"):
+			return InstallMethodBun, "bun add -g knowns"
+		case strings.Contains(pathLower, "/npm/") || strings.Contains(pathLower, "/node_modules/"):
+			return InstallMethodNPM, "npm i -g knowns"
+		}
+
+		// Script install: binary in ~/.knowns/bin/
+		if home != "" {
+			defaultDir := filepath.ToSlash(filepath.Join(home, ".knowns", "bin"))
+			if strings.HasPrefix(pathLower, strings.ToLower(defaultDir)+"/") ||
+				pathLower == strings.ToLower(defaultDir+"/knowns") ||
+				pathLower == strings.ToLower(defaultDir+"/knowns.exe") {
+				return InstallMethodScript, "knowns update"
+			}
+		}
+	}
+
+	// 3. Check npm_config_user_agent (set when running via npx/npm scripts).
 	ua := os.Getenv("npm_config_user_agent")
 	switch {
 	case strings.HasPrefix(ua, "pnpm/"):
-		return "pnpm add -g knowns"
+		return InstallMethodPNPM, "pnpm add -g knowns"
 	case strings.HasPrefix(ua, "yarn/"):
-		return "yarn global add knowns"
+		return InstallMethodYarn, "yarn global add knowns"
 	case strings.HasPrefix(ua, "bun/"):
-		return "bun add -g knowns"
+		return InstallMethodBun, "bun add -g knowns"
 	case strings.HasPrefix(ua, "npm/"):
-		return "npm i -g knowns"
+		return InstallMethodNPM, "npm i -g knowns"
 	}
 
-	// 3. Detect from binary path (for global installs where env var is gone)
-	switch {
-	case strings.Contains(exePath, "/pnpm/") || strings.Contains(exePath, "/pnpm-global/"):
-		return "pnpm add -g knowns"
-	case strings.Contains(exePath, "/.yarn/") || strings.Contains(exePath, "/yarn/"):
-		return "yarn global add knowns"
-	case strings.Contains(exePath, "/.bun/") || strings.Contains(exePath, "/bun/"):
-		return "bun add -g knowns"
-	case strings.Contains(exePath, "/npm/") || strings.Contains(exePath, "/node_modules/"):
-		return "npm i -g knowns"
+	// 4. Fallback to persisted metadata (only if runtime detection found nothing).
+	if meta != nil {
+		if meta.ManagedBy != "" {
+			switch {
+			case meta.IsScriptManaged():
+				return InstallMethodScript, "knowns update"
+			case strings.Contains(meta.ManagedBy, "brew"):
+				return InstallMethodBrew, "brew upgrade knowns-dev/tap/knowns"
+			case strings.Contains(meta.ManagedBy, "bun"):
+				return InstallMethodBun, "bun add -g knowns"
+			case strings.Contains(meta.ManagedBy, "pnpm"):
+				return InstallMethodPNPM, "pnpm add -g knowns"
+			case strings.Contains(meta.ManagedBy, "yarn"):
+				return InstallMethodYarn, "yarn global add knowns"
+			case strings.Contains(meta.ManagedBy, "npm"):
+				return InstallMethodNPM, "npm i -g knowns"
+			}
+		}
+		if meta.Method == "script" {
+			return InstallMethodScript, "knowns update"
+		}
 	}
 
-	// 4. Default to npm
-	return "npm i -g knowns"
+	// 5. Last resort: check if install.json exists at all.
+	if home != "" {
+		installJSON := filepath.Join(home, ".knowns", "install.json")
+		if _, err := os.Stat(installJSON); err == nil {
+			return InstallMethodScript, "knowns update"
+		}
+	}
+
+	return InstallMethodUnknown, ""
+}
+
+// DetectInstallCmd returns the appropriate upgrade command based on how knowns was installed.
+func DetectInstallCmd() string {
+	_, cmd := DetectInstallMethod()
+	if cmd == "" {
+		return "npm i -g knowns"
+	}
+	return cmd
 }

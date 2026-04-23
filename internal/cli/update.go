@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/howznguyen/knowns/internal/runtimequeue"
 	"github.com/howznguyen/knowns/internal/util"
 	"github.com/spf13/cobra"
@@ -88,14 +90,55 @@ func runUpgrade() error {
 	if meta == nil {
 		meta = inferScriptInstallMetadata()
 	}
-	if meta != nil && meta.IsScriptManaged() {
+
+	method, installCmd := util.DetectInstallMethod()
+
+	// If we detected a method and running interactively, confirm with user.
+	if method != util.InstallMethodUnknown && isTTY() {
+		label := installMethodLabel(method)
+		fmt.Printf("  %s Detected install method: %s\n", StyleInfo.Render("ℹ"), StyleBold.Render(label))
+		yes, cancelled := confirmPrompt("  Proceed with this method?")
+		if cancelled {
+			return errUpdateCancelled
+		}
+		if !yes {
+			var err error
+			method, installCmd, err = promptInstallMethod()
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	// If still unknown, prompt user to choose.
+	if method == util.InstallMethodUnknown {
+		if !isTTY() {
+			return fmt.Errorf("could not detect how knowns was installed; reinstall using one of:\n  %s\n  brew install knowns-dev/tap/knowns\n  npm i -g knowns\n  bun add -g knowns", scriptInstallCmd())
+		}
+		fmt.Printf("  %s Could not detect install method.\n", StyleWarning.Render("⚠"))
+		var err error
+		method, installCmd, err = promptInstallMethod()
+		if err != nil {
+			return err
+		}
+	}
+
+	// Script-managed: self-update binary + ORT lib from GitHub release tarball.
+	if method == util.InstallMethodScript {
+		if meta == nil {
+			meta = &util.InstallMetadata{}
+		}
+		meta.Method = "script"
+		meta.ManagedBy = "knowns-script"
 		return runScriptManagedUpgrade(meta)
 	}
 
-	installCmd := util.DetectInstallCmd()
-	if isHomebrewInstallCommand(installCmd) {
+	// Homebrew: delegate to brew.
+	if method == util.InstallMethodBrew {
 		return runHomebrewUpgrade(installCmd)
 	}
+
+	// Package manager (npm/bun/pnpm/yarn): run the upgrade command.
 	fmt.Printf("%s Running: %s\n", StyleBold.Render("Upgrading..."), StyleInfo.Render(installCmd))
 
 	parts := strings.Fields(installCmd)
@@ -117,20 +160,232 @@ func runUpgrade() error {
 		return fmt.Errorf("upgrade failed: %w", err)
 	}
 
+	// Persist install method for future updates.
+	if meta == nil {
+		meta = &util.InstallMetadata{}
+	}
+	meta.Method = string(method)
+	meta.ManagedBy = string(method)
+	meta.Version = strings.TrimPrefix(util.NormalizeVersionTag(util.FetchLatestVersion()), "v")
+	_ = util.SaveInstallMetadata(meta)
+
 	fmt.Println(StyleSuccess.Render("✓") + " Upgrade complete.")
 	return nil
 }
 
+// confirmPrompt asks a yes/no question using bubbletea.
+// Returns (yes, cancelled). cancelled=true means Ctrl+C or Esc.
+func confirmPrompt(question string) (bool, bool) {
+	if !isTTY() {
+		return true, false
+	}
+	drainStdin()
+	m := &confirmModel{question: question, yes: true}
+	p := tea.NewProgram(m, tea.WithInput(os.Stdin))
+	result, err := p.Run()
+	if err != nil {
+		return false, true
+	}
+	cm := result.(*confirmModel)
+	return cm.yes, cm.cancelled
+}
+
+type confirmModel struct {
+	question  string
+	yes       bool
+	done      bool
+	cancelled bool
+}
+
+func (m *confirmModel) Init() tea.Cmd { return nil }
+
+func (m *confirmModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.done {
+		return m, tea.Quit
+	}
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "y", "Y", "enter":
+			m.yes = true
+			m.done = true
+			return m, tea.Quit
+		case "n", "N":
+			m.yes = false
+			m.done = true
+			return m, tea.Quit
+		case "ctrl+c", "esc":
+			m.cancelled = true
+			m.done = true
+			return m, tea.Quit
+		}
+	}
+	return m, nil
+}
+
+func (m *confirmModel) View() tea.View {
+	if m.done {
+		if m.cancelled {
+			return tea.NewView(fmt.Sprintf("%s %s\n", m.question, StyleWarning.Render("Cancelled")))
+		}
+		choice := StyleSuccess.Render("Yes")
+		if !m.yes {
+			choice = StyleWarning.Render("No")
+		}
+		return tea.NewView(fmt.Sprintf("%s %s\n", m.question, choice))
+	}
+	return tea.NewView(fmt.Sprintf("%s %s ", m.question, StyleDim.Render("[Y/n]")))
+}
+
+// errUpdateCancelled is returned when the user cancels the update.
+var errUpdateCancelled = fmt.Errorf("update cancelled")
+
+// promptInstallMethod shows a selectable list using bubbletea.
+// Returns InstallMethodUnknown if the user cancels.
+func promptInstallMethod() (util.InstallMethod, string, error) {
+	if !isTTY() {
+		return util.InstallMethodScript, "knowns update", nil
+	}
+	drainStdin()
+	options := []installOption{
+		{util.InstallMethodScript, "Install script", scriptInstallCmd()},
+		{util.InstallMethodBrew, "Homebrew", "brew upgrade knowns-dev/tap/knowns"},
+		{util.InstallMethodNPM, "npm", "npm i -g knowns"},
+		{util.InstallMethodBun, "bun", "bun add -g knowns"},
+		{util.InstallMethodPNPM, "pnpm", "pnpm add -g knowns"},
+		{util.InstallMethodYarn, "yarn", "yarn global add knowns"},
+	}
+	m := &selectModel{options: options}
+	p := tea.NewProgram(m, tea.WithInput(os.Stdin))
+	result, err := p.Run()
+	if err != nil {
+		return util.InstallMethodUnknown, "", errUpdateCancelled
+	}
+	sm := result.(*selectModel)
+	if sm.cancelled {
+		return util.InstallMethodUnknown, "", errUpdateCancelled
+	}
+	chosen := sm.options[sm.cursor]
+	return chosen.method, chosen.cmd, nil
+}
+
+type installOption struct {
+	method util.InstallMethod
+	label  string
+	cmd    string
+}
+
+type selectModel struct {
+	options   []installOption
+	cursor    int
+	done      bool
+	cancelled bool
+}
+
+func (m *selectModel) Init() tea.Cmd { return nil }
+
+func (m *selectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.done {
+		return m, tea.Quit
+	}
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "up", "k":
+			if m.cursor > 0 {
+				m.cursor--
+			}
+		case "down", "j":
+			if m.cursor < len(m.options)-1 {
+				m.cursor++
+			}
+		case "enter":
+			m.done = true
+			return m, tea.Quit
+		case "ctrl+c", "esc":
+			m.cancelled = true
+			m.done = true
+			return m, tea.Quit
+		case "1", "2", "3", "4", "5", "6":
+			idx := int(msg.String()[0] - '1')
+			if idx >= 0 && idx < len(m.options) {
+				m.cursor = idx
+				m.done = true
+				return m, tea.Quit
+			}
+		}
+	}
+	return m, nil
+}
+
+func (m *selectModel) View() tea.View {
+	if m.done {
+		if m.cancelled {
+			return tea.NewView(fmt.Sprintf("  %s\n", StyleWarning.Render("Cancelled")))
+		}
+		chosen := m.options[m.cursor]
+		return tea.NewView(fmt.Sprintf("  %s %s %s\n",
+			StyleSuccess.Render("✓"),
+			StyleBold.Render(chosen.label),
+			StyleDim.Render("("+chosen.cmd+")"),
+		))
+	}
+	var b strings.Builder
+	b.WriteString("\n  Choose your install method:\n\n")
+	for i, opt := range m.options {
+		cursor := "  "
+		label := opt.label
+		if i == m.cursor {
+			cursor = StyleBold.Render("▸ ")
+			label = StyleBold.Render(opt.label)
+		}
+		b.WriteString(fmt.Sprintf("  %s%s %s\n",
+			cursor,
+			label,
+			StyleDim.Render("("+opt.cmd+")"),
+		))
+	}
+	b.WriteString(fmt.Sprintf("\n  %s\n", StyleDim.Render("↑/↓ to move, enter to select, 1-6 to jump")))
+	return tea.NewView(b.String())
+}
+
+// installMethodLabel returns a human-readable label for an install method.
+func installMethodLabel(method util.InstallMethod) string {
+	switch method {
+	case util.InstallMethodScript:
+		return "Install script"
+	case util.InstallMethodBrew:
+		return "Homebrew"
+	case util.InstallMethodNPM:
+		return "npm"
+	case util.InstallMethodBun:
+		return "bun"
+	case util.InstallMethodPNPM:
+		return "pnpm"
+	case util.InstallMethodYarn:
+		return "yarn"
+	default:
+		return "unknown"
+	}
+}
+
+// scriptInstallCmd returns the install script command for the current platform.
+func scriptInstallCmd() string {
+	if runtime.GOOS == "windows" {
+		return "irm https://knowns.sh/script/install.ps1 | iex"
+	}
+	return "curl -fsSL https://knowns.sh/script/install | sh"
+}
+
 func recommendedUpdateCommand() string {
-	meta, err := util.LoadInstallMetadata()
-	if err == nil && meta != nil && meta.IsScriptManaged() {
-		return "knowns update"
+	method, cmd := util.DetectInstallMethod()
+	if method == util.InstallMethodBrew {
+		return "brew update && HOMEBREW_NO_AUTO_UPDATE=1 " + cmd
 	}
-	installCmd := util.DetectInstallCmd()
-	if isHomebrewInstallCommand(installCmd) {
-		return "brew update && HOMEBREW_NO_AUTO_UPDATE=1 " + installCmd
+	if cmd != "" {
+		return cmd
 	}
-	return installCmd
+	return "knowns update"
 }
 
 func isHomebrewInstallCommand(cmd string) bool {
@@ -193,7 +448,7 @@ func runScriptManagedUpgrade(meta *util.InstallMetadata) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%s Running: %s\n", StyleBold.Render("Upgrading..."), StyleInfo.Render(url))
+	fmt.Printf("%s %s\n", StyleBold.Render("Upgrading..."), StyleInfo.Render(scriptInstallCmd()))
 	if err := downloadAndReplaceBinary(url, binaryPath); err != nil {
 		return err
 	}
@@ -321,6 +576,30 @@ func downloadAndReplaceBinary(url, binaryPath string) error {
 	if err := replaceBinary(extractedPath, binaryPath); err != nil {
 		return fmt.Errorf("replace binary: %w", err)
 	}
+
+	// Also install colocated ONNX Runtime native libraries from the tarball.
+	destDir := filepath.Dir(binaryPath)
+	entries, _ := os.ReadDir(tmpDir)
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() {
+			continue
+		}
+		isORT := strings.HasPrefix(name, "libonnxruntime") || name == "onnxruntime.dll"
+		if !isORT {
+			continue
+		}
+		src := filepath.Join(tmpDir, name)
+		dst := filepath.Join(destDir, name)
+		data, err := os.ReadFile(src)
+		if err != nil {
+			continue
+		}
+		if err := os.WriteFile(dst, data, 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to update %s: %v\n", name, err)
+		}
+	}
+
 	return nil
 }
 

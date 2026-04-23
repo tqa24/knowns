@@ -94,6 +94,19 @@ jobs:
             exit 1
           fi
 
+      - name: Download ONNX Runtime for tests
+        env:
+          ORT_VERSION: "1.25.0"
+        run: |
+          BASE_URL="https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}"
+          ARCHIVE="onnxruntime-linux-x64-${ORT_VERSION}.tgz"
+          curl -L --retry 5 --retry-delay 5 -o "/tmp/${ARCHIVE}" "${BASE_URL}/${ARCHIVE}"
+          tar -xzf "/tmp/${ARCHIVE}" -C /tmp
+          mkdir -p ./bin
+          cp "/tmp/onnxruntime-linux-x64-${ORT_VERSION}/lib/libonnxruntime.so.${ORT_VERSION}" ./bin/libonnxruntime.so
+          echo "KNOWNS_ORT_LIB=$(pwd)/bin/libonnxruntime.so" >> "$GITHUB_ENV"
+          echo "✓ ONNX Runtime ${ORT_VERSION} installed for tests"
+
       - name: Run Go tests
         run: go test -v -race ./...
 
@@ -220,82 +233,44 @@ jobs:
 
       - name: Bundle ONNX Runtime native library
         env:
-          # onnxruntime_go v1.27.0 bundles onnxruntime 1.25.0 shared libs,
-          # but only for arm64 (Linux/macOS) and x64 (Windows).
-          # For x64 Linux/macOS we download from the official releases.
           ORT_VERSION: "1.25.0"
         run: |
-          ORT_MOD_DIR=$(go list -m -f '{{.Dir}}' github.com/yalue/onnxruntime_go | tr '\\' '/')
           ARTIFACT_DIR="artifacts/${{ matrix.npm_pkg }}"
-          FOUND=""
+          BASE_URL="https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}"
 
-          echo "=== Bundling ONNX Runtime for ${{ matrix.goos }}/${{ matrix.goarch }} ==="
+          echo "=== Bundling ONNX Runtime ${ORT_VERSION} for ${{ matrix.goos }}/${{ matrix.goarch }} ==="
 
-          # --- Try Go module test_data first (arm64 libs + Windows dll) ---
-          if [ "${{ matrix.goos }}" = "linux" ]; then
-            for candidate in \
-              "${ORT_MOD_DIR}/test_data/onnxruntime_arm64.so" \
-              "${ORT_MOD_DIR}/test_data/libonnxruntime_arm64.so" \
-              "${ORT_MOD_DIR}/test_data/libonnxruntime.so" \
-              "${ORT_MOD_DIR}/test_data/onnxruntime.so"; do
-              if [ -f "$candidate" ]; then
-                cp "$candidate" "${ARTIFACT_DIR}/libonnxruntime.so"
-                echo "Copied $(basename "$candidate") -> libonnxruntime.so"
-                FOUND=1
-                break
-              fi
-            done
-          elif [ "${{ matrix.goos }}" = "darwin" ]; then
-            for candidate in \
-              "${ORT_MOD_DIR}/test_data/onnxruntime_arm64.dylib" \
-              "${ORT_MOD_DIR}/test_data/libonnxruntime_arm64.dylib" \
-              "${ORT_MOD_DIR}/test_data/onnxruntime.dylib" \
-              "${ORT_MOD_DIR}/test_data/libonnxruntime.dylib"; do
-              if [ -f "$candidate" ]; then
-                cp "$candidate" "${ARTIFACT_DIR}/libonnxruntime.dylib"
-                echo "Copied $(basename "$candidate") -> libonnxruntime.dylib"
-                FOUND=1
-                break
-              fi
-            done
-          elif [ "${{ matrix.goos }}" = "windows" ]; then
-            if [ -f "${ORT_MOD_DIR}/test_data/onnxruntime.dll" ]; then
-              cp "${ORT_MOD_DIR}/test_data/onnxruntime.dll" "${ARTIFACT_DIR}/onnxruntime.dll"
-              echo "Copied onnxruntime.dll from Go module"
-              FOUND=1
-            fi
-          fi
+          if [ "${{ matrix.goos }}" = "linux" ] && [ "${{ matrix.goarch }}" = "amd64" ]; then
+            ARCHIVE="onnxruntime-linux-x64-${ORT_VERSION}.tgz"
+            curl -L --retry 5 --retry-delay 5 -o "$ARCHIVE" "${BASE_URL}/${ARCHIVE}"
+            tar -xzf "$ARCHIVE"
+            cp "onnxruntime-linux-x64-${ORT_VERSION}/lib/libonnxruntime.so.${ORT_VERSION}" "${ARTIFACT_DIR}/libonnxruntime.so"
+            echo "Downloaded libonnxruntime.so (${ORT_VERSION}) for linux/amd64"
 
-          # --- Fallback: download from official ONNX Runtime releases ---
-          if [ -z "$FOUND" ]; then
-            echo "Library not found in Go module, downloading onnxruntime ${ORT_VERSION} from GitHub..."
-            BASE_URL="https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}"
+          elif [ "${{ matrix.goos }}" = "linux" ] && [ "${{ matrix.goarch }}" = "arm64" ]; then
+            ARCHIVE="onnxruntime-linux-aarch64-${ORT_VERSION}.tgz"
+            curl -L --retry 5 --retry-delay 5 -o "$ARCHIVE" "${BASE_URL}/${ARCHIVE}"
+            tar -xzf "$ARCHIVE"
+            cp "onnxruntime-linux-aarch64-${ORT_VERSION}/lib/libonnxruntime.so.${ORT_VERSION}" "${ARTIFACT_DIR}/libonnxruntime.so"
+            echo "Downloaded libonnxruntime.so (${ORT_VERSION}) for linux/arm64"
 
-            if [ "${{ matrix.goos }}" = "linux" ] && [ "${{ matrix.goarch }}" = "amd64" ]; then
-              ARCHIVE="onnxruntime-linux-x64-${ORT_VERSION}.tgz"
-              curl -L --retry 5 --retry-delay 5 -o "$ARCHIVE" "${BASE_URL}/${ARCHIVE}"
-              tar -xzf "$ARCHIVE"
-              cp "onnxruntime-linux-x64-${ORT_VERSION}/lib/libonnxruntime.so.${ORT_VERSION}" "${ARTIFACT_DIR}/libonnxruntime.so"
-              echo "Downloaded and copied libonnxruntime.so (${ORT_VERSION}) for linux/amd64"
+          elif [ "${{ matrix.goos }}" = "darwin" ] && [ "${{ matrix.goarch }}" = "arm64" ]; then
+            ARCHIVE="onnxruntime-osx-arm64-${ORT_VERSION}.tgz"
+            curl -L --retry 5 --retry-delay 5 -o "$ARCHIVE" "${BASE_URL}/${ARCHIVE}"
+            tar -xzf "$ARCHIVE"
+            cp "onnxruntime-osx-arm64-${ORT_VERSION}/lib/libonnxruntime.${ORT_VERSION}.dylib" "${ARTIFACT_DIR}/libonnxruntime.dylib"
+            echo "Downloaded libonnxruntime.dylib (${ORT_VERSION}) for darwin/arm64"
 
-            elif [ "${{ matrix.goos }}" = "linux" ] && [ "${{ matrix.goarch }}" = "arm64" ]; then
-              ARCHIVE="onnxruntime-linux-aarch64-${ORT_VERSION}.tgz"
-              curl -L --retry 5 --retry-delay 5 -o "$ARCHIVE" "${BASE_URL}/${ARCHIVE}"
-              tar -xzf "$ARCHIVE"
-              cp "onnxruntime-linux-aarch64-${ORT_VERSION}/lib/libonnxruntime.so.${ORT_VERSION}" "${ARTIFACT_DIR}/libonnxruntime.so"
-              echo "Downloaded and copied libonnxruntime.so (${ORT_VERSION}) for linux/arm64"
+          elif [ "${{ matrix.goos }}" = "windows" ] && [ "${{ matrix.goarch }}" = "amd64" ]; then
+            ARCHIVE="onnxruntime-win-x64-${ORT_VERSION}.zip"
+            curl -L --retry 5 --retry-delay 5 -o "$ARCHIVE" "${BASE_URL}/${ARCHIVE}"
+            unzip -q "$ARCHIVE"
+            cp "onnxruntime-win-x64-${ORT_VERSION}/lib/onnxruntime.dll" "${ARTIFACT_DIR}/onnxruntime.dll"
+            echo "Downloaded onnxruntime.dll (${ORT_VERSION}) for windows/amd64"
 
-            elif [ "${{ matrix.goos }}" = "darwin" ] && [ "${{ matrix.goarch }}" = "arm64" ]; then
-              ARCHIVE="onnxruntime-osx-arm64-${ORT_VERSION}.tgz"
-              curl -L --retry 5 --retry-delay 5 -o "$ARCHIVE" "${BASE_URL}/${ARCHIVE}"
-              tar -xzf "$ARCHIVE"
-              cp "onnxruntime-osx-arm64-${ORT_VERSION}/lib/libonnxruntime.${ORT_VERSION}.dylib" "${ARTIFACT_DIR}/libonnxruntime.dylib"
-              echo "Downloaded and copied libonnxruntime.dylib (${ORT_VERSION}) for darwin/arm64"
-
-            else
-              echo "FATAL: No download strategy for ${{ matrix.goos }}/${{ matrix.goarch }}"
-              exit 1
-            fi
+          else
+            echo "FATAL: No download strategy for ${{ matrix.goos }}/${{ matrix.goarch }}"
+            exit 1
           fi
 
           # Verify the native lib was bundled
@@ -556,6 +531,26 @@ jobs:
             tar -tzf "$archive" | grep -Fx "./knowns.exe" >/dev/null || { echo "$archive missing knowns.exe"; exit 1; }
             tar -tzf "$archive" | grep -Fx "./onnxruntime.dll" >/dev/null || { echo "$archive missing onnxruntime.dll"; exit 1; }
           done
+
+          # Verify ELF architecture matches package platform.
+          # e_machine at ELF offset 18: 0x3E = x86_64, 0xB7 = aarch64.
+          verify_elf_arch() {
+            local archive="$1" file="$2" expected_hex="$3" label="$4"
+            tmpdir=$(mktemp -d)
+            tar -xzf "$archive" -C "$tmpdir"
+            machine=$(od -An -tx1 -j18 -N2 "$tmpdir/$file" | tr -d ' ')
+            rm -rf "$tmpdir"
+            if [ "$machine" != "$expected_hex" ]; then
+              echo "FATAL: $archive contains $file with wrong ELF arch (got $machine, expected $expected_hex for $label)"
+              exit 1
+            fi
+            echo "✓ $archive $file arch=$label"
+          }
+
+          verify_elf_arch knowns-linux-x64.tar.gz  ./libonnxruntime.so "3e00" "x86_64"
+          verify_elf_arch knowns-linux-arm64.tar.gz ./libonnxruntime.so "b700" "aarch64"
+          verify_elf_arch knowns-linux-x64.tar.gz   ./knowns            "3e00" "x86_64"
+          verify_elf_arch knowns-linux-arm64.tar.gz  ./knowns            "b700" "aarch64"
 
       - name: Ensure GitHub release exists
         if: github.event_name == 'release'
