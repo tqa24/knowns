@@ -245,6 +245,11 @@ func (ds *DocStore) RewriteDocReferences(oldPath, newPath string, taskStore *Tas
 		}
 		for _, task := range tasks {
 			updated := false
+			// Rewrite the spec field if it matches the old doc path.
+			if task.Spec == oldPath {
+				task.Spec = newPath
+				updated = true
+			}
 			description := references.RewriteDocPath(task.Description, oldPath, newPath)
 			if description != task.Description {
 				task.Description = description

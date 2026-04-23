@@ -936,8 +936,12 @@ func createInstructionFiles(projectRoot string, force bool) {
 
 func writeInstructionFile(projectRoot, relativePath, platform string, force bool) error {
 	filePath := filepath.Join(projectRoot, relativePath)
-	if _, err := os.Stat(filePath); err == nil && !force {
-		return nil
+	fileExists := false
+	if _, err := os.Stat(filePath); err == nil {
+		fileExists = true
+		if !force {
+			return nil
+		}
 	}
 
 	if dir := filepath.Dir(filePath); dir != projectRoot {
@@ -947,6 +951,13 @@ func writeInstructionFile(projectRoot, relativePath, platform string, force bool
 	}
 
 	content := generateInstructionContent(relativePath, platform, projectRoot)
+
+	// For compatibility shim files that already exist, preserve user content
+	// outside the managed marker block.
+	if fileExists && relativePath != canonicalInstructionFile {
+		return syncInstructionMarkerBlock(filePath, content)
+	}
+
 	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
 		return fmt.Errorf("could not create %s: %w", relativePath, err)
 	}
@@ -993,6 +1004,7 @@ func renderCanonicalInstructionContent() string {
 	sb.WriteString("- If a shim file and `KNOWNS.md` differ, treat `KNOWNS.md` as correct.\n\n")
 	sb.WriteString("## TL;DR\n\n")
 	sb.WriteString("- Read `KNOWNS.md` first.\n")
+	sb.WriteString("- Call MCP `status` (or `knowns status --json`) at session start to check project readiness, available capabilities, and knowledge counts.\n")
 	sb.WriteString("- Use Knowns as the memory layer for humans and the AI-friendly working layer for agents.\n")
 	sb.WriteString("- Search before reading; read only the sections and docs relevant to the current task.\n")
 	sb.WriteString("- Never manually edit Knowns-managed task or doc markdown.\n")
@@ -1015,6 +1027,7 @@ func renderCanonicalInstructionContent() string {
 	sb.WriteString("- For ambiguous requests, search the repo and related docs before asking the user.\n")
 	sb.WriteString("- Do not assume the entire file is present in context; retrieve the needed sections when required.\n\n")
 	sb.WriteString("## Tool Selection\n\n")
+	sb.WriteString("- Use MCP `status` at session start to check project readiness and available capabilities before acting.\n")
 	sb.WriteString("- Use Knowns MCP tools first for tasks, docs, templates, validation, and time tracking.\n")
 	sb.WriteString("- Use file reading and search tools for local code and text inspection.\n")
 	sb.WriteString("- Use shell commands for git, tests, builds, generators, and other terminal operations.\n")
@@ -1033,15 +1046,13 @@ func renderCanonicalInstructionContent() string {
 	sb.WriteString("- `apply_patch`: make small, explicit file edits.\n")
 	sb.WriteString("- `task`: delegate large research or multi-step exploration when useful.\n\n")
 	sb.WriteString("## Memory Usage\n\n")
-	sb.WriteString("- Session start: `list_memories(layer=\"project\")` to load accumulated project knowledge.\n")
-	sb.WriteString("- During work: `add_working_memory()` for ephemeral session-scoped cache (gone when session ends).\n")
-	sb.WriteString("- After task: `add_memory()` for reusable patterns, decisions, and conventions (alongside docs).\n")
-	sb.WriteString("- Cross-project: `promote_memory()` to move project knowledge to global (`project→global`).\n")
+	sb.WriteString("- Session start: `memory({ action: \"list\", layer: \"project\" })` to load accumulated project knowledge.\n")
+	sb.WriteString("- After task: `memory({ action: \"add\" })` for reusable patterns, decisions, and conventions (alongside docs).\n")
+	sb.WriteString("- Cross-project: `memory({ action: \"promote\" })` to move project knowledge to global (`project→global`).\n")
 	sb.WriteString("- Memory complements docs: memory is for fast agent recall, docs are for structured human-readable reference.\n")
 	sb.WriteString("- Never duplicate the full doc content into memory — store a summary and reference the doc with `@doc/<path>`.\n")
-	sb.WriteString("- During any skill: if you discover a reusable pattern, decision, convention, or failure, save it with `add_memory(layer=\"project\")`. Capture knowledge as it emerges, don't wait for extraction.\n")
+	sb.WriteString("- During any skill: if you discover a reusable pattern, decision, convention, or failure, save it with `memory({ action: \"add\", layer: \"project\" })`. Capture knowledge as it emerges, don't wait for extraction.\n")
 	sb.WriteString("- Proactively save durable memory without waiting for the user to say \"save this\" when confidence is high.\n")
-	sb.WriteString("- Use `working` for session-only context, active investigations, temporary blockers, and other short-lived facts.\n")
 	sb.WriteString("- Use `project` for repo-specific rules, architecture decisions, conventions, recurring failure patterns, and implementation constraints.\n")
 	sb.WriteString("- Use `global` for stable user preferences or workflow rules that should carry across repositories and future sessions.\n")
 	sb.WriteString("- Ask the user only when the information appears durable but the correct scope (`working`, `project`, or `global`) is genuinely ambiguous.\n")
@@ -1138,10 +1149,10 @@ func renderCompatibilityInstructionContent(relativePath, platform, projectRoot s
 	sb.WriteString("- Never manually edit Knowns-managed task or doc markdown.\n")
 	sb.WriteString("- Search first, then read only relevant docs and code.\n")
 	sb.WriteString("- Use `search` for discovery; use MCP `retrieve` tool when a workflow needs structured context with citations. Fall back to CLI `knowns retrieve` if MCP is unavailable.\n")
-	sb.WriteString("- For code context retrieval, prefer MCP tools over CLI: use `code_search` first, then `code_symbols`, then `code_deps`. Treat CLI `knowns code ...` as fallback for manual inspection or debugging.\n")
+	sb.WriteString("- For code context retrieval, prefer MCP tools over CLI: use `code({ action: \"search\" })` first, then `code({ action: \"symbols\" })`, then `code({ action: \"deps\" })`. Treat CLI `knowns code ...` as fallback for manual inspection or debugging.\n")
 	sb.WriteString("- Plan before implementation unless the user explicitly overrides that workflow.\n")
 	sb.WriteString("- Validate before considering work complete.\n")
-	sb.WriteString("- Use memory tools: `list_memories` at session start, `add_memory` after tasks for reusable knowledge, `add_working_memory` for session cache.\n")
+	sb.WriteString("- Use memory tools: `memory({ action: \"list\" })` at session start, `memory({ action: \"add\" })` after tasks for reusable knowledge.\n")
 	sb.WriteString("- Proactively capture durable memory based on `KNOWNS.md` memory rules; do not wait for an explicit user instruction to save memory when scope and durability are clear.\n\n")
 	sb.WriteString("## Quick Reference\n\n")
 	sb.WriteString("```bash\n")

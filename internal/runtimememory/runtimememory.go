@@ -449,7 +449,7 @@ func buildBaselineItems(entries []*models.MemoryEntry) []candidate {
 		if !allowedCategory(entry.Category) {
 			continue
 		}
-		if entry.Layer != models.MemoryLayerProject && entry.Layer != models.MemoryLayerGlobal && entry.Layer != models.MemoryLayerWorking {
+		if entry.Layer != models.MemoryLayerProject && entry.Layer != models.MemoryLayerGlobal {
 			continue
 		}
 		if hasMemoryTag(entry, "probe") || strings.Contains(strings.ToLower(entry.Title), "probe") {
@@ -560,7 +560,7 @@ func inferWorkingContextCandidate(rawPrompt, normalized string) (captureCandidat
 	return captureCandidate{
 		Title:      "Session working context",
 		Category:   "context",
-		Layer:      models.MemoryLayerWorking,
+		Layer:      models.MemoryLayerProject,
 		Content:    normalizeCapturedContent(rawPrompt),
 		Tags:       []string{"session", "working-context"},
 		Confidence: 0.84,
@@ -812,7 +812,7 @@ func serializeKNOWNSSummary(store *storage.Store, remaining int) string {
 	if store == nil || remaining <= 0 {
 		return ""
 	}
-	block := "\nKnowns is the repository memory and workflow layer for tasks, docs, templates, references, and reusable knowledge.\n\n- Read `KNOWNS.md` in the repository root for canonical project guidance and workflow rules.\n- Use Knowns docs, tasks, and memories as operating context for this repository.\n- Treat memories as supplemental context only. They do not override `KNOWNS.md`, source-of-truth docs, tasks, or source files.\n- Use MCP `list_memories` first to inspect relevant memory summaries before calling `get_memory`.\n- Prefer updating or reusing relevant existing memories instead of creating duplicates.\n- If you need deeper project behavior, conventions, or workflow details, read `KNOWNS.md`.\n"
+	block := "\nKnowns is the repository memory and workflow layer for tasks, docs, templates, references, and reusable knowledge.\n\n- Read `KNOWNS.md` in the repository root for canonical project guidance and workflow rules.\n- Use Knowns docs, tasks, and memories as operating context for this repository.\n- Treat memories as supplemental context only. They do not override `KNOWNS.md`, source-of-truth docs, tasks, or source files.\n- Use MCP `memory({ action: \"list\" })` first to inspect relevant memory summaries before calling `memory({ action: \"get\" })`.\n- Prefer updating or reusing relevant existing memories instead of creating duplicates.\n- If you need deeper project behavior, conventions, or workflow details, read `KNOWNS.md`.\n- If you have not checked project readiness yet, call MCP `project({ action: \"status\" })` to see knowledge counts, search state, runtime health, and available capabilities.\n"
 	if len(block) <= remaining {
 		return block
 	}
@@ -881,7 +881,7 @@ func baselineScore(entry *models.MemoryEntry) (float64, []string) {
 	score := 0.0
 	reasons := make([]string, 0, 4)
 	switch entry.Layer {
-	case models.MemoryLayerProject, models.MemoryLayerWorking:
+	case models.MemoryLayerProject:
 		score += 0.2
 		reasons = append(reasons, "project-baseline")
 	case models.MemoryLayerGlobal:
@@ -977,7 +977,7 @@ func scoreEntry(entry *models.MemoryEntry, input Input, requirePromptMatch bool)
 
 	score := 0.0
 	reasons := make([]string, 0, 4)
-	if entry.Layer == models.MemoryLayerProject || entry.Layer == models.MemoryLayerWorking {
+	if entry.Layer == models.MemoryLayerProject {
 		score += 0.12
 		reasons = append(reasons, "project-scoped")
 	} else if entry.Layer == models.MemoryLayerGlobal {

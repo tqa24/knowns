@@ -370,28 +370,6 @@ var memoryDemoteCmd = &cobra.Command{
 	},
 }
 
-// --- memory clean ---
-
-var memoryCleanCmd = &cobra.Command{
-	Use:   "clean",
-	Short: "Remove all working memory temp files",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		store := getStore()
-
-		count, err := store.Memory.Clean()
-		if err != nil {
-			return fmt.Errorf("clean working memory: %w", err)
-		}
-
-		if count == 0 {
-			fmt.Println(StyleDim.Render("No working memory files to clean."))
-		} else {
-			fmt.Println(RenderSuccess(fmt.Sprintf("Cleaned %d working memory file(s).", count)))
-		}
-		return nil
-	},
-}
-
 // ---- render helpers ----
 
 func renderMemoryList(entries []*models.MemoryEntry) string {
@@ -434,8 +412,6 @@ func renderMemoryView(entry *models.MemoryEntry) string {
 
 func layerStyle(layer string) string {
 	switch layer {
-	case models.MemoryLayerWorking:
-		return StyleDim.Render(layer)
 	case models.MemoryLayerProject:
 		return StyleSuccess.Render(layer)
 	case models.MemoryLayerGlobal:
@@ -475,7 +451,6 @@ func init() {
 	memoryCmd.AddCommand(memoryDeleteCmd)
 	memoryCmd.AddCommand(memoryPromoteCmd)
 	memoryCmd.AddCommand(memoryDemoteCmd)
-	memoryCmd.AddCommand(memoryCleanCmd)
 
 	rootCmd.AddCommand(memoryCmd)
 }

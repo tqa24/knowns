@@ -30,12 +30,11 @@ import (
 
 	"github.com/howznguyen/knowns/internal/agents/opencode"
 	"github.com/howznguyen/knowns/internal/models"
+	serverreadiness "github.com/howznguyen/knowns/internal/readiness"
 	"github.com/howznguyen/knowns/internal/registry"
 	"github.com/howznguyen/knowns/internal/runtimememory"
 	"github.com/howznguyen/knowns/internal/server/routes"
 	"github.com/howznguyen/knowns/internal/storage"
-	"github.com/howznguyen/knowns/internal/util"
-	"github.com/howznguyen/knowns/internal/workingmemory"
 	ui "github.com/howznguyen/knowns/ui"
 	"github.com/rs/cors"
 )
@@ -65,7 +64,6 @@ type Server struct {
 	opencodeProxyMu  sync.RWMutex
 	runtimeStatus    opencode.RuntimeStatus
 	runtimeStatusMu  sync.RWMutex
-	workingMemory    *workingmemory.Store
 	shutdownCh       chan struct{}      // Signals graceful shutdown from /api/shutdown endpoint
 	cancelSSEFwd     context.CancelFunc // Cancels the OpenCode SSE forwarder goroutine
 	cancelRuntimeMon context.CancelFunc
@@ -320,7 +318,6 @@ func NewServer(store *storage.Store, projectRoot string, port int, opts Options)
 		opencodeDaemon:  daemon,
 		runtimeOpenCode: runtimeOpenCode,
 		runtimeStatus:   runtimeStatus,
-		workingMemory:   workingmemory.NewStore(),
 		shutdownCh:      make(chan struct{}, 1),
 	}
 
@@ -632,25 +629,44 @@ func (s *Server) cleanupPortFile() {
 // handleStatus returns whether a project is currently active.
 // GET /api/status
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
-	var projectName, projectPath string
+	var store *storage.Store
 	active := s.store != nil
 	if s.manager != nil {
-		store := s.manager.GetStore()
+		store = s.manager.GetStore()
 		active = store != nil
-		if active {
-			projectPath = filepath.Dir(store.Root)
-			projectName = filepath.Base(projectPath)
-		}
 	} else if s.store != nil {
-		projectPath = filepath.Dir(s.store.Root)
-		projectName = filepath.Base(projectPath)
+		store = s.store
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"active":      active,
-		"projectName": projectName,
-		"projectPath": projectPath,
-		"version":     util.Version,
+
+	if !active || store == nil {
+		writeJSON(w, http.StatusOK, serverreadiness.InactivePayload())
+		return
+	}
+
+	// Build runtime snapshot from cached OpenCode status.
+	var rtStatus *serverreadiness.RuntimeStatus
+	rs := s.runtimeStatusSnapshot()
+	if rs.Configured {
+		state := "stopped"
+		if rs.Ready {
+			state = "healthy"
+		} else if rs.Available {
+			state = "degraded"
+		}
+		rtStatus = &serverreadiness.RuntimeStatus{
+			Enabled:          true,
+			Running:          rs.Available,
+			ConnectedClients: 0, // not tracked at this level yet
+			QueuedJobs:       0,
+			RunningJobs:      0,
+			State:            state,
+		}
+	}
+
+	payload := serverreadiness.BuildReadiness(store, serverreadiness.Options{
+		Runtime: rtStatus,
 	})
+	writeJSON(w, http.StatusOK, payload)
 }
 
 // handleShutdown handles POST /api/shutdown for graceful remote stop.
@@ -714,7 +730,7 @@ func (s *Server) buildRouter() chi.Router {
 
 	// --- API routes ---
 	r.Route("/api", func(r chi.Router) {
-		routes.SetupRoutes(r, s.store, s.sse, s.projectRoot, s.manager, s.workingMemory, s.reinitOpenCode)
+		routes.SetupRoutes(r, s.store, s.sse, s.projectRoot, s.manager, s.reinitOpenCode)
 	})
 
 	// --- Agent status (CLI installation check) ---

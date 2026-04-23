@@ -226,7 +226,24 @@ func PIDFile() string {
 }
 
 func queuePath(storeRoot string) string {
-	return filepath.Join(storeRoot, "runtime", "queue.json")
+	return filepath.Join(RuntimeRoot(), "queues", sanitizeProjectKey(storeRoot)+".json")
+}
+
+// sanitizeProjectKey produces a filesystem-safe key from a project store root.
+// It uses the base directory name plus a short hash to avoid collisions while
+// keeping the filename human-readable.
+func sanitizeProjectKey(storeRoot string) string {
+	clean := filepath.Clean(storeRoot)
+	base := filepath.Base(filepath.Dir(clean)) // parent of .knowns
+	if base == "" || base == "." || base == string(filepath.Separator) {
+		base = "default"
+	}
+	// Short hash to disambiguate projects with the same parent name.
+	h := uint32(0)
+	for _, c := range clean {
+		h = h*31 + uint32(c)
+	}
+	return fmt.Sprintf("%s-%08x", base, h)
 }
 
 func leaseDir() string {

@@ -330,11 +330,12 @@ func (c *MCPClient) Initialize() {
 // SetProject sets the active project directory.
 func (c *MCPClient) SetProject(dir string) {
 	c.t.Helper()
-	result := c.CallTool("set_project", map[string]any{
+	result := c.CallTool("project", map[string]any{
+		"action":      "set",
 		"projectRoot": dir,
 	})
 	if success, ok := result["success"].(bool); !ok || !success {
-		c.t.Fatalf("set_project failed: %v", result)
+		c.t.Fatalf("project set failed: %v", result)
 	}
 }
 

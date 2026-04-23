@@ -16,506 +16,459 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
-// RegisterDocTools registers all documentation-related MCP tools.
-func RegisterDocTools(s *server.MCPServer, getStore func() *storage.Store) {
-	// list_docs
+// RegisterDocTool registers the consolidated documentation MCP tool.
+func RegisterDocTool(s *server.MCPServer, getStore func() *storage.Store) {
 	s.AddTool(
-		mcp.NewTool("list_docs",
-			mcp.WithDescription("List all documentation files with optional tag filter."),
-			mcp.WithString("tag",
-				mcp.Description("Filter by tag"),
+		mcp.NewTool("docs",
+			mcp.WithDescription("Documentation operations. Use 'action' to specify: create, get, update, delete, list, history."),
+			mcp.WithString("action",
+				mcp.Required(),
+				mcp.Description("Action to perform"),
+				mcp.Enum("create", "get", "update", "delete", "list", "history"),
 			),
-		),
-		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			store := getStore()
-			if store == nil {
-				return noProjectError()
-			}
-
-			docs, err := store.Docs.List()
-			if err != nil {
-				return errFailed("list docs", err)
-			}
-
-			args := req.GetArguments()
-			tagFilter, _ := stringArg(args, "tag")
-
-			var filtered []*models.Doc
-			for _, d := range docs {
-				if tagFilter != "" && !containsString(d.Tags, tagFilter) {
-					continue
-				}
-				// Don't include content in the list view.
-				d.Content = ""
-				filtered = append(filtered, d)
-			}
-			if filtered == nil {
-				filtered = []*models.Doc{}
-			}
-
-			out, _ := json.MarshalIndent(filtered, "", "  ")
-			return mcp.NewToolResultText(string(out)), nil
-		},
-	)
-
-	// get_doc
-	s.AddTool(
-		mcp.NewTool("get_doc",
-			mcp.WithDescription("Get a documentation file by path. Smart mode auto-returns full content if small (<=2000 tokens), else returns stats and TOC."),
 			mcp.WithString("path",
-				mcp.Required(),
-				mcp.Description("Document path (e.g., 'readme', 'guides/setup')"),
+				mcp.Description("Document path (required for get, update, delete, history)"),
 			),
-			mcp.WithBoolean("smart",
-				mcp.Description("Smart mode: auto-return full content if small, else stats+TOC"),
-			),
-			mcp.WithBoolean("info",
-				mcp.Description("Return document stats (size, tokens, headings) without content"),
-			),
-			mcp.WithBoolean("toc",
-				mcp.Description("Return table of contents only (list of headings)"),
-			),
-			mcp.WithString("section",
-				mcp.Description("Return specific section by heading title or number (e.g., '2. Overview' or '2')"),
-			),
-			mcp.WithString("line",
-				mcp.Description("Return specific lines. Single line (e.g., '42') or range (e.g., '10-20')"),
-			),
-		),
-		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			store := getStore()
-			if store == nil {
-				return noProjectError()
-			}
-
-			path, err := req.RequireString("path")
-			if err != nil {
-				return errResult(err.Error())
-			}
-
-			doc, err := store.Docs.Get(path)
-			if err != nil {
-				return errNotFound("Doc", err)
-			}
-
-			args := req.GetArguments()
-			smart := boolArg(args, "smart")
-			info := boolArg(args, "info")
-			tocOnly := boolArg(args, "toc")
-			section, hasSection := stringArg(args, "section")
-			lineParam, hasLine := stringArg(args, "line")
-
-			contentLen := utf8.RuneCountInString(doc.Content)
-			// Approximate token count: ~4 chars per token.
-			approxTokens := contentLen / 4
-
-			if info {
-				headings := extractHeadings(doc.Content)
-				result := map[string]any{
-					"path":        doc.Path,
-					"title":       doc.Title,
-					"description": doc.Description,
-					"tags":        doc.Tags,
-					"size":        contentLen,
-					"tokens":      approxTokens,
-					"headings":    headings,
-					"createdAt":   doc.CreatedAt,
-					"updatedAt":   doc.UpdatedAt,
-				}
-				out, _ := json.MarshalIndent(result, "", "  ")
-				return mcp.NewToolResultText(string(out)), nil
-			}
-
-			if tocOnly {
-				headings := extractHeadings(doc.Content)
-				result := map[string]any{
-					"path":     doc.Path,
-					"title":    doc.Title,
-					"headings": headings,
-				}
-				out, _ := json.MarshalIndent(result, "", "  ")
-				return mcp.NewToolResultText(string(out)), nil
-			}
-
-			if hasSection && section != "" {
-				sectionContent := extractSection(doc.Content, section)
-				result := map[string]any{
-					"path":    doc.Path,
-					"title":   doc.Title,
-					"section": section,
-					"content": sectionContent,
-				}
-				out, _ := json.MarshalIndent(result, "", "  ")
-				return mcp.NewToolResultText(string(out)), nil
-			}
-
-			if hasLine && lineParam != "" {
-				lineContent, lineLabel, err := extractLines(doc.Content, lineParam)
-				if err != nil {
-					return errResult(err.Error())
-				}
-				result := map[string]any{
-					"path":    doc.Path,
-					"title":   doc.Title,
-					"lines":   lineLabel,
-					"content": lineContent,
-				}
-				out, _ := json.MarshalIndent(result, "", "  ")
-				return mcp.NewToolResultText(string(out)), nil
-			}
-
-			if smart {
-				const smartThreshold = 2000
-				if approxTokens <= smartThreshold {
-					// Small doc: return full content.
-					out, _ := json.MarshalIndent(doc, "", "  ")
-					return mcp.NewToolResultText(string(out)), nil
-				}
-				// Large doc: return stats and TOC.
-				headings := extractHeadings(doc.Content)
-				result := map[string]any{
-					"path":        doc.Path,
-					"title":       doc.Title,
-					"description": doc.Description,
-					"tags":        doc.Tags,
-					"size":        contentLen,
-					"tokens":      approxTokens,
-					"headings":    headings,
-					"note":        "Document is large. Use 'section' parameter to read a specific section, or 'toc: true' to see the table of contents.",
-				}
-				out, _ := json.MarshalIndent(result, "", "  ")
-				return mcp.NewToolResultText(string(out)), nil
-			}
-
-			out, _ := json.MarshalIndent(doc, "", "  ")
-			return mcp.NewToolResultText(string(out)), nil
-		},
-	)
-
-	// create_doc
-	s.AddTool(
-		mcp.NewTool("create_doc",
-			mcp.WithDescription("Create a new documentation file."),
 			mcp.WithString("title",
-				mcp.Required(),
-				mcp.Description("Document title"),
+				mcp.Description("Document title (required for create, optional for update)"),
 			),
 			mcp.WithString("description",
-				mcp.Description("Document description"),
+				mcp.Description("Document description (create, update)"),
 			),
 			mcp.WithString("content",
-				mcp.Description("Initial markdown content"),
+				mcp.Description("Markdown content (create, update)"),
 			),
 			mcp.WithArray("tags",
-				mcp.Description("Document tags"),
+				mcp.Description("Document tags (create, update)"),
 				mcp.WithStringItems(),
 			),
 			mcp.WithString("folder",
-				mcp.Description("Folder path (e.g., 'guides', 'patterns/auth')"),
+				mcp.Description("Folder path (create)"),
 			),
-		),
-		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			store := getStore()
-			if store == nil {
-				return noProjectError()
-			}
-
-			title, err := req.RequireString("title")
-			if err != nil {
-				return errResult(err.Error())
-			}
-
-			args := req.GetArguments()
-
-			// Build the doc path from title and optional folder.
-			slug := slugify(title)
-			folder, _ := stringArg(args, "folder")
-			var docPath string
-			if folder != "" {
-				docPath = folder + "/" + slug
-			} else {
-				docPath = slug
-			}
-
-			doc := &models.Doc{
-				Path:      docPath,
-				Title:     title,
-				Tags:      []string{},
-				CreatedAt: time.Now().UTC(),
-				UpdatedAt: time.Now().UTC(),
-			}
-
-			if v, ok := stringArg(args, "description"); ok {
-				doc.Description = v
-			}
-			if v, ok := stringArg(args, "content"); ok {
-				doc.Content = v
-			}
-			if v, ok := stringSliceArg(args, "tags"); ok {
-				doc.Tags = v
-			}
-
-			if err := store.Docs.Create(doc); err != nil {
-				return errFailed("create doc", err)
-			}
-
-			search.BestEffortIndexDoc(store, doc.Path)
-
-			// Save initial version.
-			_ = store.Versions.SaveDocVersion(doc.Path, models.DocVersion{
-				Changes:  store.Versions.TrackDocChanges(nil, doc),
-				Snapshot: storage.DocToSnapshot(doc),
-			})
-
-			// Notify server for real-time UI updates.
-			go notifyDocUpdated(store, doc.Path)
-
-			out, _ := json.MarshalIndent(doc, "", "  ")
-			return mcp.NewToolResultText(string(out)), nil
-		},
-	)
-
-	// update_doc
-	s.AddTool(
-		mcp.NewTool("update_doc",
-			mcp.WithDescription("Update an existing documentation file. Use 'section' with 'content' to replace only a specific section."),
-			mcp.WithString("path",
-				mcp.Required(),
-				mcp.Description("Document path (e.g., 'readme', 'guides/setup')"),
+			mcp.WithBoolean("smart",
+				mcp.Description("Smart mode: auto-return full content if small, else stats+TOC (get)"),
 			),
-			mcp.WithString("title",
-				mcp.Description("New title"),
+			mcp.WithBoolean("info",
+				mcp.Description("Return document stats without content (get)"),
 			),
-			mcp.WithString("description",
-				mcp.Description("New description"),
-			),
-			mcp.WithString("content",
-				mcp.Description("Replace content (or section content if 'section' is specified)"),
-			),
-			mcp.WithArray("tags",
-				mcp.Description("New tags"),
-				mcp.WithStringItems(),
-			),
-			mcp.WithString("appendContent",
-				mcp.Description("Append to existing content"),
+			mcp.WithBoolean("toc",
+				mcp.Description("Return table of contents only (get)"),
 			),
 			mcp.WithString("section",
-				mcp.Description("Target section to replace by heading title or number (use with 'content')"),
+				mcp.Description("Section by heading title or number (get, update)"),
+			),
+			mcp.WithString("line",
+				mcp.Description("Specific lines e.g. '42' or '10-20' (get)"),
+			),
+			mcp.WithString("appendContent",
+				mcp.Description("Append to existing content (update)"),
 			),
 			mcp.WithString("newPath",
-				mcp.Description("Rename the document to a new path"),
+				mcp.Description("Rename document to new path (update)"),
 			),
 			mcp.WithArray("clear",
-				mcp.Description("Explicitly clear string fields like title, description, or content"),
+				mcp.Description("Clear string fields like title, description, or content (update)"),
 				mcp.WithStringItems(),
 			),
-		),
-		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			store := getStore()
-			if store == nil {
-				return noProjectError()
-			}
-
-			path, err := req.RequireString("path")
-			if err != nil {
-				return errResult(err.Error())
-			}
-
-			doc, err := store.Docs.Get(path)
-			if err != nil {
-				return errNotFound("Doc", err)
-			}
-
-			oldDoc := *doc // snapshot before changes
-			args := req.GetArguments()
-			clearFields := stringSetArg(args, "clear")
-			oldPath := doc.Path
-
-			if clearFields["title"] {
-				doc.Title = ""
-			} else if v, ok := stringArg(args, "title"); ok && v != "" {
-				doc.Title = v
-			}
-			if clearFields["description"] {
-				doc.Description = ""
-			} else if v, ok := stringArg(args, "description"); ok && v != "" {
-				doc.Description = v
-			}
-			if _, ok := args["tags"]; ok {
-				if v, ok := stringSliceArg(args, "tags"); ok {
-					doc.Tags = v
-				} else {
-					doc.Tags = []string{}
-				}
-			}
-			if v, ok := stringArg(args, "newPath"); ok && strings.TrimSpace(v) != "" {
-				doc.Path = strings.Trim(strings.TrimSuffix(v, ".md"), "/")
-			}
-
-			sectionTarget, hasSection := stringArg(args, "section")
-			newContent, hasContent := stringArg(args, "content")
-			appendContent, hasAppend := stringArg(args, "appendContent")
-
-			if clearFields["content"] {
-				doc.Content = ""
-			} else if hasSection && sectionTarget != "" && hasContent {
-				// Replace a specific section.
-				doc.Content = replaceSection(doc.Content, sectionTarget, newContent)
-			} else if hasContent && newContent != "" {
-				// Only update content if explicitly provided with non-empty value.
-				// Empty content update is ignored to preserve existing content.
-				doc.Content = newContent
-			}
-			if hasAppend && appendContent != "" {
-				if doc.Content == "" {
-					doc.Content = appendContent
-				} else {
-					if !strings.HasSuffix(doc.Content, "\n") {
-						doc.Content += "\n"
-					}
-					doc.Content += appendContent
-				}
-			}
-
-			doc.UpdatedAt = time.Now().UTC()
-
-			if oldPath != doc.Path {
-				if err := store.Docs.Rename(oldPath, doc); err != nil {
-					return errFailed("rename doc", err)
-				}
-				if err := store.Docs.RewriteDocReferences(oldPath, doc.Path, store.Tasks, store.Memory); err != nil {
-					return errFailed("rewrite doc references", err)
-				}
-				search.BestEffortRemoveDoc(store, oldPath)
-			} else if err := store.Docs.Update(doc); err != nil {
-				return errFailed("update doc", err)
-			}
-
-			search.BestEffortIndexDoc(store, doc.Path)
-
-			// Save version if something changed.
-			changes := store.Versions.TrackDocChanges(&oldDoc, doc)
-			if len(changes) > 0 {
-				_ = store.Versions.SaveDocVersion(doc.Path, models.DocVersion{
-					Changes:  changes,
-					Snapshot: storage.DocToSnapshot(doc),
-				})
-			}
-
-			// Notify server for real-time UI updates.
-			if oldPath != doc.Path {
-				go notifyServer(store, "notify/refresh")
-			} else {
-				go notifyDocUpdated(store, doc.Path)
-			}
-
-			out, _ := json.MarshalIndent(doc, "", "  ")
-			return mcp.NewToolResultText(string(out)), nil
-		},
-	)
-
-	// get_doc_history
-	s.AddTool(
-		mcp.NewTool("get_doc_history",
-			mcp.WithDescription("Get the version history of a document, showing all changes over time."),
-			mcp.WithString("path",
-				mcp.Required(),
-				mcp.Description("Document path (e.g., 'readme', 'guides/setup')"),
-			),
-		),
-		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			store := getStore()
-			if store == nil {
-				return noProjectError()
-			}
-
-			path, err := req.RequireString("path")
-			if err != nil {
-				return errResult(err.Error())
-			}
-
-			history, err := store.Versions.GetDocHistory(path)
-			if err != nil {
-				return errFailed("get doc history", err)
-			}
-
-			out, _ := json.MarshalIndent(history, "", "  ")
-			return mcp.NewToolResultText(string(out)), nil
-		},
-	)
-
-	// delete_doc
-	s.AddTool(
-		mcp.NewTool("delete_doc",
-			mcp.WithDescription("Delete a documentation file permanently. Runs in dry-run mode by default (preview only). Set dryRun: false to actually delete."),
-			mcp.WithString("path",
-				mcp.Description("Document path (e.g., 'readme', 'guides/setup')"),
-				mcp.Required(),
+			mcp.WithString("tag",
+				mcp.Description("Filter by tag (list)"),
 			),
 			mcp.WithBoolean("dryRun",
-				mcp.Description("Preview only without deleting (default: true for safety)"),
+				mcp.Description("Preview only without deleting (default: true) (delete)"),
 			),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			store := getStore()
-			if store == nil {
-				return noProjectError()
-			}
-
-			args := req.GetArguments()
-			path, ok := stringArg(args, "path")
-			if !ok || path == "" {
-				return errResult(ErrPathReq)
-			}
-
-			// Default to dry-run for safety.
-			dryRun := true
-			if v, exists := args["dryRun"]; exists {
-				if b, ok := v.(bool); ok {
-					dryRun = b
-				}
-			}
-
-			doc, err := store.Docs.Get(path)
+			action, err := req.RequireString("action")
 			if err != nil {
-				return errNotFound("Doc", err)
+				return errResult("action is required")
 			}
-
-			if dryRun {
-				out, _ := json.MarshalIndent(map[string]any{
-					"dryRun":  true,
-					"message": fmt.Sprintf(MsgWouldDeleteDoc, doc.Path, doc.Title),
-					"doc":     map[string]string{"path": doc.Path, "title": doc.Title, "description": doc.Description},
-				}, "", "  ")
-				return mcp.NewToolResultText(string(out)), nil
+			switch action {
+			case "create":
+				return handleDocCreate(getStore, req)
+			case "get":
+				return handleDocGet(getStore, req)
+			case "update":
+				return handleDocUpdate(getStore, req)
+			case "delete":
+				return handleDocDelete(getStore, req)
+			case "list":
+				return handleDocList(getStore, req)
+			case "history":
+				return handleDocHistory(getStore, req)
+			default:
+				return errResultf("unknown docs action: %s", action)
 			}
-
-			if err := store.Docs.Delete(path); err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Failed to delete doc: %s", err.Error())), nil
-			}
-
-			search.BestEffortRemoveDoc(store, path)
-
-			// Notify server for real-time UI updates.
-			go notifyServer(store, "notify/refresh")
-
-			out, _ := json.MarshalIndent(map[string]any{
-				"deleted": true,
-				"message": fmt.Sprintf(MsgDeletedDoc, doc.Path, doc.Title),
-			}, "", "  ")
-			return mcp.NewToolResultText(string(out)), nil
 		},
 	)
 }
 
-// boolArg safely extracts a bool from args; returns false if not present.
-func boolArg(args map[string]any, key string) bool {
-	v, ok := args[key]
-	if !ok {
-		return false
+func handleDocList(getStore func() *storage.Store, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	store := getStore()
+	if store == nil {
+		return noProjectError()
 	}
-	b, ok := v.(bool)
-	return ok && b
+
+	docs, err := store.Docs.List()
+	if err != nil {
+		return errFailed("list docs", err)
+	}
+
+	args := req.GetArguments()
+	tagFilter, _ := stringArg(args, "tag")
+
+	var filtered []*models.Doc
+	for _, d := range docs {
+		if tagFilter != "" && !containsString(d.Tags, tagFilter) {
+			continue
+		}
+		d.Content = ""
+		filtered = append(filtered, d)
+	}
+	if filtered == nil {
+		filtered = []*models.Doc{}
+	}
+
+	// If results are empty, include project context for diagnostics.
+	if len(filtered) == 0 {
+		wrapper := map[string]any{
+			"results":      filtered,
+			"_projectRoot": store.Root,
+			"_hint":        "No docs found. Verify the active project is correct via project({ action: \"current\" }).",
+		}
+		out, _ := json.MarshalIndent(wrapper, "", "  ")
+		return mcp.NewToolResultText(string(out)), nil
+	}
+
+	out, _ := json.MarshalIndent(filtered, "", "  ")
+	return mcp.NewToolResultText(string(out)), nil
+}
+
+func handleDocGet(getStore func() *storage.Store, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	store := getStore()
+	if store == nil {
+		return noProjectError()
+	}
+
+	path, err := req.RequireString("path")
+	if err != nil {
+		return errResult(ErrPathReq)
+	}
+
+	doc, err := store.Docs.Get(path)
+	if err != nil {
+		return errNotFound("Doc", err)
+	}
+
+	args := req.GetArguments()
+	smart := boolArg(args, "smart")
+	info := boolArg(args, "info")
+	tocOnly := boolArg(args, "toc")
+	section, hasSection := stringArg(args, "section")
+	lineParam, hasLine := stringArg(args, "line")
+
+	contentLen := utf8.RuneCountInString(doc.Content)
+	approxTokens := contentLen / 4
+
+	if info {
+		headings := extractHeadings(doc.Content)
+		result := map[string]any{
+			"path":        doc.Path,
+			"title":       doc.Title,
+			"description": doc.Description,
+			"tags":        doc.Tags,
+			"size":        contentLen,
+			"tokens":      approxTokens,
+			"headings":    headings,
+			"createdAt":   doc.CreatedAt,
+			"updatedAt":   doc.UpdatedAt,
+		}
+		out, _ := json.MarshalIndent(result, "", "  ")
+		return mcp.NewToolResultText(string(out)), nil
+	}
+
+	if tocOnly {
+		headings := extractHeadings(doc.Content)
+		result := map[string]any{
+			"path":     doc.Path,
+			"title":    doc.Title,
+			"headings": headings,
+		}
+		out, _ := json.MarshalIndent(result, "", "  ")
+		return mcp.NewToolResultText(string(out)), nil
+	}
+
+	if hasSection && section != "" {
+		sectionContent := extractSection(doc.Content, section)
+		result := map[string]any{
+			"path":    doc.Path,
+			"title":   doc.Title,
+			"section": section,
+			"content": sectionContent,
+		}
+		out, _ := json.MarshalIndent(result, "", "  ")
+		return mcp.NewToolResultText(string(out)), nil
+	}
+
+	if hasLine && lineParam != "" {
+		lineContent, lineLabel, err := extractLines(doc.Content, lineParam)
+		if err != nil {
+			return errResult(err.Error())
+		}
+		result := map[string]any{
+			"path":    doc.Path,
+			"title":   doc.Title,
+			"lines":   lineLabel,
+			"content": lineContent,
+		}
+		out, _ := json.MarshalIndent(result, "", "  ")
+		return mcp.NewToolResultText(string(out)), nil
+	}
+
+	if smart {
+		const smartThreshold = 2000
+		if approxTokens <= smartThreshold {
+			out, _ := json.MarshalIndent(doc, "", "  ")
+			return mcp.NewToolResultText(string(out)), nil
+		}
+		headings := extractHeadings(doc.Content)
+		result := map[string]any{
+			"path":        doc.Path,
+			"title":       doc.Title,
+			"description": doc.Description,
+			"tags":        doc.Tags,
+			"size":        contentLen,
+			"tokens":      approxTokens,
+			"headings":    headings,
+			"note":        "Document is large. Use 'section' parameter to read a specific section, or 'toc: true' to see the table of contents.",
+		}
+		out, _ := json.MarshalIndent(result, "", "  ")
+		return mcp.NewToolResultText(string(out)), nil
+	}
+
+	out, _ := json.MarshalIndent(doc, "", "  ")
+	return mcp.NewToolResultText(string(out)), nil
+}
+
+func handleDocCreate(getStore func() *storage.Store, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	store := getStore()
+	if store == nil {
+		return noProjectError()
+	}
+
+	title, err := req.RequireString("title")
+	if err != nil {
+		return errResult(err.Error())
+	}
+
+	args := req.GetArguments()
+
+	slug := slugify(title)
+	folder, _ := stringArg(args, "folder")
+	var docPath string
+	if folder != "" {
+		docPath = folder + "/" + slug
+	} else {
+		docPath = slug
+	}
+
+	doc := &models.Doc{
+		Path:      docPath,
+		Title:     title,
+		Tags:      []string{},
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}
+
+	if v, ok := stringArg(args, "description"); ok {
+		doc.Description = v
+	}
+	if v, ok := stringArg(args, "content"); ok {
+		doc.Content = v
+	}
+	if v, ok := stringSliceArg(args, "tags"); ok {
+		doc.Tags = v
+	}
+
+	if err := store.Docs.Create(doc); err != nil {
+		return errFailed("create doc", err)
+	}
+
+	search.BestEffortIndexDoc(store, doc.Path)
+
+	_ = store.Versions.SaveDocVersion(doc.Path, models.DocVersion{
+		Changes:  store.Versions.TrackDocChanges(nil, doc),
+		Snapshot: storage.DocToSnapshot(doc),
+	})
+
+	go notifyDocUpdated(store, doc.Path)
+
+	out, _ := json.MarshalIndent(doc, "", "  ")
+	return mcp.NewToolResultText(string(out)), nil
+}
+
+func handleDocUpdate(getStore func() *storage.Store, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	store := getStore()
+	if store == nil {
+		return noProjectError()
+	}
+
+	path, err := req.RequireString("path")
+	if err != nil {
+		return errResult(ErrPathReq)
+	}
+
+	doc, err := store.Docs.Get(path)
+	if err != nil {
+		return errNotFound("Doc", err)
+	}
+
+	oldDoc := *doc
+	args := req.GetArguments()
+	clearFields := stringSetArg(args, "clear")
+	oldPath := doc.Path
+
+	if clearFields["title"] {
+		doc.Title = ""
+	} else if v, ok := stringArg(args, "title"); ok && v != "" {
+		doc.Title = v
+	}
+	if clearFields["description"] {
+		doc.Description = ""
+	} else if v, ok := stringArg(args, "description"); ok && v != "" {
+		doc.Description = v
+	}
+	if _, ok := args["tags"]; ok {
+		if v, ok := stringSliceArg(args, "tags"); ok {
+			doc.Tags = v
+		} else {
+			doc.Tags = []string{}
+		}
+	}
+	if v, ok := stringArg(args, "newPath"); ok && strings.TrimSpace(v) != "" {
+		doc.Path = strings.Trim(strings.TrimSuffix(v, ".md"), "/")
+	}
+
+	sectionTarget, hasSection := stringArg(args, "section")
+	newContent, hasContent := stringArg(args, "content")
+	appendContent, hasAppend := stringArg(args, "appendContent")
+
+	if clearFields["content"] {
+		doc.Content = ""
+	} else if hasSection && sectionTarget != "" && hasContent {
+		doc.Content = replaceSection(doc.Content, sectionTarget, newContent)
+	} else if hasContent && newContent != "" {
+		doc.Content = newContent
+	}
+	if hasAppend && appendContent != "" {
+		if doc.Content == "" {
+			doc.Content = appendContent
+		} else {
+			if !strings.HasSuffix(doc.Content, "\n") {
+				doc.Content += "\n"
+			}
+			doc.Content += appendContent
+		}
+	}
+
+	doc.UpdatedAt = time.Now().UTC()
+
+	if oldPath != doc.Path {
+		if err := store.Docs.Rename(oldPath, doc); err != nil {
+			return errFailed("rename doc", err)
+		}
+		if err := store.Docs.RewriteDocReferences(oldPath, doc.Path, store.Tasks, store.Memory); err != nil {
+			return errFailed("rewrite doc references", err)
+		}
+		search.BestEffortRemoveDoc(store, oldPath)
+	} else if err := store.Docs.Update(doc); err != nil {
+		return errFailed("update doc", err)
+	}
+
+	search.BestEffortIndexDoc(store, doc.Path)
+
+	changes := store.Versions.TrackDocChanges(&oldDoc, doc)
+	if len(changes) > 0 {
+		_ = store.Versions.SaveDocVersion(doc.Path, models.DocVersion{
+			Changes:  changes,
+			Snapshot: storage.DocToSnapshot(doc),
+		})
+	}
+
+	if oldPath != doc.Path {
+		go notifyServer(store, "notify/refresh")
+	} else {
+		go notifyDocUpdated(store, doc.Path)
+	}
+
+	out, _ := json.MarshalIndent(doc, "", "  ")
+	return mcp.NewToolResultText(string(out)), nil
+}
+
+func handleDocHistory(getStore func() *storage.Store, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	store := getStore()
+	if store == nil {
+		return noProjectError()
+	}
+
+	path, err := req.RequireString("path")
+	if err != nil {
+		return errResult(ErrPathReq)
+	}
+
+	history, err := store.Versions.GetDocHistory(path)
+	if err != nil {
+		return errFailed("get doc history", err)
+	}
+
+	out, _ := json.MarshalIndent(history, "", "  ")
+	return mcp.NewToolResultText(string(out)), nil
+}
+
+func handleDocDelete(getStore func() *storage.Store, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	store := getStore()
+	if store == nil {
+		return noProjectError()
+	}
+
+	args := req.GetArguments()
+	path, ok := stringArg(args, "path")
+	if !ok || path == "" {
+		return errResult(ErrPathReq)
+	}
+
+	dryRun := true
+	if v, exists := args["dryRun"]; exists {
+		if b, ok := v.(bool); ok {
+			dryRun = b
+		}
+	}
+
+	doc, err := store.Docs.Get(path)
+	if err != nil {
+		return errNotFound("Doc", err)
+	}
+
+	if dryRun {
+		out, _ := json.MarshalIndent(map[string]any{
+			"dryRun":  true,
+			"message": fmt.Sprintf(MsgWouldDeleteDoc, doc.Path, doc.Title),
+			"doc":     map[string]string{"path": doc.Path, "title": doc.Title, "description": doc.Description},
+		}, "", "  ")
+		return mcp.NewToolResultText(string(out)), nil
+	}
+
+	if err := store.Docs.Delete(path); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to delete doc: %s", err.Error())), nil
+	}
+
+	search.BestEffortRemoveDoc(store, path)
+	go notifyServer(store, "notify/refresh")
+
+	out, _ := json.MarshalIndent(map[string]any{
+		"deleted": true,
+		"message": fmt.Sprintf(MsgDeletedDoc, doc.Path, doc.Title),
+	}, "", "  ")
+	return mcp.NewToolResultText(string(out)), nil
 }
 
 // extractHeadings returns a list of headings found in the markdown content.
@@ -530,13 +483,10 @@ func extractHeadings(content string) []string {
 }
 
 // extractLines returns specific lines from content.
-// lineParam can be "42" (single line) or "10-20" (range).
-// Returns the extracted content, a human-readable label, and any error.
 func extractLines(content, lineParam string) (string, string, error) {
 	allLines := strings.Split(content, "\n")
 	total := len(allLines)
 
-	// Try range first: "10-20"
 	if parts := strings.SplitN(lineParam, "-", 2); len(parts) == 2 {
 		start, err1 := strconv.Atoi(parts[0])
 		end, err2 := strconv.Atoi(parts[1])
@@ -553,7 +503,6 @@ func extractLines(content, lineParam string) (string, string, error) {
 		}
 	}
 
-	// Single line: "42"
 	line, err := strconv.Atoi(lineParam)
 	if err != nil {
 		return "", "", fmt.Errorf("invalid line parameter: %q (use '42' or '10-20')", lineParam)
@@ -565,14 +514,11 @@ func extractLines(content, lineParam string) (string, string, error) {
 }
 
 // extractSection finds the content of a specific heading section.
-// The section parameter can be a heading title (with or without # prefix) or a number like "2".
 func extractSection(content, section string) string {
 	lines := strings.Split(content, "\n")
 
-	// Determine if section is a number.
 	sectionNum := 0
 	if n, err := fmt.Sscanf(section, "%d", &sectionNum); n == 1 && err == nil {
-		// Find the nth heading.
 		headingCount := 0
 		startLine := -1
 		headingLevel := 0
@@ -581,7 +527,6 @@ func extractSection(content, section string) string {
 				headingCount++
 				if headingCount == sectionNum {
 					startLine = i
-					// Count # chars to determine level.
 					for _, c := range line {
 						if c == '#' {
 							headingLevel++
@@ -599,7 +544,6 @@ func extractSection(content, section string) string {
 		return extractSectionFromLine(lines, startLine, headingLevel)
 	}
 
-	// Search by title text.
 	searchTitle := strings.TrimLeft(section, "# ")
 	for i, line := range lines {
 		if !strings.HasPrefix(line, "#") {
@@ -621,7 +565,6 @@ func extractSection(content, section string) string {
 	return ""
 }
 
-// extractSectionFromLine extracts content from startLine until the next heading of equal or higher level.
 func extractSectionFromLine(lines []string, startLine, level int) string {
 	var result []string
 	result = append(result, lines[startLine])
@@ -645,11 +588,9 @@ func extractSectionFromLine(lines []string, startLine, level int) string {
 	return strings.TrimSpace(strings.Join(result, "\n"))
 }
 
-// replaceSection replaces a section in the content with new content.
 func replaceSection(content, sectionTarget, newContent string) string {
 	lines := strings.Split(content, "\n")
 
-	// Find the section.
 	sectionNum := 0
 	startLine := -1
 	headingLevel := 0
@@ -697,7 +638,6 @@ func replaceSection(content, sectionTarget, newContent string) string {
 		return content
 	}
 
-	// Find end of section.
 	endLine := len(lines)
 	for i := startLine + 1; i < len(lines); i++ {
 		line := lines[i]
@@ -724,7 +664,6 @@ func replaceSection(content, sectionTarget, newContent string) string {
 	return strings.Join(result, "\n")
 }
 
-// slugify converts a title to a URL/path-safe slug.
 func slugify(title string) string {
 	title = strings.ToLower(title)
 	var b strings.Builder

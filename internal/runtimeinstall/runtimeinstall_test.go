@@ -176,21 +176,14 @@ func TestInstallKiroCreatesWorkspaceIDEHook(t *testing.T) {
 		t.Fatalf("read IDE hook: %v", err)
 	}
 	text := string(body)
-	spec, err := lookupSpec("kiro")
-	if err != nil {
-		t.Fatalf("lookup spec: %v", err)
-	}
-	if !strings.Contains(text, `"type": "agentSpawn"`) {
-		t.Fatalf("expected agentSpawn trigger, got:\n%s", text)
+	if !strings.Contains(text, `"type": "promptSubmit"`) {
+		t.Fatalf("expected promptSubmit trigger, got:\n%s", text)
 	}
 	if !strings.Contains(text, `"type": "runCommand"`) {
 		t.Fatalf("expected runCommand action, got:\n%s", text)
 	}
-	if !strings.Contains(text, hookCommandPath(spec, opts)) {
-		t.Fatalf("expected direct knowns command written, got:\n%s", text)
-	}
-	if strings.Count(text, "runtime-memory hook --runtime kiro --event agentspawn") != 1 {
-		t.Fatalf("expected single managed IDE hook command, got:\n%s", text)
+	if !strings.Contains(text, "runtime-memory hook --runtime kiro --event promptsubmit") {
+		t.Fatalf("expected runtime-memory hook command, got:\n%s", text)
 	}
 }
 

@@ -19,12 +19,11 @@ type MemoryStore struct {
 }
 
 func (ms *MemoryStore) projectDir() string { return filepath.Join(ms.root, "memory") }
-func (ms *MemoryStore) workingDir() string { return filepath.Join(ms.root, ".working-memory") }
 func (ms *MemoryStore) globalDir() string  { return filepath.Join(ms.globalRoot, "memory") }
 
-// ListLocal returns working + project memories without global entries.
+// ListLocal returns project memories without global entries.
 func (ms *MemoryStore) ListLocal() ([]*models.MemoryEntry, error) {
-	return ms.listLayers([]string{models.MemoryLayerWorking, models.MemoryLayerProject})
+	return ms.listLayers([]string{models.MemoryLayerProject})
 }
 
 // ListGlobalOnly returns only global memories.
@@ -37,8 +36,6 @@ func (ms *MemoryStore) dirForLayer(layer string) (string, error) {
 	switch layer {
 	case models.MemoryLayerProject:
 		return ms.projectDir(), nil
-	case models.MemoryLayerWorking:
-		return ms.workingDir(), nil
 	case models.MemoryLayerGlobal:
 		return ms.globalDir(), nil
 	default:
@@ -61,7 +58,7 @@ type memoryFrontmatter struct {
 // List returns memory entries, optionally filtered by layer.
 // If layer is empty, returns entries from all layers.
 func (ms *MemoryStore) List(layer string) ([]*models.MemoryEntry, error) {
-	layers := []string{models.MemoryLayerWorking, models.MemoryLayerProject, models.MemoryLayerGlobal}
+	layers := []string{models.MemoryLayerProject, models.MemoryLayerGlobal}
 	if layer != "" {
 		if !models.ValidMemoryLayer(layer) {
 			return nil, fmt.Errorf("invalid memory layer: %q", layer)
@@ -126,9 +123,9 @@ func (ms *MemoryStore) listDir(dir, layer string) ([]*models.MemoryEntry, error)
 	return entries, nil
 }
 
-// Get retrieves a memory entry by ID. Searches project, working, then global.
+// Get retrieves a memory entry by ID. Searches project, then global.
 func (ms *MemoryStore) Get(id string) (*models.MemoryEntry, error) {
-	for _, layer := range []string{models.MemoryLayerProject, models.MemoryLayerWorking, models.MemoryLayerGlobal} {
+	for _, layer := range []string{models.MemoryLayerProject, models.MemoryLayerGlobal} {
 		entry, err := ms.GetInLayer(id, layer)
 		if err == nil {
 			return entry, nil
@@ -153,7 +150,7 @@ func (ms *MemoryStore) ResolveReferenceTarget(target string) (*models.MemoryEntr
 	}
 
 	var match *models.MemoryEntry
-	for _, layer := range []string{models.MemoryLayerProject, models.MemoryLayerWorking, models.MemoryLayerGlobal} {
+	for _, layer := range []string{models.MemoryLayerProject, models.MemoryLayerGlobal} {
 		entries, err := ms.List(layer)
 		if err != nil {
 			continue
@@ -272,7 +269,7 @@ func (ms *MemoryStore) Update(entry *models.MemoryEntry) error {
 func (ms *MemoryStore) Delete(id string) error {
 	filename := models.MemoryFileName(id)
 
-	dirs := []string{ms.projectDir(), ms.workingDir(), ms.globalDir()}
+	dirs := []string{ms.projectDir(), ms.globalDir()}
 	for _, dir := range dirs {
 		absPath := filepath.Join(dir, filename)
 		if _, err := os.Stat(absPath); err == nil {
@@ -379,29 +376,6 @@ func (ms *MemoryStore) moveLayer(entry *models.MemoryEntry, newLayer string) (*m
 	_ = os.Remove(oldPath)
 
 	return entry, nil
-}
-
-// Clean removes all files from .knowns/.working-memory/.
-func (ms *MemoryStore) Clean() (int, error) {
-	dir := ms.workingDir()
-	dirEntries, err := os.ReadDir(dir)
-	if os.IsNotExist(err) {
-		return 0, nil
-	}
-	if err != nil {
-		return 0, fmt.Errorf("clean working memory: %w", err)
-	}
-
-	count := 0
-	for _, e := range dirEntries {
-		if e.IsDir() {
-			continue
-		}
-		if err := os.Remove(filepath.Join(dir, e.Name())); err == nil {
-			count++
-		}
-	}
-	return count, nil
 }
 
 // CountByLayer returns the number of entries in a given layer.

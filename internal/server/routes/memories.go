@@ -9,15 +9,13 @@ import (
 	"github.com/howznguyen/knowns/internal/models"
 	"github.com/howznguyen/knowns/internal/search"
 	"github.com/howznguyen/knowns/internal/storage"
-	"github.com/howznguyen/knowns/internal/workingmemory"
 )
 
-// MemoryRoutes handles persistent memories and session-scoped working memory endpoints.
+// MemoryRoutes handles persistent memory endpoints.
 type MemoryRoutes struct {
 	store   *storage.Store
 	mgr     *storage.Manager
 	sse     Broadcaster
-	working *workingmemory.Store
 }
 
 func (mr *MemoryRoutes) getStore() *storage.Store {
@@ -36,12 +34,6 @@ func (mr *MemoryRoutes) Register(r chi.Router) {
 	r.Delete("/memories/{id}", mr.delete)
 	r.Post("/memories/{id}/promote", mr.promote)
 	r.Post("/memories/{id}/demote", mr.demote)
-
-	r.Get("/working-memories", mr.listWorking)
-	r.Post("/working-memories", mr.createWorking)
-	r.Get("/working-memories/{id}", mr.getWorking)
-	r.Delete("/working-memories/{id}", mr.deleteWorking)
-	r.Post("/working-memories/clean", mr.cleanWorking)
 }
 
 func (mr *MemoryRoutes) list(w http.ResponseWriter, r *http.Request) {
@@ -235,52 +227,3 @@ func (mr *MemoryRoutes) demote(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, entry)
 }
 
-func (mr *MemoryRoutes) listWorking(w http.ResponseWriter, r *http.Request) {
-	entries := mr.working.List()
-	if entries == nil {
-		entries = []*models.MemoryEntry{}
-	}
-	respondJSON(w, http.StatusOK, entries)
-}
-
-func (mr *MemoryRoutes) createWorking(w http.ResponseWriter, r *http.Request) {
-	var req createMemoryRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-
-	entry := mr.working.Add(&models.MemoryEntry{
-		Title:    req.Title,
-		Content:  req.Content,
-		Layer:    models.MemoryLayerWorking,
-		Category: req.Category,
-		Tags:     req.Tags,
-		Metadata: req.Metadata,
-	})
-	respondJSON(w, http.StatusCreated, entry)
-}
-
-func (mr *MemoryRoutes) getWorking(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	entry, ok := mr.working.Get(id)
-	if !ok {
-		respondError(w, http.StatusNotFound, "working memory not found")
-		return
-	}
-	respondJSON(w, http.StatusOK, entry)
-}
-
-func (mr *MemoryRoutes) deleteWorking(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	if !mr.working.Delete(id) {
-		respondError(w, http.StatusNotFound, "working memory not found")
-		return
-	}
-	respondJSON(w, http.StatusOK, map[string]any{"deleted": true, "id": id})
-}
-
-func (mr *MemoryRoutes) cleanWorking(w http.ResponseWriter, r *http.Request) {
-	count := mr.working.Clear()
-	respondJSON(w, http.StatusOK, map[string]any{"cleaned": count})
-}

@@ -17,9 +17,9 @@ import (
 	"time"
 
 	"github.com/howznguyen/knowns/internal/mcp/handlers"
+	"github.com/howznguyen/knowns/internal/permissions"
 	"github.com/howznguyen/knowns/internal/runtimequeue"
 	"github.com/howznguyen/knowns/internal/storage"
-	"github.com/howznguyen/knowns/internal/workingmemory"
 	"github.com/mark3labs/mcp-go/server"
 )
 
@@ -205,13 +205,6 @@ type MCPServer struct {
 func NewMCPServer(projectHint string) *MCPServer {
 	s := &MCPServer{}
 
-	s.srv = server.NewMCPServer(
-		"knowns",
-		version,
-		server.WithToolCapabilities(false),
-		server.WithRecovery(),
-	)
-
 	getStore := func() *storage.Store {
 		s.mu.RLock()
 		defer s.mu.RUnlock()
@@ -231,23 +224,42 @@ func NewMCPServer(projectHint string) *MCPServer {
 		return s.root
 	}
 
-	// Register all tool groups.
-	handlers.RegisterProjectTools(s.srv, getStore, setStore, getRoot)
-	handlers.RegisterTaskTools(s.srv, getStore)
-	handlers.RegisterDocTools(s.srv, getStore)
-	handlers.RegisterTimeTools(s.srv, getStore)
-	handlers.RegisterSearchTools(s.srv, getStore)
-	handlers.RegisterCodeTools(s.srv, getStore)
-	handlers.RegisterBoardTools(s.srv, getStore)
-	handlers.RegisterTemplateTools(s.srv, getStore)
-	handlers.RegisterValidateTools(s.srv, getStore)
-	handlers.RegisterMemoryTools(s.srv, getStore)
+	// Create global audit store at ~/.knowns/audit.jsonl.
+	auditStore := storage.NewGlobalAuditStore()
 
-	// Working memory is session-scoped (in-memory only).
-	workingMemory := workingmemory.NewStore()
-	handlers.RegisterWorkingMemoryTools(s.srv, getStore, func() *workingmemory.Store {
-		return workingMemory
-	})
+	// Build permission guard config loader.
+	permConfigLoader := func() *permissions.PermissionConfig {
+		store := getStore()
+		if store == nil {
+			return nil
+		}
+		cfg, err := store.Config.Load()
+		if err != nil {
+			return nil
+		}
+		return cfg.Settings.Permissions
+	}
+
+	s.srv = server.NewMCPServer(
+		"knowns",
+		version,
+		server.WithToolCapabilities(false),
+		server.WithRecovery(),
+		server.WithToolHandlerMiddleware(permissions.NewGuardMiddleware(permConfigLoader)),
+		server.WithHooks(newAuditHooks(auditStore, getRoot)),
+	)
+
+	// Register all tool groups.
+	handlers.RegisterProjectTool(s.srv, getStore, setStore, getRoot)
+	handlers.RegisterTaskTool(s.srv, getStore)
+	handlers.RegisterDocTool(s.srv, getStore)
+	handlers.RegisterTimeTool(s.srv, getStore)
+	handlers.RegisterSearchTool(s.srv, getStore)
+	handlers.RegisterCodeTool(s.srv, getStore)
+	// Board view is now part of RegisterTaskTool (action: board).
+	handlers.RegisterTemplateTool(s.srv, getStore)
+	handlers.RegisterValidateTools(s.srv, getStore)
+	handlers.RegisterMemoryTool(s.srv, getStore)
 
 	// Auto-detect project from hint or cwd.
 	s.autoDetectProject(setStore, projectHint)

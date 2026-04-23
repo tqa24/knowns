@@ -4,7 +4,6 @@ import "time"
 
 // Memory layer constants.
 const (
-	MemoryLayerWorking = "working"
 	MemoryLayerProject = "project"
 	MemoryLayerGlobal  = "global"
 )
@@ -14,7 +13,7 @@ const (
 type MemoryEntry struct {
 	ID       string `json:"id"                    yaml:"id"`
 	Title    string `json:"title"                 yaml:"title"`
-	Layer    string `json:"layer"                 yaml:"layer"`                           // "working", "project", "global"
+	Layer    string `json:"layer"                 yaml:"layer"`                           // "project", "global"
 	Category string `json:"category,omitempty"    yaml:"category,omitempty"`              // "pattern", "decision", "convention", "preference", etc.
 
 	// Content holds the markdown body. Not persisted in frontmatter.
@@ -35,7 +34,7 @@ func MemoryFileName(id string) string {
 
 // ValidMemoryLayer reports whether layer is a recognised memory layer.
 func ValidMemoryLayer(layer string) bool {
-	return layer == MemoryLayerWorking || layer == MemoryLayerProject || layer == MemoryLayerGlobal
+	return layer == MemoryLayerProject || layer == MemoryLayerGlobal
 }
 
 // ValidPersistentMemoryLayer reports whether layer is a persistent memory layer.
@@ -46,8 +45,6 @@ func ValidPersistentMemoryLayer(layer string) bool {
 // PromoteLayer returns the next layer up, or an error string if already at top.
 func PromoteLayer(layer string) (string, bool) {
 	switch layer {
-	case MemoryLayerWorking:
-		return MemoryLayerProject, true
 	case MemoryLayerProject:
 		return MemoryLayerGlobal, true
 	default:
@@ -60,8 +57,6 @@ func DemoteLayer(layer string) (string, bool) {
 	switch layer {
 	case MemoryLayerGlobal:
 		return MemoryLayerProject, true
-	case MemoryLayerProject:
-		return MemoryLayerWorking, true
 	default:
 		return "", false
 	}

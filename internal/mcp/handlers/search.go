@@ -3,244 +3,42 @@ package handlers
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"time"
+	"strings"
 
 	"github.com/howznguyen/knowns/internal/models"
-	"github.com/howznguyen/knowns/internal/runtimequeue"
 	"github.com/howznguyen/knowns/internal/search"
 	"github.com/howznguyen/knowns/internal/storage"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
 
-// RegisterSearchTools registers search and retrieval MCP tools.
-func RegisterSearchTools(s *server.MCPServer, getStore func() *storage.Store) {
-	// resolve
-	s.AddTool(
-		mcp.NewTool("resolve",
-			mcp.WithDescription("Resolve a semantic reference expression to a structured entity payload."),
-			mcp.WithString("ref",
-				mcp.Required(),
-				mcp.Description("Semantic reference expression, e.g. @doc/guides/setup{implements}"),
-			),
-		),
-		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			store := getStore()
-			if store == nil {
-				return noProjectError()
-			}
-
-			raw, err := req.RequireString("ref")
-			if err != nil {
-				return errResult(err.Error())
-			}
-
-			out, err := resolveReferenceJSON(store, raw)
-			if err != nil {
-				return errResult(err.Error())
-			}
-			return mcp.NewToolResultText(out), nil
-		},
-	)
-
-	// search
+// RegisterSearchTool registers the consolidated search and retrieval MCP tool.
+// Note: reindex_search has been removed — reindexing is handled automatically
+// or via the CLI command.
+func RegisterSearchTool(s *server.MCPServer, getStore func() *storage.Store) {
 	s.AddTool(
 		mcp.NewTool("search",
-			mcp.WithDescription("Unified search across tasks, docs, and memories. Supports hybrid semantic search when enabled."),
-			mcp.WithString("query",
+			mcp.WithDescription("Search and retrieval operations. Use 'action' to specify: search, retrieve, resolve."),
+			mcp.WithString("action",
 				mcp.Required(),
-				mcp.Description("Search query"),
+				mcp.Description("Action to perform"),
+				mcp.Enum("search", "retrieve", "resolve"),
+			),
+			// search + retrieve params
+			mcp.WithString("query",
+				mcp.Description("Search/retrieval query (required for search, retrieve)"),
 			),
 			mcp.WithString("type",
-				mcp.Description("Search type: all, task, doc, or memory"),
+				mcp.Description("Search type: all, task, doc, or memory (search)"),
 				mcp.Enum("all", "task", "doc", "memory"),
 			),
 			mcp.WithString("mode",
 				mcp.Description("Search mode: hybrid (semantic + keyword), semantic only, or keyword only (default: hybrid)"),
 				mcp.Enum("hybrid", "semantic", "keyword"),
 			),
-			mcp.WithString("status",
-				mcp.Description("Filter tasks by status"),
-			),
-			mcp.WithString("priority",
-				mcp.Description("Filter tasks by priority"),
-			),
-			mcp.WithString("assignee",
-				mcp.Description("Filter tasks by assignee"),
-			),
-			mcp.WithString("label",
-				mcp.Description("Filter tasks by label"),
-			),
-			mcp.WithString("tag",
-				mcp.Description("Filter docs or memories by tag"),
-			),
 			mcp.WithNumber("limit",
 				mcp.Description("Limit results (default: 20)"),
 			),
-		),
-		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			store := getStore()
-			if store == nil {
-				return noProjectError()
-			}
-
-			query, err := req.RequireString("query")
-			if err != nil {
-				return errResult(err.Error())
-			}
-
-			args := req.GetArguments()
-			searchType := "all"
-			if v, ok := stringArg(args, "type"); ok {
-				searchType = v
-			}
-			mode := ""
-			if v, ok := stringArg(args, "mode"); ok {
-				mode = v
-			}
-			statusFilter, _ := stringArg(args, "status")
-			priorityFilter, _ := stringArg(args, "priority")
-			assigneeFilter, _ := stringArg(args, "assignee")
-			labelFilter, _ := stringArg(args, "label")
-			tagFilter, _ := stringArg(args, "tag")
-			limit := 20
-			if v, ok := intArg(args, "limit"); ok && v > 0 {
-				limit = v
-			}
-
-			opts := search.SearchOptions{
-				Query:    query,
-				Type:     searchType,
-				Mode:     mode,
-				Status:   statusFilter,
-				Priority: priorityFilter,
-				Assignee: assigneeFilter,
-				Label:    labelFilter,
-				Tag:      tagFilter,
-				Limit:    limit,
-			}
-
-			embedder, vecStore, _ := search.InitSemantic(store)
-			if embedder != nil {
-				defer embedder.Close()
-			}
-			if vecStore != nil {
-				defer vecStore.Close()
-			}
-
-			engine := search.NewEngine(store, embedder, vecStore)
-			results, err := engine.Search(opts)
-			if err != nil {
-				return errResult(err.Error())
-			}
-			if results == nil {
-				results = []models.SearchResult{}
-			}
-
-			out, _ := json.MarshalIndent(results, "", "  ")
-			return mcp.NewToolResultText(string(out)), nil
-		},
-	)
-
-	// reindex_search
-	s.AddTool(
-		mcp.NewTool("reindex_search",
-			mcp.WithDescription("Rebuild the semantic search index from all tasks, docs, and memories. Use when index is out of sync or after enabling semantic search."),
-		),
-		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			store := getStore()
-			if store == nil {
-				return noProjectError()
-			}
-
-			taskCount := 0
-			docCount := 0
-			memoryCount := 0
-
-			tasks, err := store.Tasks.List()
-			if err == nil {
-				taskCount = len(tasks)
-			}
-			docs, err := store.Docs.List()
-			if err == nil {
-				docCount = len(docs)
-			}
-			memories, err := store.Memory.List("")
-			if err == nil {
-				memoryCount = len(memories)
-			}
-
-			embedder, vecStore, initErr := search.InitSemantic(store)
-			if embedder != nil {
-				defer embedder.Close()
-			}
-			if vecStore != nil {
-				defer vecStore.Close()
-			}
-
-			if initErr != nil || embedder == nil || vecStore == nil {
-				result := map[string]any{
-					"success":     true,
-					"taskCount":   taskCount,
-					"docCount":    docCount,
-					"memoryCount": memoryCount,
-					"mode":        "keyword",
-					"message":     fmt.Sprintf("Semantic search unavailable. Keyword search will scan %d tasks, %d docs, and %d memories directly.", taskCount, docCount, memoryCount),
-				}
-				out, _ := json.MarshalIndent(result, "", "  ")
-				return mcp.NewToolResultText(string(out)), nil
-			}
-
-			if !runtimequeue.ShouldBypassDaemon() {
-				job, err := runtimequeue.Enqueue(store.Root, runtimequeue.JobReindex, "")
-				if err != nil {
-					return errFailed("enqueue reindex", err)
-				}
-				if _, err := runtimequeue.WaitForJob(store.Root, job.ID, 5*time.Minute); err != nil {
-					return errFailed("reindex", err)
-				}
-			} else {
-				engine := search.NewEngine(store, embedder, vecStore)
-				if err := engine.Reindex(nil); err != nil {
-					return errFailed("reindex", err)
-				}
-			}
-			chunkCount := vecStore.Count()
-
-			result := map[string]any{
-				"success":     true,
-				"taskCount":   taskCount,
-				"docCount":    docCount,
-				"memoryCount": memoryCount,
-				"chunkCount":  chunkCount,
-				"mode":        "semantic",
-				"message":     fmt.Sprintf("Index rebuilt: %d tasks, %d docs, %d memories, %d chunks", taskCount, docCount, memoryCount, chunkCount),
-			}
-			out, _ := json.MarshalIndent(result, "", "  ")
-			return mcp.NewToolResultText(string(out)), nil
-		},
-	)
-
-	// retrieve
-	s.AddTool(
-		mcp.NewTool("retrieve",
-			mcp.WithDescription("Mixed-source retrieval across docs, tasks, and memories. Returns ranked candidates and an assembled context pack."),
-			mcp.WithString("query",
-				mcp.Required(),
-				mcp.Description("Retrieval query"),
-			),
-			mcp.WithString("mode",
-				mcp.Description("Retrieval mode: hybrid (semantic + keyword), semantic only, or keyword only (default: hybrid)"),
-				mcp.Enum("hybrid", "semantic", "keyword"),
-			),
-			mcp.WithArray("sourceTypes",
-				mcp.Description("Optional source types: doc, task, memory"),
-				mcp.WithStringEnumItems([]string{"doc", "task", "memory"}),
-			),
-			mcp.WithBoolean("expandReferences",
-				mcp.Description("Whether to include linked docs/tasks/memories as expanded context"),
-			),
 			mcp.WithString("status",
 				mcp.Description("Filter tasks by status"),
 			),
@@ -256,73 +54,235 @@ func RegisterSearchTools(s *server.MCPServer, getStore func() *storage.Store) {
 			mcp.WithString("tag",
 				mcp.Description("Filter docs or memories by tag"),
 			),
-			mcp.WithNumber("limit",
-				mcp.Description("Limit ranked candidates (default: 20)"),
+			// retrieve-specific params
+			mcp.WithArray("sourceTypes",
+				mcp.Description("Optional source types: doc, task, memory (retrieve)"),
+				mcp.WithStringEnumItems([]string{"doc", "task", "memory"}),
+			),
+			mcp.WithBoolean("expandReferences",
+				mcp.Description("Whether to include linked docs/tasks/memories as expanded context (retrieve)"),
+			),
+			// resolve params
+			mcp.WithString("ref",
+				mcp.Description("Semantic reference expression, e.g. @doc/guides/setup{implements} (required for resolve)"),
+			),
+			// structural traversal params (resolve)
+			mcp.WithString("direction",
+				mcp.Description("Traversal direction from root entity: \"outbound\" (default), \"inbound\", or \"both\" (resolve)"),
+				mcp.Enum("outbound", "inbound", "both"),
+			),
+			mcp.WithNumber("depth",
+				mcp.Description("Max traversal hops, 1–3 (default: 1) (resolve)"),
+			),
+			mcp.WithString("relationTypes",
+				mcp.Description("Filter by relation kinds, comma-separated (resolve)"),
+			),
+			mcp.WithString("entityTypes",
+				mcp.Description("Filter result entities by kind, comma-separated (resolve)"),
 			),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			store := getStore()
-			if store == nil {
-				return noProjectError()
-			}
-
-			query, err := req.RequireString("query")
+			action, err := req.RequireString("action")
 			if err != nil {
-				return errResult(err.Error())
+				return errResult("action is required")
 			}
-
-			args := req.GetArguments()
-			mode, _ := stringArg(args, "mode")
-			statusFilter, _ := stringArg(args, "status")
-			priorityFilter, _ := stringArg(args, "priority")
-			assigneeFilter, _ := stringArg(args, "assignee")
-			labelFilter, _ := stringArg(args, "label")
-			tagFilter, _ := stringArg(args, "tag")
-			limit := 20
-			if v, ok := intArg(args, "limit"); ok && v > 0 {
-				limit = v
+			switch action {
+			case "search":
+				return handleSearch(getStore, req)
+			case "retrieve":
+				return handleRetrieve(getStore, req)
+			case "resolve":
+				return handleResolve(getStore, req)
+			default:
+				return errResultf("unknown search action: %s", action)
 			}
-			expandRefs := searchBoolArg(args, "expandReferences")
-			sourceTypes := stringArrayArg(args, "sourceTypes")
-
-			embedder, vecStore, _ := search.InitSemantic(store)
-			if embedder != nil {
-				defer embedder.Close()
-			}
-			if vecStore != nil {
-				defer vecStore.Close()
-			}
-
-			engine := search.NewEngine(store, embedder, vecStore)
-			response, err := engine.Retrieve(models.RetrievalOptions{
-				Query:            query,
-				Mode:             mode,
-				Limit:            limit,
-				SourceTypes:      sourceTypes,
-				ExpandReferences: expandRefs,
-				Status:           statusFilter,
-				Priority:         priorityFilter,
-				Assignee:         assigneeFilter,
-				Label:            labelFilter,
-				Tag:              tagFilter,
-			})
-			if err != nil {
-				return errResult(err.Error())
-			}
-
-			out, _ := json.MarshalIndent(response, "", "  ")
-			return mcp.NewToolResultText(string(out)), nil
 		},
 	)
 }
 
-func searchBoolArg(args map[string]interface{}, key string) bool {
-	v, ok := args[key]
-	if !ok {
-		return false
+func handleSearch(getStore func() *storage.Store, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	store := getStore()
+	if store == nil {
+		return noProjectError()
 	}
-	b, ok := v.(bool)
-	return ok && b
+
+	query, err := req.RequireString("query")
+	if err != nil {
+		return errResult(err.Error())
+	}
+
+	args := req.GetArguments()
+	searchType := "all"
+	if v, ok := stringArg(args, "type"); ok {
+		searchType = v
+	}
+	mode, _ := stringArg(args, "mode")
+	statusFilter, _ := stringArg(args, "status")
+	priorityFilter, _ := stringArg(args, "priority")
+	assigneeFilter, _ := stringArg(args, "assignee")
+	labelFilter, _ := stringArg(args, "label")
+	tagFilter, _ := stringArg(args, "tag")
+	limit := 20
+	if v, ok := intArg(args, "limit"); ok && v > 0 {
+		limit = v
+	}
+
+	opts := search.SearchOptions{
+		Query:    query,
+		Type:     searchType,
+		Mode:     mode,
+		Status:   statusFilter,
+		Priority: priorityFilter,
+		Assignee: assigneeFilter,
+		Label:    labelFilter,
+		Tag:      tagFilter,
+		Limit:    limit,
+	}
+
+	embedder, vecStore, _ := search.InitSemantic(store)
+	if embedder != nil {
+		defer embedder.Close()
+	}
+	if vecStore != nil {
+		defer vecStore.Close()
+	}
+
+	engine := search.NewEngine(store, embedder, vecStore)
+	results, err := engine.Search(opts)
+	if err != nil {
+		return errResult(err.Error())
+	}
+	if results == nil {
+		results = []models.SearchResult{}
+	}
+
+	// If results are empty, include project context so the caller can verify
+	// the correct project is active.
+	if len(results) == 0 {
+		wrapper := map[string]any{
+			"results":      results,
+			"_projectRoot": store.Root,
+			"_hint":        "Search returned 0 results. Verify the active project is correct via project({ action: \"current\" }). Use project({ action: \"set\" }) to switch if needed.",
+		}
+		out, _ := json.MarshalIndent(wrapper, "", "  ")
+		return mcp.NewToolResultText(string(out)), nil
+	}
+
+	out, _ := json.MarshalIndent(results, "", "  ")
+	return mcp.NewToolResultText(string(out)), nil
+}
+
+func handleRetrieve(getStore func() *storage.Store, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	store := getStore()
+	if store == nil {
+		return noProjectError()
+	}
+
+	query, err := req.RequireString("query")
+	if err != nil {
+		return errResult(err.Error())
+	}
+
+	args := req.GetArguments()
+	mode, _ := stringArg(args, "mode")
+	statusFilter, _ := stringArg(args, "status")
+	priorityFilter, _ := stringArg(args, "priority")
+	assigneeFilter, _ := stringArg(args, "assignee")
+	labelFilter, _ := stringArg(args, "label")
+	tagFilter, _ := stringArg(args, "tag")
+	limit := 20
+	if v, ok := intArg(args, "limit"); ok && v > 0 {
+		limit = v
+	}
+	expandRefs := boolArg(args, "expandReferences")
+	sourceTypes := stringArrayArg(args, "sourceTypes")
+
+	embedder, vecStore, _ := search.InitSemantic(store)
+	if embedder != nil {
+		defer embedder.Close()
+	}
+	if vecStore != nil {
+		defer vecStore.Close()
+	}
+
+	engine := search.NewEngine(store, embedder, vecStore)
+	response, err := engine.Retrieve(models.RetrievalOptions{
+		Query:            query,
+		Mode:             mode,
+		Limit:            limit,
+		SourceTypes:      sourceTypes,
+		ExpandReferences: expandRefs,
+		Status:           statusFilter,
+		Priority:         priorityFilter,
+		Assignee:         assigneeFilter,
+		Label:            labelFilter,
+		Tag:              tagFilter,
+	})
+	if err != nil {
+		return errResult(err.Error())
+	}
+
+	out, _ := json.MarshalIndent(response, "", "  ")
+	return mcp.NewToolResultText(string(out)), nil
+}
+
+func handleResolve(getStore func() *storage.Store, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	store := getStore()
+	if store == nil {
+		return noProjectError()
+	}
+
+	raw, err := req.RequireString("ref")
+	if err != nil {
+		return errResult(err.Error())
+	}
+
+	args := req.GetArguments()
+
+	// Check for structural traversal params.
+	params := models.StructuralParams{}
+	if v, ok := stringArg(args, "direction"); ok {
+		params.Direction = v
+	}
+	if v, ok := intArg(args, "depth"); ok {
+		params.Depth = v
+	}
+	if v, ok := stringArg(args, "relationTypes"); ok && v != "" {
+		params.RelationTypes = splitCommaSeparated(v)
+	}
+	if v, ok := stringArg(args, "entityTypes"); ok && v != "" {
+		params.EntityTypes = splitCommaSeparated(v)
+	}
+
+	// If structural params are present, use structural traversal.
+	if params.IsStructural() {
+		result, err := store.StructuralResolve(raw, params)
+		if err != nil {
+			return errResult(err.Error())
+		}
+		out, _ := json.MarshalIndent(result, "", "  ")
+		return mcp.NewToolResultText(string(out)), nil
+	}
+
+	// Otherwise, use the existing simple resolution.
+	out, err := resolveReferenceJSON(store, raw)
+	if err != nil {
+		return errResult(err.Error())
+	}
+	return mcp.NewToolResultText(out), nil
+}
+
+// splitCommaSeparated splits a comma-separated string into trimmed non-empty parts.
+func splitCommaSeparated(s string) []string {
+	parts := strings.Split(s, ",")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
 }
 
 func resolveReferenceJSON(store *storage.Store, raw string) (string, error) {

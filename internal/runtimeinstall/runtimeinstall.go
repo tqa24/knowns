@@ -38,7 +38,7 @@ func sessionStartEvent(runtime string) string {
 	case "claude-code", "codex":
 		return "session-start"
 	case "kiro":
-		return "agentspawn"
+		return "promptsubmit"
 	case "opencode":
 		return "session.created"
 	default:
@@ -278,12 +278,24 @@ func legacyPromptCommandPath(spec runtimeSpec, opts Options) string {
 	return strings.Join([]string{opts.ExecutablePath, "runtime-memory", "hook", "--runtime", spec.Runtime, "--event", defaultHookEvent}, " ")
 }
 
+const (
+	readinessHookName = "check-readiness"
+)
+
 func kiroIDEHookPath() (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(cwd, ".kiro", "hooks", managedName+".kiro.hook"), nil
+}
+
+func kiroReadinessHookPath() (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(cwd, ".kiro", "hooks", readinessHookName+".kiro.hook"), nil
 }
 
 func installClaude(spec runtimeSpec, opts Options) error {
@@ -453,20 +465,32 @@ func installKiro(spec runtimeSpec, opts Options) error {
 	if err := os.MkdirAll(filepath.Dir(hookPath), 0755); err != nil {
 		return err
 	}
+
+	// Prefer bare "knowns" command when it's available in PATH,
+	// so the hook stays portable across machines.
+	cmdPath := "knowns"
+	if _, lookErr := opts.LookPath("knowns"); lookErr != nil {
+		cmdPath = opts.ExecutablePath
+	}
+
 	config := map[string]any{
 		"version":     "1.0.0",
 		"enabled":     true,
 		"name":        managedStatus,
 		"description": "Inject bounded Knowns memory when the session starts.",
 		"when": map[string]any{
-			"type": "agentSpawn",
+			"type": "promptSubmit",
 		},
 		"then": map[string]any{
 			"type":    "runCommand",
-			"command": hookCommandPath(spec, opts),
+			"command": cmdPath + " runtime-memory hook --runtime " + spec.Runtime + " --event " + sessionStartEvent(spec.Runtime),
 		},
 	}
-	return writeJSONMap(hookPath, config)
+	if err := writeJSONMap(hookPath, config); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func uninstallKiro(spec runtimeSpec, opts Options) error {
@@ -499,16 +523,18 @@ func populateKiroStatus(status *Status, spec runtimeSpec, opts Options) {
 	}
 	when, _ := config["when"].(map[string]any)
 	then, _ := config["then"].(map[string]any)
-	if stringValue(when["type"]) == "agentSpawn" && strings.EqualFold(stringValue(then["type"]), "runCommand") && stringValue(then["command"]) == hookCommandPath(spec, opts) {
+	cmd := stringValue(then["command"])
+	expectedSuffix := "runtime-memory hook --runtime " + spec.Runtime + " --event " + sessionStartEvent(spec.Runtime)
+	if stringValue(when["type"]) == "promptSubmit" && strings.EqualFold(stringValue(then["type"]), "runCommand") && strings.HasSuffix(cmd, expectedSuffix) {
 		status.Installed = true
 		status.State = StateInstalled
 		status.Summary = "installed"
-		status.Details = append(status.Details, "agentSpawn hook installed in workspace .kiro/hooks/knowns-runtime-memory.kiro.hook")
+		status.Details = append(status.Details, "promptSubmit hook installed in workspace .kiro/hooks/knowns-runtime-memory.kiro.hook")
 		return
 	}
 	status.State = StateDrifted
 	status.Summary = "Kiro hook config missing"
-	status.Details = append(status.Details, "agentSpawn runCommand hook not installed")
+	status.Details = append(status.Details, "promptSubmit runCommand hook not installed")
 }
 
 func installOpenCode(spec runtimeSpec, opts Options) error {

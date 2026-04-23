@@ -13,12 +13,25 @@ var docRangeSuffixRE = regexp.MustCompile(`:(\d+)-(\d+)$`)
 var docLineSuffixRE = regexp.MustCompile(`:(\d+)$`)
 
 var allowedRelations = map[string]struct{}{
-	"implements": {},
-	"depends":    {},
-	"blocked-by": {},
-	"follows":    {},
+	"implements":    {},
+	"depends":       {},
+	"blocked-by":    {},
+	"follows":       {},
+	"related":       {},
+	"parent":        {},
+	"spec":          {},
+	"imported-from": {},
+	"template-for":  {},
 	models.SemanticReferenceRelationReferences: {},
-	"related": {},
+}
+
+// AllRelationKinds returns the full allowlist of relation kinds.
+func AllRelationKinds() []string {
+	kinds := make([]string, 0, len(allowedRelations))
+	for k := range allowedRelations {
+		kinds = append(kinds, k)
+	}
+	return kinds
 }
 
 func AllowedRelation(relation string) bool {

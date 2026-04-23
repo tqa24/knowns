@@ -64,8 +64,8 @@ func TestBuildSelectsRelevantProjectAndGlobalMemories(t *testing.T) {
 	if !strings.Contains(pack.Serialized, "Knowns Guidance") {
 		t.Fatalf("expected guidance header, got %q", pack.Serialized)
 	}
-	if !strings.Contains(pack.Serialized, "list_memories") {
-		t.Fatalf("expected list_memories hint, got %q", pack.Serialized)
+	if !strings.Contains(pack.Serialized, "memory({ action: \"list\" })") {
+		t.Fatalf("expected memory action list hint, got %q", pack.Serialized)
 	}
 	if strings.Contains(pack.Serialized, entries[0].Title) || strings.Contains(pack.Serialized, entries[1].Title) {
 		t.Fatalf("did not expect memory titles in serialized payload, got %q", pack.Serialized)
@@ -193,7 +193,7 @@ func TestBuildSessionBaselineIncludesKNOWNSSummary(t *testing.T) {
 	if !strings.Contains(pack.Serialized, "Read `KNOWNS.md` in the repository root") {
 		t.Fatalf("expected KNOWNS instruction in baseline pack, got %q", pack.Serialized)
 	}
-	if !strings.Contains(pack.Serialized, "list_memories") {
+	if !strings.Contains(pack.Serialized, "memory({ action: \"list\" })") {
 		t.Fatalf("expected MCP memory hint in baseline pack, got %q", pack.Serialized)
 	}
 	if strings.Contains(pack.Serialized, "Canonical guidance") {
@@ -511,10 +511,10 @@ func TestCaptureStoresWorkingContextForTemporaryInstruction(t *testing.T) {
 		t.Fatalf("capture: %v", err)
 	}
 	if !created {
-		t.Fatal("expected working memory to be created")
+		t.Fatal("expected memory to be created")
 	}
-	if entry.Layer != models.MemoryLayerWorking {
-		t.Fatalf("layer = %q, want %q", entry.Layer, models.MemoryLayerWorking)
+	if entry.Layer != models.MemoryLayerProject {
+		t.Fatalf("layer = %q, want %q", entry.Layer, models.MemoryLayerProject)
 	}
 	if entry.Category != "context" {
 		t.Fatalf("category = %q, want context", entry.Category)

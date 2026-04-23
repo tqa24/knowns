@@ -367,7 +367,7 @@ func TestProxyOpenCodeInjectsRuntimeMemoryInAutoMode(t *testing.T) {
 	if gotHeader != projectRoot {
 		t.Fatalf("x-opencode-directory = %q, want %q", gotHeader, projectRoot)
 	}
-	if !strings.Contains(gotBody, "Knowns Guidance") || !strings.Contains(gotBody, "list_memories") || !strings.Contains(gotBody, "KNOWNS.md") {
+	if !strings.Contains(gotBody, "Knowns Guidance") || !strings.Contains(gotBody, "memory({ action:") || !strings.Contains(gotBody, "KNOWNS.md") {
 		t.Fatalf("expected lightweight injected memory guidance in body, got %s", gotBody)
 	}
 	if strings.Contains(gotBody, "Runtime queue pattern") {
@@ -508,7 +508,7 @@ func TestProxyOpenCodeSupportsManualAndDebugModes(t *testing.T) {
 	manualInjectReq.Header.Set(runtimememory.HeaderInject, "true")
 	manualInjectRR := httptest.NewRecorder()
 	s.proxyOpenCode(manualInjectRR, manualInjectReq)
-	if !strings.Contains(gotBody, "Knowns Guidance") || !strings.Contains(gotBody, "list_memories") {
+	if !strings.Contains(gotBody, "Knowns Guidance") || !strings.Contains(gotBody, "memory({ action:") {
 		t.Fatalf("manual mode with inject should add lightweight memory guidance, got %s", gotBody)
 	}
 	if manualInjectRR.Header().Get(runtimememory.HeaderStatus) != runtimememory.StatusInjected {

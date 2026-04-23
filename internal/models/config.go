@@ -1,6 +1,10 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	"github.com/howznguyen/knowns/internal/permissions"
+)
 
 // Project is the root configuration stored in .knowns/config.json.
 type Project struct {
@@ -57,6 +61,10 @@ type ProjectSettings struct {
 
 	// RuntimeMemory configures bounded memory injection for supported runtimes.
 	RuntimeMemory *RuntimeMemorySettings `json:"runtimeMemory,omitempty"`
+
+	// Permissions configures the AI permission policy for this project.
+	// When nil, the implicit default preset (read-write-no-delete) is used.
+	Permissions *permissions.PermissionConfig `json:"permissions,omitempty"`
 }
 
 // RuntimeMemorySettings configures runtime-level memory injection.

@@ -253,19 +253,85 @@ func runSyncInstructions(projectRoot string, platform string, force bool, config
 		if p.filePath == filepath.Join(projectRoot, ".github", "copilot-instructions.md") {
 			relPath = filepath.Join(".github", "copilot-instructions.md")
 		}
-		content := generateInstructionContent(relPath, p.label, projectRoot)
-		if err := os.WriteFile(p.filePath, []byte(content), 0644); err != nil {
-			return fmt.Errorf("write %s: %w", p.filePath, err)
-		}
+		newContent := generateInstructionContent(relPath, p.label, projectRoot)
 
 		if exists {
+			// Preserve user content outside the markers — only replace the
+			// managed block between <!-- KNOWNS GUIDELINES START --> and
+			// <!-- KNOWNS GUIDELINES END -->.
+			if err := syncInstructionMarkerBlock(p.filePath, newContent); err != nil {
+				return fmt.Errorf("sync %s: %w", p.filePath, err)
+			}
 			fmt.Printf("  %s %s %s\n", StyleSuccess.Render("["+p.name+"]"), filepath.Base(p.filePath), StyleDim.Render("synced."))
 		} else {
+			if err := os.WriteFile(p.filePath, []byte(newContent), 0644); err != nil {
+				return fmt.Errorf("write %s: %w", p.filePath, err)
+			}
 			fmt.Printf("  %s %s %s\n", StyleSuccess.Render("["+p.name+"]"), filepath.Base(p.filePath), StyleDim.Render("created."))
 		}
 	}
 
 	return nil
+}
+
+const (
+	guidelinesMarkerStart = "<!-- KNOWNS GUIDELINES START -->"
+	guidelinesMarkerEnd   = "<!-- KNOWNS GUIDELINES END -->"
+)
+
+// syncInstructionMarkerBlock replaces only the managed block (between the
+// KNOWNS GUIDELINES markers) in an existing instruction file, preserving any
+// user-added content outside the markers.  If the file has no markers the
+// entire file is overwritten with newContent (backwards-compatible).
+func syncInstructionMarkerBlock(filePath, newContent string) error {
+	existing, err := os.ReadFile(filePath)
+	if err != nil {
+		// File unreadable — fall back to full overwrite.
+		return os.WriteFile(filePath, []byte(newContent), 0644)
+	}
+
+	oldText := string(existing)
+	startIdx := strings.Index(oldText, guidelinesMarkerStart)
+	endIdx := strings.Index(oldText, guidelinesMarkerEnd)
+
+	if startIdx < 0 || endIdx < 0 || endIdx <= startIdx {
+		// No valid marker pair found — append the managed block to preserve
+		// existing user content instead of overwriting the whole file.
+		newStartIdx := strings.Index(newContent, guidelinesMarkerStart)
+		newEndIdx := strings.Index(newContent, guidelinesMarkerEnd)
+		if newStartIdx < 0 || newEndIdx < 0 || newEndIdx <= newStartIdx {
+			return os.WriteFile(filePath, []byte(newContent), 0644)
+		}
+		block := newContent[newStartIdx : newEndIdx+len(guidelinesMarkerEnd)]
+		separator := "\n\n"
+		if strings.HasSuffix(oldText, "\n\n") {
+			separator = ""
+		} else if strings.HasSuffix(oldText, "\n") {
+			separator = "\n"
+		}
+		return os.WriteFile(filePath, []byte(oldText+separator+block+"\n"), 0644)
+	}
+
+	// Extract the new managed block from the generated content.
+	newStartIdx := strings.Index(newContent, guidelinesMarkerStart)
+	newEndIdx := strings.Index(newContent, guidelinesMarkerEnd)
+
+	if newStartIdx < 0 || newEndIdx < 0 || newEndIdx <= newStartIdx {
+		// Generated content has no markers (unexpected) — overwrite.
+		return os.WriteFile(filePath, []byte(newContent), 0644)
+	}
+
+	newBlock := newContent[newStartIdx : newEndIdx+len(guidelinesMarkerEnd)]
+	oldBlock := oldText[startIdx : endIdx+len(guidelinesMarkerEnd)]
+
+	result := oldText[:startIdx] + newBlock + oldText[endIdx+len(guidelinesMarkerEnd):]
+
+	// Only write if something actually changed.
+	if newBlock == oldBlock {
+		return nil
+	}
+
+	return os.WriteFile(filePath, []byte(result), 0644)
 }
 
 // runSyncImports syncs all git-based imports during knowns sync.
