@@ -53,6 +53,11 @@ detect_platform() {
         *)             error "Unsupported architecture: $ARCH" ;;
     esac
 
+    # macOS Intel (x64) is no longer supported — ONNX Runtime 1.25.0 dropped it.
+    if [ "$OS" = "darwin" ] && [ "$ARCH" = "x64" ]; then
+        error "macOS Intel (x86_64) is no longer supported. Please use macOS on Apple Silicon (arm64)."
+    fi
+
     PLATFORM="${OS}-${ARCH}"
 }
 
