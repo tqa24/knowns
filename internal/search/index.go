@@ -273,7 +273,7 @@ func (s *IndexService) memoryEntryForIndex(memoryID string) (*models.MemoryEntry
 	if entry, err := s.store.Memory.GetInLayer(memoryID, models.MemoryLayerProject); err == nil {
 		return entry, nil
 	}
-	return s.store.Memory.GetInLayer(memoryID, models.MemoryLayerWorking)
+	return s.store.Memory.GetInLayer(memoryID, models.MemoryLayerGlobal)
 }
 
 func (s *IndexService) embedAndStore(chunks []Chunk) error {

@@ -2,13 +2,13 @@ package search
 
 import "fmt"
 
-// ErrSemanticRuntimeUnavailable is returned when the embedding sidecar is unavailable.
-var ErrSemanticRuntimeUnavailable = fmt.Errorf("semantic search is unavailable: knowns-embed sidecar binary not found")
+// ErrSemanticRuntimeUnavailable is returned when the ONNX runtime library is unavailable.
+var ErrSemanticRuntimeUnavailable = fmt.Errorf("semantic search is unavailable: ONNX runtime shared library not found")
 
-// IsONNXAvailable is kept as an alias for backward compat with callers that
-// still ask "is the embedding runtime available?". It now reports sidecar status.
+// IsSidecarAvailable is kept for backward compat. It now checks whether the
+// native ONNX runtime library can be located.
 //
-// Deprecated: use IsSidecarAvailable.
-func IsONNXAvailable() (bool, string) {
-	return IsSidecarAvailable()
+// Deprecated: use IsONNXAvailable.
+func IsSidecarAvailable() (bool, string) {
+	return IsONNXAvailable()
 }

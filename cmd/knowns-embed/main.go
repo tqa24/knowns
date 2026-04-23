@@ -1,5 +1,6 @@
-//go:build windows
-
+// knowns-embed is a standalone JSON-RPC sidecar for ONNX embedding inference.
+// It is kept for backward compatibility but is no longer required — the knowns
+// binary now embeds the ONNX runtime directly.
 package main
 
 import (
@@ -101,7 +102,7 @@ func handle(runtime *embedsidecar.Runtime, req rpcReq) (*rpcResp, bool, error) {
 		if params.Model.HuggingFaceID == "" {
 			return errorResponse(req.ID, -32602, "missing params.model"), false, nil
 		}
-		if err := runtime.Init(params.Model, params.CacheDir); err != nil {
+		if err := runtime.InitORT(params.Model, params.CacheDir); err != nil {
 			return errorResponse(req.ID, -32000, err.Error()), false, nil
 		}
 		return successResponse(req.ID, map[string]any{"dimensions": runtime.Dimensions()}), false, nil
@@ -117,13 +118,11 @@ func handle(runtime *embedsidecar.Runtime, req rpcReq) (*rpcResp, bool, error) {
 		if kind == "" {
 			kind = "doc"
 		}
-		vectors, err := runtime.Embed(params.Texts, kind)
+		vectors, err := runtime.EmbedORT(params.Texts, kind)
 		if err != nil {
 			return errorResponse(req.ID, -32000, err.Error()), false, nil
 		}
 		return successResponse(req.ID, map[string]any{"vectors": vectors}), false, nil
-	case "parse":
-		return errorResponse(req.ID, -32601, "unknown method: parse"), false, nil
 	case "shutdown":
 		return successResponse(req.ID, map[string]any{"ok": true}), true, nil
 	default:
