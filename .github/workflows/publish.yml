@@ -119,30 +119,35 @@ jobs:
             npm_pkg: knowns-darwin-x64
             ext: ""
             cgo_enabled: "1"
+            ort_lib: libonnxruntime.dylib
           - runner: macos-15
             goos: darwin
             goarch: arm64
             npm_pkg: knowns-darwin-arm64
             ext: ""
             cgo_enabled: "1"
+            ort_lib: libonnxruntime.dylib
           - runner: ubuntu-latest
             goos: linux
             goarch: amd64
             npm_pkg: knowns-linux-x64
             ext: ""
             cgo_enabled: "1"
+            ort_lib: libonnxruntime.so
           - runner: ubuntu-24.04-arm
             goos: linux
             goarch: arm64
             npm_pkg: knowns-linux-arm64
             ext: ""
             cgo_enabled: "1"
+            ort_lib: libonnxruntime.so
           - runner: windows-latest
             goos: windows
             goarch: amd64
             npm_pkg: knowns-win-x64
             ext: ".exe"
             cgo_enabled: "1"
+            ort_lib: onnxruntime.dll
             llvm_mingw_archive: llvm-mingw-20260407-ucrt-x86_64.zip
             llvm_mingw_prefix: x86_64-w64-mingw32
     runs-on: ${{ matrix.runner }}
@@ -218,114 +223,67 @@ jobs:
         run: |
           LDFLAGS="-s -w -X github.com/howznguyen/knowns/internal/util.Version=${VERSION}"
           mkdir -p "artifacts/${{ matrix.npm_pkg }}"
-
           go build -ldflags "$LDFLAGS" -o "artifacts/${{ matrix.npm_pkg }}/knowns${{ matrix.ext }}" ./cmd/knowns
 
-      - name: Derive sidecar bun target
-        id: sidecar
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          NPM_PKG: ${{ matrix.npm_pkg }}
+      - name: Bundle ONNX Runtime native library
         run: |
-          case "${GOOS}-${GOARCH}" in
-            darwin-amd64) BUN_TARGET=bun-darwin-x64; BUNDLE=knowns-embed-darwin-x64 ;;
-            darwin-arm64) BUN_TARGET=bun-darwin-arm64; BUNDLE=knowns-embed-darwin-arm64 ;;
-            linux-amd64)  BUN_TARGET=bun-linux-x64; BUNDLE=knowns-embed-linux-x64 ;;
-            linux-arm64)  BUN_TARGET=bun-linux-arm64; BUNDLE=knowns-embed-linux-arm64 ;;
-            windows-amd64) BUN_TARGET=windows-native; BUNDLE=knowns-embed-win-x64 ;;
-            windows-arm64) BUN_TARGET=skip; BUNDLE=skip ;;
-            *) echo "Unknown ${GOOS}-${GOARCH}"; exit 1 ;;
-          esac
-          echo "bun_target=${BUN_TARGET}" >> "$GITHUB_OUTPUT"
-          echo "bundle=${BUNDLE}" >> "$GITHUB_OUTPUT"
-
-      - name: Install sidecar dependencies
-        run: |
-          cd sidecar
-          bun install --frozen-lockfile
-
-      - name: Build sidecar bundle
-        if: steps.sidecar.outputs.bun_target != 'skip' && steps.sidecar.outputs.bun_target != 'windows-native'
-        env:
-          BUN_TARGET: ${{ steps.sidecar.outputs.bun_target }}
-        run: |
-          cd sidecar
-          bun run build.ts "$BUN_TARGET"
-
-      - name: Build Windows native sidecar
-        if: steps.sidecar.outputs.bun_target == 'windows-native'
-        env:
-          VERSION: ${{ needs.meta.outputs.version }}
-        run: |
-          LDFLAGS="-s -w -H windowsgui -X github.com/howznguyen/knowns/internal/util.Version=${VERSION}"
-          go build -ldflags "$LDFLAGS" -o "artifacts/${{ matrix.npm_pkg }}/knowns-embed.exe" ./cmd/knowns-embed
-
           ORT_MOD_DIR=$(go list -m -f '{{.Dir}}' github.com/yalue/onnxruntime_go | tr '\\' '/')
-          ORT_DLL="$ORT_MOD_DIR/test_data/onnxruntime.dll"
-          if [ ! -f "$ORT_DLL" ]; then
-            echo "Missing onnxruntime.dll for onnxruntime_go at $ORT_DLL"
+          ORT_LIB_NAME="${{ matrix.ort_lib }}"
+          ARTIFACT_DIR="artifacts/${{ matrix.npm_pkg }}"
+
+          echo "Looking for ${ORT_LIB_NAME} in ${ORT_MOD_DIR}/test_data/"
+
+          if [ "${{ matrix.goos }}" = "linux" ]; then
+            # Linux: onnxruntime_go ships versioned .so (e.g. libonnxruntime_arm64.so)
+            # or architecture-specific names. Find the right one.
+            ARCH_SUFFIX=""
+            if [ "${{ matrix.goarch }}" = "arm64" ]; then
+              ARCH_SUFFIX="_arm64"
+            fi
+            # Try architecture-specific name first, then generic
+            for candidate in \
+              "${ORT_MOD_DIR}/test_data/libonnxruntime${ARCH_SUFFIX}.so" \
+              "${ORT_MOD_DIR}/test_data/libonnxruntime.so"; do
+              if [ -f "$candidate" ]; then
+                cp "$candidate" "${ARTIFACT_DIR}/libonnxruntime.so"
+                echo "Copied $(basename "$candidate") -> libonnxruntime.so"
+                break
+              fi
+            done
+          elif [ "${{ matrix.goos }}" = "darwin" ]; then
+            # macOS: onnxruntime_go ships architecture-specific dylibs
+            ARCH_SUFFIX=""
+            if [ "${{ matrix.goarch }}" = "arm64" ]; then
+              ARCH_SUFFIX="_arm64"
+            fi
+            for candidate in \
+              "${ORT_MOD_DIR}/test_data/onnxruntime${ARCH_SUFFIX}.dylib" \
+              "${ORT_MOD_DIR}/test_data/libonnxruntime${ARCH_SUFFIX}.dylib" \
+              "${ORT_MOD_DIR}/test_data/libonnxruntime.dylib"; do
+              if [ -f "$candidate" ]; then
+                cp "$candidate" "${ARTIFACT_DIR}/libonnxruntime.dylib"
+                echo "Copied $(basename "$candidate") -> libonnxruntime.dylib"
+                break
+              fi
+            done
+          elif [ "${{ matrix.goos }}" = "windows" ]; then
+            ORT_DLL="${ORT_MOD_DIR}/test_data/onnxruntime.dll"
+            if [ -f "$ORT_DLL" ]; then
+              cp "$ORT_DLL" "${ARTIFACT_DIR}/onnxruntime.dll"
+              echo "Copied onnxruntime.dll"
+            fi
+          fi
+
+          # Verify the native lib was bundled
+          if ! ls "${ARTIFACT_DIR}"/*onnxruntime* >/dev/null 2>&1; then
+            echo "FATAL: No ONNX Runtime library found for ${{ matrix.goos }}/${{ matrix.goarch }}"
+            echo "Contents of ${ORT_MOD_DIR}/test_data/:"
+            ls -la "${ORT_MOD_DIR}/test_data/" || true
             exit 1
           fi
-          cp "$ORT_DLL" "artifacts/${{ matrix.npm_pkg }}/onnxruntime.dll"
 
-      - name: Bundle sidecar into artifact
-        if: steps.sidecar.outputs.bun_target != 'skip' && steps.sidecar.outputs.bun_target != 'windows-native'
-        env:
-          BUNDLE: ${{ steps.sidecar.outputs.bundle }}
-          NPM_PKG: ${{ matrix.npm_pkg }}
-        run: |
-          BUNDLE_DIR="sidecar/dist/${BUNDLE}"
-          if [ ! -d "$BUNDLE_DIR" ]; then
-            echo "Sidecar bundle not found: $BUNDLE_DIR"
-            ls -la sidecar/dist/ || true
-            exit 1
-          fi
-          echo "Bundle contents:"
-          ls -la "$BUNDLE_DIR"
-          cp -R "$BUNDLE_DIR"/. "artifacts/${NPM_PKG}/"
-          chmod +x "artifacts/${NPM_PKG}/knowns-embed"* 2>/dev/null || true
-
-      - name: Smoke test Windows sidecar
-        if: matrix.goos == 'windows' && matrix.goarch == 'amd64'
-        shell: pwsh
-        run: |
-          $sidecar = Resolve-Path "artifacts/${{ matrix.npm_pkg }}/knowns-embed.exe"
-          if (-not (Test-Path $sidecar)) {
-            throw "Missing sidecar binary: $sidecar"
-          }
-
-          $psi = New-Object System.Diagnostics.ProcessStartInfo
-          $psi.FileName = $sidecar
-          $psi.UseShellExecute = $false
-          $psi.RedirectStandardInput = $true
-          $psi.RedirectStandardOutput = $true
-          $psi.RedirectStandardError = $true
-          $psi.CreateNoWindow = $true
-
-          $proc = New-Object System.Diagnostics.Process
-          $proc.StartInfo = $psi
-          $proc.Start() | Out-Null
-          $proc.StandardInput.WriteLine('{"jsonrpc":"2.0","id":1,"method":"ping","params":{}}')
-          $proc.StandardInput.Close()
-
-          $stdout = $proc.StandardOutput.ReadToEnd()
-          $stderr = $proc.StandardError.ReadToEnd()
-          $proc.WaitForExit()
-
-          if ($proc.ExitCode -ne 0) {
-            throw "knowns-embed.exe exited with code $($proc.ExitCode)`nSTDERR:`n$stderr`nSTDOUT:`n$stdout"
-          }
-
-          $jsonLine = ($stdout -split "`r?`n") | Where-Object { $_ -match '^\{.*\}$' } | Select-Object -Last 1
-          if (-not $jsonLine) {
-            throw "knowns-embed.exe did not return a JSON-RPC response`nSTDERR:`n$stderr`nSTDOUT:`n$stdout"
-          }
-
-          $parsed = $jsonLine | ConvertFrom-Json
-          if (-not $parsed.result.ok) {
-            throw "Unexpected sidecar ping response: $jsonLine"
-          }
+          echo "=== Artifact contents ==="
+          ls -la "${ARTIFACT_DIR}/"
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
@@ -392,10 +350,9 @@ jobs:
               *) continue ;;
             esac
             mkdir -p "npm/$pkg"
-            # Copy every file (main binary + sidecar bundle contents) to npm package dir
             cp -R "$dir"/. "npm/$pkg/"
             # Mark executables
-            for exe in "npm/$pkg/knowns" "npm/$pkg/knowns.exe" "npm/$pkg/knowns-embed" "npm/$pkg/knowns-embed.exe"; do
+            for exe in "npm/$pkg/knowns" "npm/$pkg/knowns.exe"; do
               [ -f "$exe" ] && chmod +x "$exe" 2>/dev/null || true
             done
             if [ ! -f "npm/$pkg/knowns" ] && [ ! -f "npm/$pkg/knowns.exe" ]; then
@@ -428,6 +385,52 @@ jobs:
             fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
           }
           EOF
+
+      - name: Verify npm package contents
+        run: |
+          echo "=== Verifying ONNX Runtime native libs in all platform packages ==="
+
+          # Windows: onnxruntime.dll
+          if [ ! -f "npm/knowns-win-x64/onnxruntime.dll" ]; then
+            echo "FATAL: npm/knowns-win-x64/onnxruntime.dll is missing!"
+            ls -la npm/knowns-win-x64/ || true
+            exit 1
+          fi
+          echo "✓ knowns-win-x64/onnxruntime.dll"
+
+          # macOS: libonnxruntime.dylib
+          for pkg in knowns-darwin-arm64 knowns-darwin-x64; do
+            if ! ls npm/$pkg/libonnxruntime*.dylib >/dev/null 2>&1; then
+              echo "FATAL: npm/$pkg/ missing libonnxruntime dylib!"
+              ls -la "npm/$pkg/" || true
+              exit 1
+            fi
+            echo "✓ $pkg/libonnxruntime.dylib"
+          done
+
+          # Linux: libonnxruntime.so
+          for pkg in knowns-linux-arm64 knowns-linux-x64; do
+            if ! ls npm/$pkg/libonnxruntime*.so* >/dev/null 2>&1; then
+              echo "FATAL: npm/$pkg/ missing libonnxruntime.so!"
+              ls -la "npm/$pkg/" || true
+              exit 1
+            fi
+            echo "✓ $pkg/libonnxruntime.so"
+          done
+
+          # Main binary in all packages
+          for pkg in knowns-darwin-arm64 knowns-darwin-x64 knowns-linux-arm64 knowns-linux-x64; do
+            if [ ! -f "npm/$pkg/knowns" ]; then
+              echo "FATAL: npm/$pkg/knowns is missing!"
+              exit 1
+            fi
+            echo "✓ $pkg/knowns"
+          done
+          if [ ! -f "npm/knowns-win-x64/knowns.exe" ]; then
+            echo "FATAL: npm/knowns-win-x64/knowns.exe is missing!"
+            exit 1
+          fi
+          echo "✓ knowns-win-x64/knowns.exe"
 
       - name: Publish platform packages
         env:
@@ -505,7 +508,6 @@ jobs:
             npm/knowns-win-x64; do
             pkg=$(basename "$pkgdir")
             staging=$(mktemp -d)
-            # Copy everything except npm metadata
             find "$pkgdir" -maxdepth 1 -mindepth 1 \
               ! -name 'package.json' \
               ! -name 'README.md' \
@@ -521,23 +523,18 @@ jobs:
             knowns-darwin-arm64.tar.gz \
             knowns-darwin-x64.tar.gz; do
             tar -tzf "$archive" | grep -Fx "./knowns" >/dev/null || { echo "$archive missing knowns"; exit 1; }
-            tar -tzf "$archive" | grep -Fx "./knowns-embed" >/dev/null || { echo "$archive missing knowns-embed"; exit 1; }
             tar -tzf "$archive" | grep -E "^\./libonnxruntime.*\.dylib$" >/dev/null || { echo "$archive missing libonnxruntime dylib"; exit 1; }
-            tar -tzf "$archive" | grep -Fx "./onnxruntime_binding.node" >/dev/null || { echo "$archive missing onnxruntime_binding.node"; exit 1; }
           done
 
           for archive in \
             knowns-linux-arm64.tar.gz \
             knowns-linux-x64.tar.gz; do
             tar -tzf "$archive" | grep -Fx "./knowns" >/dev/null || { echo "$archive missing knowns"; exit 1; }
-            tar -tzf "$archive" | grep -Fx "./knowns-embed" >/dev/null || { echo "$archive missing knowns-embed"; exit 1; }
             tar -tzf "$archive" | grep -E "^\./libonnxruntime\.so" >/dev/null || { echo "$archive missing libonnxruntime.so"; exit 1; }
-            tar -tzf "$archive" | grep -Fx "./onnxruntime_binding.node" >/dev/null || { echo "$archive missing onnxruntime_binding.node"; exit 1; }
           done
 
           for archive in knowns-win-x64.tar.gz; do
             tar -tzf "$archive" | grep -Fx "./knowns.exe" >/dev/null || { echo "$archive missing knowns.exe"; exit 1; }
-            tar -tzf "$archive" | grep -Fx "./knowns-embed.exe" >/dev/null || { echo "$archive missing knowns-embed.exe"; exit 1; }
             tar -tzf "$archive" | grep -Fx "./onnxruntime.dll" >/dev/null || { echo "$archive missing onnxruntime.dll"; exit 1; }
           done
 
@@ -604,13 +601,9 @@ jobs:
             end
 
             def install
-              # Sidecar bundle goes into libexec so @loader_path resolves the dylib
-              # and the .node addon as siblings of knowns-embed.
-              libexec.install "knowns-embed"
+              # ONNX Runtime native lib goes into libexec so knowns can find it
               libexec.install Dir["libonnxruntime*"]
-              libexec.install "onnxruntime_binding.node" if File.exist?("onnxruntime_binding.node")
               bin.install "knowns"
-              bin.install_symlink libexec/"knowns-embed"
               bin.install_symlink "knowns" => "kn"
             end
 

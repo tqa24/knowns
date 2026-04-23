@@ -3,7 +3,9 @@
     "knowns": {
       "args": [
         "mcp",
-        "--stdio"
+        "--stdio",
+        "--project",
+        "/Users/howznguyen/Workspaces/Knowns/knowns-go"
       ],
       "autoApprove": [
         "*"

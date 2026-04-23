@@ -3,11 +3,11 @@
   "enabled": true,
   "name": "Knowns runtime memory",
   "then": {
-    "command": "/Users/howznguyen/Workspaces/Knowns/knowns-go/bin/knowns runtime-memory hook --runtime kiro --event agentspawn",
+    "command": "knowns runtime-memory hook --runtime kiro --event promptsubmit",
     "type": "runCommand"
   },
   "version": "1.0.0",
   "when": {
-    "type": "agentSpawn"
+    "type": "promptSubmit"
   }
 }

@@ -195,21 +195,19 @@ main() {
 
     EXTRACT_ROOT=$(dirname "$EXTRACTED_BIN")
 
-    # Install bundle (main binary + sidecar + native libs)
+    # Install bundle (main binary + native libs)
     printf "  ${DIM}⠋${RESET} Installing to ${INSTALL_DIR}...\r"
     mkdir -p "$INSTALL_DIR" 2>/dev/null || true
 
     cp "$EXTRACTED_BIN" "${INSTALL_DIR}/${BINARY}"
     chmod +x "${INSTALL_DIR}/${BINARY}"
 
-    # Install sidecar binary + colocated native libs (dylib/so/.node)
-    for f in "${EXTRACT_ROOT}/knowns-embed" \
-             "${EXTRACT_ROOT}"/libonnxruntime* \
-             "${EXTRACT_ROOT}/onnxruntime_binding.node"; do
+    # Install colocated ONNX Runtime native libs (dylib/so/dll)
+    for f in "${EXTRACT_ROOT}"/libonnxruntime* \
+             "${EXTRACT_ROOT}"/onnxruntime.dll; do
         [ -e "$f" ] || continue
         cp "$f" "${INSTALL_DIR}/"
     done
-    [ -f "${INSTALL_DIR}/knowns-embed" ] && chmod +x "${INSTALL_DIR}/knowns-embed"
 
     success "Installed to ${INSTALL_DIR}/${BINARY}"
 
