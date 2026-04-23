@@ -3,6 +3,7 @@ bin/
 tmp/
 *.exe
 /knowns
+/knowns-embed
 
 # npm platform binaries
 npm/knowns-*/knowns
