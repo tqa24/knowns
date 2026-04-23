@@ -72,7 +72,7 @@ MCP config (`opencode.json` in project root):
 }
 ```
 
-> **Note**: OpenCode uses global MCP config. Run `mcp__knowns__detect_projects` and `mcp__knowns__set_project` at session start.
+> **Note**: OpenCode uses global MCP config. Run `mcp__knowns__project({ action: "detect" })` and `mcp__knowns__project({ action: "set" })` at session start.
 
 #### OpenCode + Antigravity Auth (Community)
 

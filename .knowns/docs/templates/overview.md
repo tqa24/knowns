@@ -71,7 +71,7 @@ knowns template run react-component
 knowns template create my-template
 
 # Sync skills to AI platforms
-knowns skill sync
+knowns sync --skills
 ```
 
 ---

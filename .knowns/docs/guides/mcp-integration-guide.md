@@ -89,54 +89,59 @@ Create `.mcp.json` in project root:
 > **Note**: If you don't have `knowns` installed globally, you can use `npx -y knowns mcp` as the command instead.
 ## Available MCP Tools
 
+Tools are grouped by domain. Each tool uses an `action` parameter to dispatch operations.
+
 ```mermaid
 graph TD
-    subgraph Tasks
-        A1[create_task]
-        A2[get_task]
-        A3[update_task]
-        A4[list_tasks]
+    subgraph "tasks tool"
+        A1[create]
+        A2[get]
+        A3[update]
+        A4[list]
+        A5[board]
     end
-    subgraph Docs
-        B1[create_doc]
-        B2[get_doc]
-        B3[update_doc]
-        B4[list_docs]
+    subgraph "docs tool"
+        B1[create]
+        B2[get]
+        B3[update]
+        B4[list]
     end
-    subgraph Other
+    subgraph "Other tools"
         C1[search]
         C2[validate]
-        C3[run_template]
-        C4[start_time / stop_time]
+        C3[templates]
+        C4[time]
+        C5[memory]
     end
 ```
 
-### Task Tools
-- `create_task` - Create new task
-- `get_task` - Get task by ID
-- `update_task` - Update task fields
-- `list_tasks` - List with filters
+### Task Tool (`tasks`)
+- `create` - Create new task
+- `get` - Get task by ID
+- `update` - Update task fields (status, AC, plan, notes)
+- `list` - List with filters
+- `board` - Get kanban board state
 
-### Doc Tools
-- `create_doc` - Create document
-- `get_doc` - Get doc (supports smart, section, toc)
-- `update_doc` - Update doc/section
-- `list_docs` - List with filters
+### Doc Tool (`docs`)
+- `create` - Create document
+- `get` - Get doc (supports smart, section, toc)
+- `update` - Update doc/section
+- `list` - List with filters
 
-### Search & Other Tools
-- `search` - Unified search (tasks + docs) with semantic support
+### Other Tools
+- `search` - Unified search (tasks + docs + memories) with semantic support
 - `validate` - Check broken refs
-- `list_templates` / `run_template` - Templates
-- `start_time` / `stop_time` - Time tracking
-- `get_board` - Kanban board state
+- `templates` - List, get, run, create templates
+- `time` - Start, stop, add, report time tracking
+- `memory` - Add, get, list, update, delete, promote, demote memories
 
 ## Session Init
 
 AI agents should start with:
 
 ```json
-mcp__knowns__detect_projects({})
-mcp__knowns__set_project({ "projectRoot": "/path/to/project" })
+mcp__knowns__project({ "action": "detect" })
+mcp__knowns__project({ "action": "set", "projectRoot": "/path/to/project" })
 ```
 
 ## Tips

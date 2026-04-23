@@ -28,13 +28,13 @@ For platforms with **global MCP config** (for example Gemini CLI or Claude Deskt
 
 ```json
 // 1. Detect available Knowns projects
-mcp__knowns__detect_projects({})
+mcp__knowns__project({ "action": "detect" })
 
 // 2. Set the active project
-mcp__knowns__set_project({ "projectRoot": "/path/to/project" })
+mcp__knowns__project({ "action": "set", "projectRoot": "/path/to/project" })
 
 // 3. Verify project is set
-mcp__knowns__get_current_project({})
+mcp__knowns__project({ "action": "current" })
 ```
 
 > **Note:** Claude Code usually uses per-project `.mcp.json`, so session initialization is typically not required there.
@@ -108,7 +108,7 @@ Use the same server command pattern in the client-specific config:
 }
 ```
 
-> **Note:** For global MCP configs, use `detect_projects` and `set_project` at session start.
+> **Note:** For global MCP configs, use `project({ action: "detect" })` and `project({ action: "set" })` at session start.
 
 #### Claude Desktop (Global)
 
@@ -209,7 +209,7 @@ This updates generated instruction files to match the current binary. For Claude
 
 Once configured, Claude can access your Knowns data automatically.
 
-For any global MCP client, remember that most Knowns tools return `No project set. Call set_project first.` until a project has been selected.
+For any global MCP client, remember that most Knowns tools return `No project set` until a project has been selected via `project({ action: "set" })`.
 
 ### Example Conversation
 
@@ -238,24 +238,30 @@ Starting timer and beginning implementation..."
 
 ### Project Tools (Session Initialization)
 
-| Tool                  | Description             | Parameters                |
-| --------------------- | ----------------------- | ------------------------- |
-| `detect_projects`     | Scan for Knowns projects| `additionalPaths?` |
-| `set_project`         | Set active project      | `projectRoot`             |
-| `get_current_project` | Get current project     | -                         |
+| Tool | Action | Description | Parameters |
+|------|--------|-------------|------------|
+| `project` | `detect` | Scan for Knowns projects | `additionalPaths?` |
+| `project` | `set` | Set active project | `projectRoot` |
+| `project` | `current` | Get current project | - |
+| `project` | `status` | Check project readiness | - |
 
 > **Required for global MCP configs**. Call at session start.
 
 ### Task Management
 
-| Tool           | Description             | Parameters                                                                         |
-| -------------- | ----------------------- | ---------------------------------------------------------------------------------- |
-| `create_task`  | Create a new task       | `title`, `description?`, `status?`, `priority?`, `labels?`, `assignee?`, `parent?`, `fulfills?`, `spec?` |
-| `get_task`     | Get task by ID          | `taskId`                                                                           |
-| `update_task`  | Update task fields      | `taskId`, `status?`, `priority?`, `assignee?`, `labels?`, `addAc?`, `checkAc?`, `uncheckAc?`, `removeAc?`, `plan?`, `notes?`, `appendNotes?` |
-| `list_tasks`   | List tasks with filters | `status?`, `priority?`, `assignee?`, `label?`                                      |
+All task operations use the `tasks` tool with an `action` parameter.
 
-**update_task extended fields:**
+| Action | Description | Required Params | Optional Params |
+|--------|-------------|-----------------|-----------------|
+| `create` | Create a new task | `title` | `description`, `status`, `priority`, `labels`, `assignee`, `parent`, `fulfills`, `spec` |
+| `get` | Get task by ID | `taskId` | — |
+| `update` | Update task fields | `taskId` | `status`, `priority`, `assignee`, `labels`, `addAc`, `checkAc`, `uncheckAc`, `removeAc`, `plan`, `notes`, `appendNotes` |
+| `list` | List tasks with filters | — | `status`, `priority`, `assignee`, `label` |
+| `delete` | Delete a task (dry-run by default) | `taskId` | `dryRun` |
+| `history` | Get version history | `taskId` | — |
+| `board` | Get kanban board state | — | — |
+
+**`update` action extended fields:**
 
 | Field | Description |
 | ----- | ----------- |
@@ -269,71 +275,83 @@ Starting timer and beginning implementation..."
 
 ### Time Tracking
 
-| Tool              | Description          | Parameters                             |
-| ----------------- | -------------------- | -------------------------------------- |
-| `start_time`      | Start timer for task | `taskId`                               |
-| `stop_time`       | Stop active timer    | `taskId`                               |
-| `add_time`        | Manual time entry    | `taskId`, `duration`, `note?`, `date?` |
-| `get_time_report` | Generate time report | `from?`, `to?`, `groupBy?`             |
+All time operations use the `time` tool with an `action` parameter.
+
+| Action | Description | Required Params | Optional Params |
+|--------|-------------|-----------------|-----------------|
+| `start` | Start timer for task | `taskId` | — |
+| `stop` | Stop active timer | `taskId` | — |
+| `add` | Manual time entry | `taskId`, `duration` | `note`, `date` |
+| `report` | Generate time report | — | `from`, `to`, `groupBy` |
 
 ### Documentation
 
-| Tool          | Description     | Parameters                                                                          |
-| ------------- | --------------- | ----------------------------------------------------------------------------------- |
-| `list_docs`   | List all docs   | `tag?`                                                                              |
-| `get_doc`     | Get doc content | `path`, `smart?`, `info?`, `toc?`, `section?`                                       |
-| `create_doc`  | Create new doc  | `title`, `description?`, `content?`, `tags?`, `folder?`                             |
-| `update_doc`  | Update doc      | `path`, `title?`, `description?`, `content?`, `appendContent?`, `tags?`, `section?` |
+All doc operations use the `docs` tool with an `action` parameter.
+
+| Action | Description | Required Params | Optional Params |
+|--------|-------------|-----------------|-----------------|
+| `list` | List all docs | — | `tag` |
+| `get` | Get doc content | `path` | `smart`, `info`, `toc`, `section` |
+| `create` | Create new doc | `title` | `description`, `content`, `tags`, `folder` |
+| `update` | Update doc | `path` | `title`, `description`, `content`, `appendContent`, `tags`, `section` |
+| `delete` | Delete doc (dry-run by default) | `path` | `dryRun` |
+| `history` | Get version history | `path` | — |
 
 ### Unified Search & Retrieval
 
-| Tool       | Description                     | Parameters                                           |
-| ---------- | ------------------------------- | ---------------------------------------------------- |
-| `search`   | Search tasks + docs + memories  | `query`, `type?` (all/task/doc/memory), `mode?` (hybrid/semantic/keyword), `status?`, `priority?`, `label?`, `tag?`, `assignee?`, `limit?` |
-| `retrieve` | Ranked context with citations   | `query`, `mode?`, `limit?`, `sourceTypes?`, `expandReferences?`, `status?`, `priority?`, `assignee?`, `label?`, `tag?` |
-| `reindex_search` | Rebuild semantic search index | - |
+All search operations use the `search` tool with an `action` parameter.
+
+| Action | Description | Parameters |
+|--------|-------------|------------|
+| `search` | Search tasks + docs + memories | `query`, `type?` (all/task/doc/memory), `mode?` (hybrid/semantic/keyword), `status?`, `priority?`, `label?`, `tag?`, `assignee?`, `limit?` |
+| `retrieve` | Ranked context with citations | `query`, `mode?`, `limit?`, `sourceTypes?`, `expandReferences?`, `status?`, `priority?`, `assignee?`, `label?`, `tag?` |
+| `resolve` | Resolve semantic reference | `ref` |
 
 **Large Document Workflow:**
 
 ```json
 // Step 1: Check size
-{ "path": "readme", "info": true }  // → estimatedTokens: 12132
+{ "action": "get", "path": "readme", "info": true }  // → estimatedTokens: 12132
 
 // Step 2: Get TOC (if >2000 tokens)
-{ "path": "readme", "toc": true }
+{ "action": "get", "path": "readme", "toc": true }
 
 // Step 3: Read/Edit specific section
-{ "path": "readme", "section": "2" }  // Read section
-// update_doc with section + content replaces only that section
+{ "action": "get", "path": "readme", "section": "2" }  // Read section
+// docs({ action: "update", path: "readme", section: "2", content: "..." }) replaces only that section
 ```
 
 ### Templates
 
-| Tool              | Description           | Parameters                            |
-| ----------------- | --------------------- | ------------------------------------- |
-| `list_templates`  | List all templates    | -                                     |
-| `get_template`    | Get template config   | `name`                                |
-| `run_template`    | Run template          | `name`, `variables`, `dryRun?`        |
-| `create_template` | Create new template   | `name`, `description?`, `doc?`        |
+All template operations use the `templates` tool with an `action` parameter.
+
+| Action | Description | Required Params | Optional Params |
+|--------|-------------|-----------------|-----------------|
+| `list` | List all templates | — | — |
+| `get` | Get template config | `name` | — |
+| `run` | Run template | `name` | `variables`, `dryRun` (default: true) |
+| `create` | Create new template | `name` | `description`, `doc` |
 
 **Template Workflow:**
 
 ```json
 // Step 1: List available templates
-mcp__knowns__list_templates({})
+mcp__knowns__templates({ "action": "list" })
 
 // Step 2: Get template details
-mcp__knowns__get_template({ "name": "react-component" })
+mcp__knowns__templates({ "action": "get", "name": "react-component" })
 
 // Step 3: Preview (dry run)
-mcp__knowns__run_template({
+mcp__knowns__templates({
+  "action": "run",
   "name": "react-component",
   "variables": { "name": "UserProfile", "withTest": true },
   "dryRun": true
 })
 
 // Step 4: Generate files
-mcp__knowns__run_template({
+mcp__knowns__templates({
+  "action": "run",
   "name": "react-component",
   "variables": { "name": "UserProfile", "withTest": true },
   "dryRun": false
@@ -367,53 +385,46 @@ mcp__knowns__validate({ "scope": "tasks" })
 
 ### Memory
 
-| Tool                  | Description                                          | Parameters                                    |
-| --------------------- | ---------------------------------------------------- | --------------------------------------------- |
-| `add_memory`          | Create a memory entry (project or global layer)      | `content`, `title?`, `layer?`, `category?`, `tags?` |
-| `get_memory`          | Get memory entry by ID                               | `id`                                          |
-| `list_memories`       | List memories with filters                           | `layer?`, `category?`, `tag?`                 |
-| `update_memory`       | Update memory entry                                  | `id`, `title?`, `content?`, `category?`, `tags?` |
-| `delete_memory`       | Delete memory entry (dry-run by default)             | `id`, `dryRun?`                               |
-| `promote_memory`      | Promote up one layer (working→project→global)        | `id`                                          |
-| `demote_memory`       | Demote down one layer (global→project→working)       | `id`                                          |
+All persistent memory operations use the consolidated `memory` tool with an `action` parameter:
+
+| Action | Description | Required Params | Optional Params |
+|--------|-------------|-----------------|-----------------|
+| `add` | Create a memory entry (project or global layer) | `content` | `title`, `layer`, `category`, `tags` |
+| `get` | Get memory entry by ID | `id` | — |
+| `list` | List memories with filters | — | `layer`, `category`, `tag` |
+| `update` | Update memory entry | `id` | `title`, `content`, `category`, `tags`, `clear` |
+| `delete` | Delete memory entry (dry-run by default) | `id` | `dryRun` |
+| `promote` | Promote up one layer (project→global) | `id` | — |
+| `demote` | Demote down one layer (global→project) | `id` | — |
 
 > **Note:** To search memory entries, use `search` with `type: "memory"`.
 
 ### Working Memory (Session-Scoped)
 
-| Tool                    | Description                    | Parameters                          |
-| ----------------------- | ------------------------------ | ----------------------------------- |
-| `add_working_memory`    | Add ephemeral session memory   | `content`, `title?`, `category?`, `tags?` |
-| `get_working_memory`    | Get working memory by ID       | `id`                                |
-| `list_working_memories` | List all session memories      | -                                   |
-| `delete_working_memory` | Delete a working memory entry  | `id`                                |
-| `clear_working_memory`  | Clear all session memories     | -                                   |
+All session-scoped memory operations use the consolidated `working_memory` tool with an `action` parameter:
 
-### Board
-
-| Tool        | Description            | Parameters |
-| ----------- | ---------------------- | ---------- |
-| `get_board` | Get kanban board state | -          |
+| Action | Description | Required Params | Optional Params |
+|--------|-------------|-----------------|-----------------|
+| `add` | Add ephemeral session memory | `content` | `title`, `category`, `tags` |
+| `get` | Get working memory by ID | `id` | — |
+| `list` | List all session memories | — | — |
+| `delete` | Delete a working memory entry | `id` | — |
+| `clear` | Clear all session memories | — | — |
 
 ### Code Intelligence
 
-| Tool           | Description                                      | Parameters                                    |
-| -------------- | ------------------------------------------------ | --------------------------------------------- |
-| `code_search`  | Search indexed code with neighbor expansion      | `query`, `limit?`, `neighbors?`, `edgeTypes?`, `mode?` |
-| `code_symbols` | List indexed code symbols                        | `path?`, `kind?`, `limit?`                    |
-| `code_deps`    | List code dependency edges                       | `type?`, `limit?`                             |
-| `code_graph`   | Return full code graph (nodes and edges)         | -                                             |
+All code operations use the `code` tool with an `action` parameter:
+
+| Action | Description | Required Params | Optional Params |
+|--------|-------------|-----------------|-----------------|
+| `search` | Search indexed code with neighbor expansion | `query` | `limit`, `neighbors`, `edgeTypes`, `mode` |
+| `symbols` | List indexed code symbols | — | `path`, `kind`, `limit` |
+| `deps` | List code dependency edges | — | `type`, `limit` |
+| `graph` | Return full code graph (nodes and edges) | — | — |
 
 > **Note:** Code intelligence tools require running `knowns code ingest` first to build the code index.
 
-### Document & Task History
-
-| Tool               | Description                    | Parameters |
-| ------------------ | ------------------------------ | ---------- |
-| `get_doc_history`  | Get version history of a doc   | `path`     |
-| `get_task_history` | Get version history of a task  | `taskId`   |
-| `delete_doc`       | Delete a doc (dry-run default) | `path`, `dryRun?` |
-| `delete_task`      | Delete a task (dry-run default)| `taskId`, `dryRun?` |
+---
 
 ## Benefits
 

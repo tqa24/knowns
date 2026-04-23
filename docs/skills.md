@@ -28,19 +28,12 @@ Knowns ships 13 built-in skills:
 
 ## CLI Commands
 
-The current CLI supports:
+Skills are synced via the top-level `knowns sync` command:
 
 ```bash
-knowns skill list
-knowns skill view <name>
-knowns skill sync
+knowns sync              # Sync all (skills + instructions + model + index)
+knowns sync --skills     # Sync skills only
 ```
-
-- `knowns skill list` shows available skills
-- `knowns skill view <name>` shows a skill definition
-- `knowns skill sync` syncs skills from imported packages
-
-Top-level project instruction syncing is handled by `knowns sync`, not by extra `knowns skill` subcommands.
 
 ---
 
@@ -108,18 +101,15 @@ Imported packages may provide additional skills.
 ```bash
 knowns import add <source>
 knowns import sync
-knowns skill sync
 ```
-
-`knowns import sync` currently exists, but the CLI notes that full network sync behavior is not yet implemented in this build.
 
 ---
 
 ## Custom Skills
 
-You can add custom skill folders alongside synced skills, but the current CLI does not provide `knowns skill create`.
+You can add custom skill folders alongside synced skills by creating a `SKILL.md` in the appropriate platform directory (e.g., `.claude/skills/my-skill/SKILL.md`).
 
-If you add custom skills manually, keep them separate from generated content so future syncs are easier to manage.
+Keep custom skills separate from generated content so future syncs don't overwrite them.
 
 ---
 

@@ -280,19 +280,6 @@ knowns template view <name>
 knowns template create <name>
 ```
 
-### Skill Commands
-
-```bash
-# List skills
-knowns skill list
-
-# View a skill
-knowns skill view <name>
-
-# Sync imported skills
-knowns skill sync
-```
-
 ---
 
 ## Template-Doc Linking
@@ -324,20 +311,22 @@ For AI agents using MCP:
 
 ```json
 // List templates
-mcp__knowns__list_templates({})
+mcp__knowns__templates({ "action": "list" })
 
 // Get template details
-mcp__knowns__get_template({ "name": "react-component" })
+mcp__knowns__templates({ "action": "get", "name": "react-component" })
 
 // Run template (preview first)
-mcp__knowns__run_template({
+mcp__knowns__templates({
+  "action": "run",
   "name": "react-component",
   "variables": { "name": "UserProfile", "withTest": true },
   "dryRun": true
 })
 
 // Create template
-mcp__knowns__create_template({
+mcp__knowns__templates({
+  "action": "create",
   "name": "my-template",
   "description": "My custom template",
   "doc": "patterns/my-pattern"

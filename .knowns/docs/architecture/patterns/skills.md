@@ -67,7 +67,7 @@ description: Initialize session with project context
 
 All skills participate in the memory loop:
 - **Read skills** (init, research, plan, spec, go, review, debug): search `type: "memory"` via unified search
-- **Write skills** (implement, extract, debug): save patterns/decisions/failures with `add_memory(layer="project")`
+- **Write skills** (implement, extract, debug): save patterns/decisions/failures with `memory({ action: "add", layer: "project" })`
 - The global rule in KNOWNS.md `## Memory Usage` encourages all skills to save knowledge as it emerges
 
 ## Workflow

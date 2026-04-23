@@ -68,7 +68,8 @@ knowns task create "Implement search API" \
   --fulfills AC-1,AC-2
 
 # MCP
-mcp__knowns__create_task({
+mcp__knowns__tasks({
+  "action": "create",
   "title": "Implement search API",
   "spec": "specs/semantic-search",
   "fulfills": ["AC-1", "AC-2"]
@@ -140,14 +141,16 @@ When using `/kn-plan --from @doc/specs/feature`:
 4. Add implementation ACs for task-level work
 
 ```json
-mcp__knowns__create_task({
+mcp__knowns__tasks({
+  "action": "create",
   "title": "Implement embedding generation",
   "spec": "specs/semantic-search",
   "fulfills": ["AC-1", "AC-2"],
   "labels": ["from-spec"]
 })
 
-mcp__knowns__update_task({
+mcp__knowns__tasks({
+  "action": "update",
   "taskId": "new-id",
   "addAc": ["Create embedding service", "Add API endpoint", "Write tests"]
 })

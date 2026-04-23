@@ -2,7 +2,7 @@
 title: Skills System
 description: Skill definition, sharing, and sync across platforms
 createdAt: '2026-01-23T04:07:56.363Z'
-updatedAt: '2026-03-27T07:10:51.256Z'
+updatedAt: '2026-04-23T11:23:34.829Z'
 tags:
   - feature
   - ai
@@ -11,98 +11,47 @@ tags:
 
 ## Overview
 
-Skills are instructions for AI workflows. Define once, sync to multiple platforms.
+Skills are AI workflow instructions bundled with Knowns. They are embedded in the binary and synced to platform-specific directories (`.claude/skills/`, `.agent/skills/`, etc.) during `knowns init` or `knowns sync`.
 
 **Related:** @doc/ai/platforms
 
 ---
 
-## Source of Truth
+## How Skills Work
+
+1. Skills are embedded in the Knowns binary as SKILL.md files
+2. During `knowns init`, skills are copied to the platform directories you selected
+3. `knowns sync --skills` re-syncs skills from the binary to platform dirs
+4. AI assistants (Claude Code, Kiro, etc.) discover skills from their platform directory
+
+---
+
+## Synced Locations
 
 ```
-.knowns/skills/              # Define here
-├── knowns-task/SKILL.md
-├── knowns-doc/SKILL.md
-└── custom-skill/SKILL.md
-
-# Auto-sync
+# Platform directories (auto-synced by knowns)
 .claude/skills/              # Claude Code
-.agent/skills/               # Antigravity
-.cursor/rules/               # Cursor (converted)
-~/.gemini/commands/          # Gemini CLI (converted)
+.agent/skills/               # Kiro / Antigravity
 ```
 
----
-
-## SKILL.md Format
-
-```markdown
----
-name: knowns-task
-description: Work on Knowns tasks with proper workflow
-triggers:
-  - "work on task"
-  - "take task"
----
-
-# Task Workflow
-
-Instructions here...
-```
-
-### Frontmatter
-
-| Field | Description |
-|-------|-------------|
-| `name` | Skill identifier |
-| `description` | Short description |
-| `triggers` | Phrases that activate skill |
-
----
-
-## Portable Format
-
-**Claude Code** and **Antigravity** use the same SKILL.md format:
-
-```bash
-# Symlink to share
-ln -s .claude/skills .agent/skills
-
-# Or use Knowns sync
-knowns skill sync
-```
-
----
-
-## Sharing Scopes
-
-| Platform | Personal | Project | Team |
-|----------|----------|---------|------|
-| Claude Code | `~/.claude/skills/` | `.claude/skills/` | Plugins |
-| Antigravity | `~/.gemini/antigravity/skills/` | `.agent/skills/` | git |
-| Cursor | Settings | `.cursor/rules/` | Dashboard |
-| Gemini CLI | `~/.gemini/commands/` | - | git |
+Skills are synced as SKILL.md files. The format is the same across Claude Code and Kiro/Antigravity.
 
 ---
 
 ## CLI Commands
 
 ```bash
-# List skills
-knowns skill list
+# Sync skills + instructions from binary to platform dirs
+knowns sync
 
-# Create new skill
-knowns skill create my-skill
+# Sync skills only
+knowns sync --skills
 
-# View skill
-knowns skill view knowns-task
+# Sync instruction files only
+knowns sync --instructions
 
-# Sync to platforms
-knowns skill sync --all
-knowns skill sync --platform claude,antigravity
-
-# Check status
-knowns skill status
+# Sync a specific platform's instruction file
+knowns sync --instructions --platform claude
 ```
 
 ---
@@ -111,389 +60,60 @@ knowns skill status
 
 | Skill | Description |
 |-------|-------------|
-| `kn-init` | Initialize session, read docs, load critical learnings |
-| `kn-spec` | Create spec with Socratic exploring phase |
-| `kn-plan` | Plan task with pre-execution validation |
-| `kn-research` | Research codebase before implementation |
-| `kn-implement` | Implement task, check ACs, track progress |
-| `kn-review` | Multi-perspective code review (P1/P2/P3) |
-| `kn-commit` | Conventional commit with verification |
-| `kn-extract` | Extract patterns, decisions, failures + consolidation |
+| `kn-init` | Initialize session, read docs, load memory, understand project |
+| `kn-spec` | Create specification document for features (SDD) |
+| `kn-plan` | Take task, gather context, create implementation plan |
+| `kn-research` | Search codebase, find patterns, explore before coding |
+| `kn-implement` | Execute plan, track progress, check acceptance criteria |
+| `kn-review` | Multi-perspective code review (P1/P2/P3 severity) |
+| `kn-commit` | Create conventional commit with verification |
+| `kn-extract` | Extract reusable patterns into docs, templates, and memory |
 | `kn-doc` | Create and update documentation |
-| `kn-template` | Generate code from templates |
-| `kn-verify` | SDD verification and coverage reporting |
+| `kn-template` | List, run, or create code templates |
+| `kn-verify` | Run SDD verification and coverage report |
 | `kn-go` | Full pipeline from approved spec (no review gates) |
 | `kn-debug` | Structured debugging: triage → fix → learn |
 
 ---
-## Custom Skills
 
-```bash
-# Create
-knowns skill create deploy-staging
-
-# Edit .knowns/skills/deploy-staging/SKILL.md
-```
+## SKILL.md Format
 
 ```markdown
 ---
-name: deploy-staging
-description: Deploy to staging environment
-triggers:
-  - "deploy to staging"
-  - "staging deploy"
+name: kn-init
+description: Initialize session - read docs, load memory, understand project
 ---
 
-# Deploy to Staging
+# Session Init
 
-1. Run tests: `npm test`
-2. Build: `npm run build`
-3. Deploy: `./scripts/deploy-staging.sh`
-4. Verify: Check staging URL
+Instructions for the AI workflow...
 ```
 
----
+### Frontmatter
 
-## Platform Conversion
-
-When syncing, skills are converted to the appropriate format:
-
-| Platform | Output Format |
-|----------|---------------|
-| Claude Code | `SKILL.md` (unchanged) |
-| Antigravity | `SKILL.md` (unchanged) |
-| Cursor | `.mdc` (frontmatter converted) |
-| Gemini CLI | `.md` command file |
-| Windsurf | Appended to `.windsurfrules` |
-
+| Field | Description |
+|-------|-------------|
+| `name` | Skill identifier |
+| `description` | Short description shown in skill list |
 
 ---
 
-## Skill Modes: MCP vs CLI
+## Memory Integration
 
-During init, user chooses skill mode. Skills will be generated with appropriate instructions.
-
-### Init Options
-
-```bash
-$ knowns init
-
-? Skill instruction mode:
-  ◉ Auto (recommended) - Use MCP when available, fallback to CLI
-  ◯ MCP Only - Use MCP tools (mcp__knowns__*)
-  ◯ CLI Only - Use CLI commands (knowns task/doc/...)
-```
-
-### Mode Comparison
-
-| Mode | When to Use | Pros | Cons |
-|------|-------------|------|------|
-| **Auto** | Default | Best of both | Slightly complex |
-| **MCP Only** | Full MCP support | Fast, structured | Limited features |
-| **CLI Only** | No MCP / Legacy | Full features | Slower |
+All skills participate in the memory loop:
+- **Read skills** (init, research, plan, spec, go, review, debug): search `type: "memory"` via unified search
+- **Write skills** (implement, extract, debug): save patterns/decisions/failures with `memory({ action: "add", layer: "project" })`
+- The global rule in KNOWNS.md `## Memory Usage` encourages all skills to save knowledge as it emerges
 
 ---
 
-## Generated Skill Content
+## MCP vs CLI in Skills
 
-### Auto Mode (Recommended)
+Skills use MCP tools when available, with CLI as fallback:
 
-```markdown
----
-name: knowns-task
-description: Work on Knowns tasks
-mode: auto
----
+- **Reading tasks/docs**: MCP `tasks({ action: "get" })` or CLI `knowns task <id> --plain`
+- **Updating tasks**: MCP `tasks({ action: "update" })` or CLI `knowns task edit <id>`
+- **Searching**: MCP `search({ action: "search" })` or CLI `knowns search "query" --plain`
+- **Time tracking**: MCP `time({ action: "start" })` or CLI `knowns time start <id>`
 
-# Task Workflow
-
-## View Task
-{{#if mcp}}
-Use MCP: `mcp__knowns__get_task({ "taskId": "{{id}}" })`
-{{else}}
-Use CLI: `knowns task {{id}} --plain`
-{{/if}}
-
-## Update Task
-For simple updates (status, assignee):
-{{#if mcp}}
-`mcp__knowns__update_task({ "taskId": "{{id}}", "status": "in-progress" })`
-{{/if}}
-
-For complex updates (AC, plan, notes) - always use CLI:
-\`\`\`bash
-knowns task edit {{id}} --ac "New criterion"
-knowns task edit {{id}} --plan "1. Step one"
-knowns task edit {{id}} --check-ac 1
-\`\`\`
-```
-
-### MCP Mode
-
-```markdown
----
-name: knowns-task
-mode: mcp
----
-
-# Task Workflow
-
-## View Task
-\`\`\`json
-mcp__knowns__get_task({ "taskId": "{{id}}" })
-\`\`\`
-
-## Update Task
-\`\`\`json
-mcp__knowns__update_task({
-  "taskId": "{{id}}",
-  "status": "in-progress",
-  "assignee": "@me"
-})
-\`\`\`
-
-## Start Timer
-\`\`\`json
-mcp__knowns__start_time({ "taskId": "{{id}}" })
-\`\`\`
-
-> **Note:** For --ac, --plan, --notes use CLI fallback
-```
-
-### CLI Mode
-
-```markdown
----
-name: knowns-task
-mode: cli
----
-
-# Task Workflow
-
-## View Task
-\`\`\`bash
-knowns task {{id}} --plain
-\`\`\`
-
-## Update Task
-\`\`\`bash
-knowns task edit {{id}} -s in-progress -a @me
-knowns task edit {{id}} --ac "Criterion"
-knowns task edit {{id}} --plan "1. Step"
-\`\`\`
-
-## Time Tracking
-\`\`\`bash
-knowns time start {{id}}
-knowns time stop
-\`\`\`
-```
-
----
-
-## Config: `.knowns/config.json`
-
-```json
-{
-  "skills": {
-    "mode": "auto",      // "auto" | "mcp" | "cli"
-    "mcpFallback": true  // Use CLI when MCP not available
-  }
-}
-```
-
----
-
-## MCP vs CLI Feature Matrix
-
-| Feature | MCP | CLI |
-|---------|-----|-----|
-| List tasks | ✅ `list_tasks` | ✅ `task list` |
-| Get task | ✅ `get_task` | ✅ `task <id>` |
-| Update status | ✅ `update_task` | ✅ `task edit -s` |
-| **Add AC** | ❌ | ✅ `--ac` |
-| **Check AC** | ❌ | ✅ `--check-ac` |
-| **Set plan** | ❌ | ✅ `--plan` |
-| **Add notes** | ❌ | ✅ `--notes` |
-| Start timer | ✅ `start_time` | ✅ `time start` |
-| Stop timer | ✅ `stop_time` | ✅ `time stop` |
-| Get doc | ✅ `get_doc` | ✅ `doc <path>` |
-| Search | ✅ `search_*` | ✅ `search` |
-
-**Rule:** Complex task edits (AC, plan, notes) → Always CLI
-
----
-
-## Auto-Detection
-
-Skills can detect MCP availability:
-
-```markdown
-# In skill instructions
-
-## Reading (prefer MCP if available)
-- If MCP available: `mcp__knowns__get_task`
-- Fallback: `knowns task <id> --plain`
-
-## Writing (use appropriate tool)
-- Simple updates: MCP `update_task` 
-- Complex edits: CLI `knowns task edit --ac/--plan/--notes`
-```
-
----
-
-## Platform-Specific Generation
-
-When syncing, skills adapt to platform capabilities:
-
-| Platform | MCP Support | Generated Mode |
-|----------|-------------|----------------|
-| Claude Code | ✅ Full | Auto/MCP |
-| Antigravity | ✅ Full | Auto/MCP |
-| Gemini CLI | ✅ Full | Auto/MCP |
-| Cursor | ✅ Full | Auto/MCP |
-| Windsurf | ⚠️ Limited | CLI preferred |
-| GitHub Copilot | ❌ None | CLI only |
-
-```bash
-# Sync respects platform capabilities
-knowns skill sync --all
-
-# Generated skills:
-# .claude/skills/     → Auto mode (MCP + CLI)
-# .agent/skills/      → Auto mode (MCP + CLI)
-# .cursor/rules/      → Auto mode (MCP + CLI)
-# .windsurfrules      → CLI mode (no MCP)
-# .github/copilot-*   → CLI mode (no MCP)
-```
-
----
-
-## Changing Mode
-
-```bash
-# Change mode globally
-knowns config set skills.mode mcp
-
-# Sync all skills with new mode
-knowns skill sync --all
-```
-
-
----
-
-## Full MCP Support (Updated)
-
-With extended MCP tools, **MCP can do everything CLI can do**.
-
-### Updated Feature Matrix
-
-| Feature | CLI | MCP |
-|---------|-----|-----|
-| List/Get tasks | ✅ | ✅ |
-| Create/Update tasks | ✅ | ✅ |
-| **Add AC** | ✅ `--ac` | ✅ `add_acceptance_criteria` |
-| **Check/Uncheck AC** | ✅ `--check-ac` | ✅ `check_acceptance_criteria` |
-| **Set plan** | ✅ `--plan` | ✅ `set_plan` |
-| **Set/Append notes** | ✅ `--notes` | ✅ `set_notes` / `append_notes` |
-| Time tracking | ✅ | ✅ |
-| Docs CRUD | ✅ | ✅ |
-| Search | ✅ | ✅ |
-| Templates | ✅ | ✅ `run_template` |
-
-### Simplified Mode Selection
-
-```bash
-$ knowns init
-
-? Skill instruction mode:
-  ◉ MCP (recommended) - Faster, structured output
-  ◯ CLI - Traditional commands
-  ◯ Hybrid - MCP for reads, CLI for writes
-```
-
-### MCP Mode Skills (Recommended)
-
-```markdown
----
-name: knowns-task
-mode: mcp
----
-
-# Task Workflow
-
-## 1. View Task
-\`\`\`json
-mcp__knowns__get_task({ "taskId": "{{id}}" })
-\`\`\`
-
-## 2. Take Task
-\`\`\`json
-mcp__knowns__update_task({
-  "taskId": "{{id}}",
-  "status": "in-progress",
-  "assignee": "@me"
-})
-mcp__knowns__start_time({ "taskId": "{{id}}" })
-\`\`\`
-
-## 3. Add Acceptance Criteria
-\`\`\`json
-mcp__knowns__add_acceptance_criteria({
-  "taskId": "{{id}}",
-  "criterion": "User can perform action"
-})
-\`\`\`
-
-## 4. Set Plan (wait for approval)
-\`\`\`json
-mcp__knowns__set_plan({
-  "taskId": "{{id}}",
-  "plan": "1. Research\
-2. Implement\
-3. Test"
-})
-\`\`\`
-
-## 5. Check AC (after work done)
-\`\`\`json
-mcp__knowns__check_acceptance_criteria({
-  "taskId": "{{id}}",
-  "index": 1
-})
-mcp__knowns__append_notes({
-  "taskId": "{{id}}",
-  "notes": "✓ Completed: feature X"
-})
-\`\`\`
-
-## 6. Complete
-\`\`\`json
-mcp__knowns__stop_time({ "taskId": "{{id}}" })
-mcp__knowns__update_task({
-  "taskId": "{{id}}",
-  "status": "done"
-})
-\`\`\`
-```
-
-### Why MCP is Now Recommended
-
-| Aspect | MCP | CLI |
-|--------|-----|-----|
-| **Speed** | ✅ Faster (direct call) | Slower (spawn process) |
-| **Output** | ✅ Structured JSON | Text (needs parsing) |
-| **Error handling** | ✅ Typed errors | String parsing |
-| **Features** | ✅ Full parity | Full |
-| **Availability** | Requires config | Always works |
-
-### Fallback Strategy
-
-If platform does not support MCP, skills auto-convert to CLI:
-
-```bash
-knowns skill sync --all
-
-# Platform with MCP → MCP instructions
-# Platform without MCP → CLI instructions (auto-converted)
-```
+MCP is preferred when available because it's faster (direct call vs spawning a process) and returns structured JSON.

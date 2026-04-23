@@ -51,29 +51,12 @@ Knowns supports multiple AI platforms. Skills are defined once in `.knowns/skill
 
 ```bash
 # Init with AI platforms
-knowns init --ai claude,antigravity,cursor,gemini
+knowns init
 
-# Create skill
-knowns skill create my-skill
-
-# Sync to all platforms
-knowns skill sync --all
+# Sync skills + instructions to platform dirs
+knowns sync
 
 # Setup MCP (auto-configures for installed binary)
-knowns mcp setup
-```
-
----
-# Init with AI platforms
-knowns init --ai claude,antigravity,cursor,gemini
-
-# Create skill
-knowns skill create my-skill
-
-# Sync to all platforms
-knowns skill sync --all
-
-# Setup MCP
 knowns mcp setup
 ```
 

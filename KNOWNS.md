@@ -34,6 +34,7 @@ Canonical repository guidance for agents working in this project.
 ## TL;DR
 
 - Read `KNOWNS.md` first.
+- Call MCP `project({ action: "status" })` (or `knowns status --json`) at session start to check project readiness, available capabilities, and knowledge counts.
 - Use Knowns as the memory layer for humans and the AI-friendly working layer for agents.
 - Search before reading; read only the sections and docs relevant to the current task.
 - Never manually edit Knowns-managed task or doc markdown.
@@ -62,13 +63,16 @@ Canonical repository guidance for agents working in this project.
 
 ## Tool Selection
 
+- Use MCP `project({ action: "status" })` at session start to check project readiness and available capabilities before acting.
 - Use Knowns MCP tools first for tasks, docs, templates, validation, and time tracking.
 - Use file reading and search tools for local code and text inspection.
 - Use shell commands for git, tests, builds, generators, and other terminal operations.
 - Prefer targeted retrieval over loading large files in full.
 - Use `knowns search` for discovery and quick relevance checks.
-- Use MCP `retrieve` tool when a workflow needs structured context with citations and context-pack assembly. Fall back to CLI `knowns retrieve` if MCP is unavailable.
-- Prefer `--plain` for human-facing inspection. Prefer `--json` for CLI `retrieve` when output will be consumed by an agent, script, or workflow.
+- Use MCP `search({ action: "retrieve" })` when a workflow needs structured context with citations and context-pack assembly. Fall back to CLI `knowns retrieve` if MCP is unavailable.
+- Prefer `--json` for structured CLI reads consumed by agents, scripts, or workflows, including `get`, `list`, `search`, and `retrieve` commands.
+- Prefer `--plain` for human-facing inspection, quick content reads, and logs when JSON is unnecessary.
+- Do not rely on styled default CLI output for automation or parsing.
 
 ### Preferred Tool Matrix
 
@@ -82,15 +86,12 @@ Canonical repository guidance for agents working in this project.
 
 ## Memory Usage
 
-- Session start: `list_memories(layer="project")` to load accumulated project knowledge.
-- During work: `add_working_memory()` for ephemeral session-scoped cache (gone when session ends).
-- After task: `add_memory()` for reusable patterns, decisions, and conventions (alongside docs).
-- Cross-project: `promote_memory()` to move project knowledge to global (`project→global`).
+- Session start: `memory({ action: "list", layer: "project" })` to load accumulated project knowledge.
+- After task: `memory({ action: "add" })` for reusable patterns, decisions, and conventions (alongside docs).
+- Cross-project: `memory({ action: "promote" })` to move project knowledge to global (`project→global`).
 - Memory complements docs: memory is for fast agent recall, docs are for structured human-readable reference.
 - Never duplicate the full doc content into memory — store a summary and reference the doc with `@doc/<path>`.
-- During any skill: if you discover a reusable pattern, decision, convention, or failure, save it with `add_memory(layer="project")`. Capture knowledge as it emerges, don't wait for extraction.
-- Proactively save durable memory without waiting for the user to say "save this" when confidence is high.
-- Use `working` for session-only context, active investigations, temporary blockers, and other short-lived facts.
+- During any skill: if you discover a reusable pattern, decision, convention, or failure, save it with `memory({ action: "add", layer: "project" })`. Capture knowledge as it emerges, don't wait for extraction.
 - Use `project` for repo-specific rules, architecture decisions, conventions, recurring failure patterns, and implementation constraints.
 - Use `global` for stable user preferences or workflow rules that should carry across repositories and future sessions.
 - Ask the user only when the information appears durable but the correct scope (`working`, `project`, or `global`) is genuinely ambiguous.
@@ -151,7 +152,8 @@ Canonical repository guidance for agents working in this project.
 - In `doc edit`, `-a` means `--append`.
 - Use raw task IDs where a command expects an ID value rather than a mention.
 - Use `--plain` for read, list, and search commands, not for create or edit commands.
-- Use `--json` for CLI `retrieve` when the result will be parsed or fed into an agent workflow; use `--plain` when inspecting manually.
+- Use `--json` for structured reads like `get`, `list`, `search`, and `retrieve` when the output will be parsed or fed into an agent workflow.
+- Use `--plain` when inspecting manually or when only clean text output is needed.
 - Use `--smart` when reading docs through the CLI.
 
 ### Retrieval Pitfalls

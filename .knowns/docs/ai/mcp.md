@@ -29,13 +29,13 @@ MCP (Model Context Protocol) allows AI to call Knowns functions directly.
 
 ```json
 // 1. Detect available projects
-mcp__knowns__detect_projects({})
+mcp__knowns__project({ "action": "detect" })
 
 // 2. Set the active project
-mcp__knowns__set_project({ "projectRoot": "/path/to/project" })
+mcp__knowns__project({ "action": "set", "projectRoot": "/path/to/project" })
 
 // 3. Verify project is set
-mcp__knowns__get_current_project({})
+mcp__knowns__project({ "action": "current" })
 ```
 
 **Why?** MCP servers (especially global configs like Antigravity) don't know which project to work with. Without setting the project, operations will fail or affect the wrong directory.
@@ -47,9 +47,9 @@ mcp__knowns__get_current_project({})
 | Platform | Config File | Auto-setup | Project Scope | Status |
 |----------|-------------|------------|---------------|--------|
 | **Claude Code** | `.mcp.json` (project) | ✅ `knowns init` | Per-project | **Supported** |
-| **OpenCode** | `opencode.json` (project/global) | ✅ `knowns init` | Needs `set_project` | **Supported** |
-| Gemini CLI | `~/.gemini/settings.json` (global) | — | Needs `set_project` | Reference |
-| Antigravity | `~/.gemini/antigravity/mcp_config.json` (global) | — | Needs `set_project` | Reference |
+| **OpenCode** | `opencode.json` (project/global) | ✅ `knowns init` | Needs `project({ action: "set" })` | **Supported** |
+| Gemini CLI | `~/.gemini/settings.json` (global) | — | Needs `project({ action: "set" })` | Reference |
+| Antigravity | `~/.gemini/antigravity/mcp_config.json` (global) | — | Needs `project({ action: "set" })` | Reference |
 | Cursor | `.cursor/mcp.json` (project) | — | Per-project | Reference |
 | Cline | `.cline/mcp.json` (project) | — | Per-project | Reference |
 | Continue | `.continue/config.json` (project) | — | Per-project | Reference |
@@ -104,7 +104,7 @@ Knowns is a compiled Go binary. The MCP server is started with the `mcp` subcomm
 }
 ```
 
-> **Note**: Antigravity uses global config. Use `mcp__knowns__detect_projects` and `mcp__knowns__set_project` at session start to set the correct project.
+> **Note**: Antigravity uses global config. Use `mcp__knowns__project({ action: "detect" })` and `mcp__knowns__project({ action: "set" })` at session start to set the correct project.
 
 ### Gemini CLI: `~/.gemini/settings.json` (Global)
 ```json
@@ -161,79 +161,83 @@ knowns mcp setup
 ## Available MCP Tools
 
 ### Project Tools (Session Init)
-| Tool | Description |
-|------|-------------|
-| `mcp__knowns__detect_projects` | Scan for Knowns projects |
-| `mcp__knowns__set_project` | Set active project |
-| `mcp__knowns__get_current_project` | Get current project status |
+| Tool | Action | Description |
+|------|--------|-------------|
+| `mcp__knowns__project` | `detect` | Scan for Knowns projects |
+| `mcp__knowns__project` | `set` | Set active project |
+| `mcp__knowns__project` | `current` | Get current project status |
+| `mcp__knowns__project` | `status` | Check project readiness and capabilities |
 
 ### Tasks
-| Tool | Description |
-|------|-------------|
-| `mcp__knowns__list_tasks` | List tasks |
-| `mcp__knowns__get_task` | Get task |
-| `mcp__knowns__create_task` | Create task |
-| `mcp__knowns__update_task` | Update task (status, AC, plan, notes) |
+| Tool | Action | Description |
+|------|--------|-------------|
+| `mcp__knowns__tasks` | `list` | List tasks |
+| `mcp__knowns__tasks` | `get` | Get task |
+| `mcp__knowns__tasks` | `create` | Create task |
+| `mcp__knowns__tasks` | `update` | Update task (status, AC, plan, notes) |
+| `mcp__knowns__tasks` | `delete` | Delete task (dry-run by default) |
+| `mcp__knowns__tasks` | `history` | Get version history of a task |
+| `mcp__knowns__tasks` | `board` | Get kanban board state |
 
 ### Docs
-| Tool | Description |
-|------|-------------|
-| `mcp__knowns__list_docs` | List docs |
-| `mcp__knowns__get_doc` | Get doc (with smart mode) |
-| `mcp__knowns__create_doc` | Create doc |
-| `mcp__knowns__update_doc` | Update doc |
+| Tool | Action | Description |
+|------|--------|-------------|
+| `mcp__knowns__docs` | `list` | List docs |
+| `mcp__knowns__docs` | `get` | Get doc (with smart mode) |
+| `mcp__knowns__docs` | `create` | Create doc |
+| `mcp__knowns__docs` | `update` | Update doc |
+| `mcp__knowns__docs` | `delete` | Delete doc (dry-run by default) |
+| `mcp__knowns__docs` | `history` | Get version history of a doc |
 
 ### Memory (Persistent)
-| Tool | Description |
-|------|-------------|
-| `mcp__knowns__add_memory` | Create a memory entry (project or global layer) |
-| `mcp__knowns__get_memory` | Get memory entry by ID |
-| `mcp__knowns__list_memories` | List memories with layer/category/tag filters |
-| `mcp__knowns__search` (type: memory) | Search memory entries via unified search |
-| `mcp__knowns__update_memory` | Update memory entry |
-| `mcp__knowns__delete_memory` | Delete memory entry (dry-run by default) |
-| `mcp__knowns__promote_memory` | Promote up one layer (working→project→global) |
-| `mcp__knowns__demote_memory` | Demote down one layer (global→project→working) |
+| Tool | Action | Description |
+|------|--------|-------------|
+| `mcp__knowns__memory` | `add` | Create a memory entry (project or global layer) |
+| `mcp__knowns__memory` | `get` | Get memory entry by ID |
+| `mcp__knowns__memory` | `list` | List memories with layer/category/tag filters |
+| `mcp__knowns__search` | `search` (type: memory) | Search memory entries via unified search |
+| `mcp__knowns__memory` | `update` | Update memory entry |
+| `mcp__knowns__memory` | `delete` | Delete memory entry (dry-run by default) |
+| `mcp__knowns__memory` | `promote` | Promote up one layer (project→global) |
+| `mcp__knowns__memory` | `demote` | Demote down one layer (global→project) |
 
 ### Working Memory (Session-Scoped)
-| Tool | Description |
-|------|-------------|
-| `mcp__knowns__add_working_memory` | Add ephemeral session memory |
-| `mcp__knowns__get_working_memory` | Get working memory by ID |
-| `mcp__knowns__list_working_memories` | List all session memories |
-| `mcp__knowns__delete_working_memory` | Delete a working memory entry |
-| `mcp__knowns__clear_working_memory` | Clear all session memories |
+| Tool | Action | Description |
+|------|--------|-------------|
+| `mcp__knowns__working_memory` | `add` | Add ephemeral session memory |
+| `mcp__knowns__working_memory` | `get` | Get working memory by ID |
+| `mcp__knowns__working_memory` | `list` | List all session memories |
+| `mcp__knowns__working_memory` | `delete` | Delete a working memory entry |
+| `mcp__knowns__working_memory` | `clear` | Clear all session memories |
 
 ### Search
-| Tool | Description |
-|------|-------------|
-| `mcp__knowns__search` | Unified search (tasks + docs + memories) with semantic support |
+| Tool | Action | Description |
+|------|--------|-------------|
+| `mcp__knowns__search` | `search` | Unified search (tasks + docs + memories) with semantic support |
+| `mcp__knowns__search` | `retrieve` | Ranked context retrieval with citations |
+| `mcp__knowns__search` | `resolve` | Resolve semantic reference expression |
 
 ### Time
-| Tool | Description |
-|------|-------------|
-| `mcp__knowns__start_time` | Start timer |
-| `mcp__knowns__stop_time` | Stop timer |
-| `mcp__knowns__add_time` | Add manual time entry |
-| `mcp__knowns__get_time_report` | Get time report |
+| Tool | Action | Description |
+|------|--------|-------------|
+| `mcp__knowns__time` | `start` | Start timer |
+| `mcp__knowns__time` | `stop` | Stop timer |
+| `mcp__knowns__time` | `add` | Add manual time entry |
+| `mcp__knowns__time` | `report` | Get time report |
 
 ### Templates
-| Tool | Description |
-|------|-------------|
-| `mcp__knowns__list_templates` | List templates |
-| `mcp__knowns__get_template` | Get template config |
-| `mcp__knowns__run_template` | Run template |
-| `mcp__knowns__create_template` | Create template scaffold |
+| Tool | Action | Description |
+|------|--------|-------------|
+| `mcp__knowns__templates` | `list` | List templates |
+| `mcp__knowns__templates` | `get` | Get template config |
+| `mcp__knowns__templates` | `run` | Run template |
+| `mcp__knowns__templates` | `create` | Create template scaffold |
 
 ### Validation
 | Tool | Description |
 |------|-------------|
 | `mcp__knowns__validate` | Validate tasks, docs, templates, memories for broken refs and quality |
 
-### Other
-| Tool | Description |
-|------|-------------|
-| `mcp__knowns__get_board` | Get kanban board |
 ## MCP vs CLI
 
 | Aspect | MCP | CLI |
@@ -275,53 +279,57 @@ knowns mcp setup
 
 ```json
 // 0. Session init (required for global MCP configs)
-mcp__knowns__detect_projects({})
-mcp__knowns__set_project({ "projectRoot": "/path/to/project" })
+mcp__knowns__project({ "action": "detect" })
+mcp__knowns__project({ "action": "set", "projectRoot": "/path/to/project" })
 
 // 1. Get task
-mcp__knowns__get_task({ "taskId": "abc123" })
+mcp__knowns__tasks({ "action": "get", "taskId": "abc123" })
 
 // 2. Take task
-mcp__knowns__update_task({
+mcp__knowns__tasks({
+  "action": "update",
   "taskId": "abc123",
   "status": "in-progress",
   "assignee": "@me"
 })
 
 // 3. Start timer
-mcp__knowns__start_time({ "taskId": "abc123" })
+mcp__knowns__time({ "action": "start", "taskId": "abc123" })
 
 // 4. Add acceptance criteria
-mcp__knowns__update_task({
+mcp__knowns__tasks({
+  "action": "update",
   "taskId": "abc123",
   "addAc": ["User can login"]
 })
 
 // 5. Set implementation plan
-mcp__knowns__update_task({
+mcp__knowns__tasks({
+  "action": "update",
   "taskId": "abc123",
-  "plan": "1. Research
-2. Implement
-3. Test"
+  "plan": "1. Research\n2. Implement\n3. Test"
 })
 
 // 6. Check AC after completing
-mcp__knowns__update_task({
+mcp__knowns__tasks({
+  "action": "update",
   "taskId": "abc123",
   "checkAc": [1]
 })
 
 // 7. Append progress notes
-mcp__knowns__update_task({
+mcp__knowns__tasks({
+  "action": "update",
   "taskId": "abc123",
   "appendNotes": "✓ Completed: login feature"
 })
 
 // 8. Stop timer
-mcp__knowns__stop_time({ "taskId": "abc123" })
+mcp__knowns__time({ "action": "stop", "taskId": "abc123" })
 
 // 9. Mark done
-mcp__knowns__update_task({
+mcp__knowns__tasks({
+  "action": "update",
   "taskId": "abc123",
   "status": "done"
 })

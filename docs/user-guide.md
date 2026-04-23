@@ -437,30 +437,6 @@ knowns template create <name> [-d "description"] [--doc <path>]
 knowns template create api-service -d "REST API service" --doc patterns/api
 ```
 
-### Skill Commands
-
-Skills are AI workflow instructions that sync across platforms.
-
-#### List Skills
-
-```bash
-knowns skill list [--plain]
-```
-
-#### Sync Skills
-
-```bash
-knowns skill sync
-```
-
-This command exists, but project/platform sync is mainly handled by `knowns import sync` and top-level `knowns sync`.
-
-**Examples:**
-
-```bash
-knowns skill sync
-```
-
 ---
 
 ## Template Guide
@@ -711,52 +687,20 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
 
 ### Available MCP Tools
 
-| Tool                  | Description                                         |
-| --------------------- | --------------------------------------------------- |
-| `get_task`            | Get task details by ID                              |
-| `list_tasks`          | List tasks with filters                             |
-| `create_task`         | Create a new task                                   |
-| `update_task`         | Update task fields                                  |
-| `delete_task`         | Delete a task (dry-run by default)                  |
-| `get_task_history`    | Get version history of a task                       |
-| `get_doc`             | Get document content                                |
-| `list_docs`           | List all documents                                  |
-| `create_doc`          | Create a new document                               |
-| `update_doc`          | Update a document                                   |
-| `delete_doc`          | Delete a doc (dry-run by default)                   |
-| `get_doc_history`     | Get version history of a doc                        |
-| `search`              | Unified search (tasks + docs + memories)            |
-| `retrieve`            | Ranked context retrieval with citations             |
-| `reindex_search`      | Rebuild semantic search index                       |
-| `code_search`         | Search indexed code with neighbor expansion         |
-| `code_symbols`        | List indexed code symbols                           |
-| `code_deps`           | List code dependency edges                          |
-| `code_graph`          | Return full code graph (nodes and edges)            |
-| `list_templates`      | List available templates                            |
-| `get_template`        | Get template config                                 |
-| `run_template`        | Run template (use `dryRun: true` first)             |
-| `create_template`     | Create new template                                 |
-| `validate`            | Validate refs and file integrity                    |
-| `get_board`           | Get kanban board state                              |
-| `add_memory`          | Create a memory entry (project or global layer)     |
-| `list_memories`       | List memories with filters                          |
-| `get_memory`          | Get memory entry by ID                              |
-| `update_memory`       | Update memory entry                                 |
-| `delete_memory`       | Delete memory entry                                 |
-| `promote_memory`      | Promote up one layer (working→project→global)       |
-| `demote_memory`       | Demote down one layer (global→project→working)      |
-| `add_working_memory`  | Add ephemeral session-scoped memory                 |
-| `list_working_memories` | List session memories                             |
-| `get_working_memory`  | Get working memory by ID                            |
-| `delete_working_memory` | Delete a working memory entry                     |
-| `clear_working_memory` | Clear all session memories                         |
-| `detect_projects`     | Scan for Knowns projects                            |
-| `set_project`         | Set active project (for global MCP configs)         |
-| `get_current_project` | Get current active project                          |
-| `start_time`          | Start timer for a task                              |
-| `stop_time`           | Stop active timer                                   |
-| `add_time`            | Manual time entry                                   |
-| `get_time_report`     | Generate time report                                |
+Tools are grouped by domain. Each tool uses an `action` parameter to specify the operation.
+
+| Tool | Actions | Description |
+|------|---------|-------------|
+| `tasks` | `create`, `get`, `update`, `delete`, `list`, `history`, `board` | Task management with AC, plans, and status tracking |
+| `docs` | `create`, `get`, `update`, `delete`, `list`, `history` | Documentation management |
+| `search` | `search`, `retrieve`, `resolve` | Unified search, ranked retrieval, and reference resolution |
+| `code` | `search`, `symbols`, `deps`, `graph` | Code intelligence (AST indexing) |
+| `templates` | `create`, `get`, `list`, `run` | Code generation templates |
+| `validate` | — | Validate refs and file integrity |
+| `memory` | `add`, `get`, `update`, `delete`, `list`, `promote`, `demote` | Persistent memory (project/global) |
+| `working_memory` | `add`, `get`, `list`, `delete`, `clear` | Session-scoped ephemeral memory |
+| `project` | `detect`, `current`, `set`, `status` | Project detection and status |
+| `time` | `start`, `stop`, `add`, `report` | Time tracking per task |
 
 ### Plain Text Mode
 

@@ -874,38 +874,6 @@ knowns template create api-service \
 
 ---
 
-## Skill Commands
-
-### `knowns skill list`
-
-List available skills.
-
-```bash
-knowns skill list [options]
-```
-
-| Option    | Description       |
-| --------- | ----------------- |
-| `--plain` | Plain text output |
-
-### `knowns skill sync`
-
-Sync skills from imported packages.
-
-```bash
-knowns skill sync [options]
-```
-
-This command currently exists, but platform-specific syncing is handled through `knowns import sync` and top-level `knowns sync`.
-
-**Examples:**
-
-```bash
-knowns skill sync
-```
-
----
-
 ## Other Commands
 
 ### `knowns update`
