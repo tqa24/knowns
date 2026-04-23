@@ -196,7 +196,7 @@ func ensureORTEnvironment() error {
 		ort.SetSharedLibraryPath(lib)
 	} else {
 		libName := ortSharedLibName()
-		fmt.Fprintf(os.Stderr, "warning: bundled %s not found next to executable or in ~/.knowns/bin; falling back to system search which may load an incompatible version\n", libName)
+		fmt.Fprintf(os.Stderr, "warning: bundled %s not found next to executable, sibling lib dirs, or ~/.knowns/bin; falling back to system search which may load an incompatible version\n", libName)
 	}
 	if err := ort.InitializeEnvironment(); err != nil {
 		hint := ""
@@ -238,6 +238,14 @@ func ResolveORTLibraryPath() string {
 		candidate := filepath.Join(dir, name)
 		if ortIsFile(candidate) {
 			return candidate
+		}
+		// Check sibling directories relative to the binary's parent.
+		// Homebrew uses ../libexec, other package managers may use ../lib.
+		for _, sibling := range []string{"libexec", "lib"} {
+			candidate = filepath.Join(dir, "..", sibling, name)
+			if ortIsFile(candidate) {
+				return candidate
+			}
 		}
 		if runtime.GOOS == "linux" {
 			if matches, _ := filepath.Glob(filepath.Join(dir, "libonnxruntime.so*")); len(matches) > 0 {
