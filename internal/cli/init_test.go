@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -47,6 +48,67 @@ func TestCreateOpenCodeConfigQuietCreatesConfig(t *testing.T) {
 		if command[i] != want {
 			t.Fatalf("expected command[%d] = %q, got %#v", i, want, command[i])
 		}
+	}
+}
+
+func TestRunInitFallsBackWhenTerminalTooNarrow(t *testing.T) {
+	projectRoot := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	defer func() { _ = os.Chdir(oldWD) }()
+	if err := os.Chdir(projectRoot); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	terminalWidthFn = func() int { return 60 }
+	isTTYFn = func() bool { return true }
+	execLookPath = func(name string) (string, error) {
+		switch name {
+		case "git", "knowns":
+			return "/usr/local/bin/" + name, nil
+		default:
+			return "", os.ErrNotExist
+		}
+	}
+	t.Cleanup(func() {
+		terminalWidthFn = terminalWidth
+		isTTYFn = isTTY
+		execLookPath = defaultExecLookPath
+	})
+
+	cmd := initCmd
+	cmd.SetArgs([]string{"e2e-test", "--no-open"})
+
+	var stdout bytes.Buffer
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stdout = w
+	defer func() { os.Stdout = oldStdout }()
+
+	done := make(chan struct{})
+	go func() {
+		_, _ = stdout.ReadFrom(r)
+		close(done)
+	}()
+
+	if err := runInit(cmd, []string{"e2e-test"}); err != nil {
+		w.Close()
+		<-done
+		t.Fatalf("runInit returned error: %v", err)
+	}
+	_ = w.Close()
+	<-done
+
+	if !strings.Contains(stdout.String(), "Terminal width is too small for the interactive setup wizard") {
+		t.Fatalf("expected narrow-terminal warning, got:\n%s", stdout.String())
+	}
+	if _, err := os.Stat(filepath.Join(projectRoot, ".knowns", "config.json")); err != nil {
+		t.Fatalf("expected init to continue with defaults, config missing: %v", err)
 	}
 }
 
@@ -123,6 +185,316 @@ func TestCreateOpenCodeConfigQuietMergesExistingConfig(t *testing.T) {
 	if _, ok := mcp["knowns"]; !ok {
 		t.Fatalf("expected knowns MCP entry to be added")
 	}
+}
+
+func TestCreateCursorMCPConfigQuietCreatesConfig(t *testing.T) {
+	execLookPath = func(string) (string, error) { return "/usr/local/bin/knowns", nil }
+	t.Cleanup(func() { execLookPath = defaultExecLookPath })
+
+	projectRoot := t.TempDir()
+
+	if err := createCursorMCPConfigQuiet(projectRoot); err != nil {
+		t.Fatalf("createCursorMCPConfigQuiet returned error: %v", err)
+	}
+
+	config := readJSONFile(t, filepath.Join(projectRoot, ".cursor", "mcp.json"))
+	mcpServers := getMap(t, config, "mcpServers")
+	knowns := getMap(t, mcpServers, "knowns")
+
+	if got := knowns["command"]; got != "knowns" {
+		t.Fatalf("expected command knowns, got %#v", got)
+	}
+
+	args, ok := knowns["args"].([]any)
+	if !ok {
+		t.Fatalf("expected args to be []any, got %T", knowns["args"])
+	}
+	expected := []string{"mcp", "--stdio"}
+	if len(args) != len(expected) {
+		t.Fatalf("expected %d args, got %d", len(expected), len(args))
+	}
+	for i, want := range expected {
+		if args[i] != want {
+			t.Fatalf("expected args[%d] = %q, got %#v", i, want, args[i])
+		}
+	}
+}
+
+func TestCreateCodexMCPConfigQuietCreatesConfig(t *testing.T) {
+	execLookPath = func(string) (string, error) { return "/usr/local/bin/knowns", nil }
+	t.Cleanup(func() { execLookPath = defaultExecLookPath })
+
+	projectRoot := t.TempDir()
+
+	if err := createCodexMCPConfigQuiet(projectRoot); err != nil {
+		t.Fatalf("createCodexMCPConfigQuiet returned error: %v", err)
+	}
+
+	content := readTextFile(t, filepath.Join(projectRoot, ".codex", "config.toml"))
+	assertContains(t, content, "[mcp_servers.knowns]")
+	assertContains(t, content, `command = "knowns"`)
+	assertContains(t, content, `args = ["mcp", "--stdio"]`)
+}
+
+func TestCreateCodexMCPConfigQuietMergesExistingConfig(t *testing.T) {
+	execLookPath = func(string) (string, error) { return "/usr/local/bin/knowns", nil }
+	t.Cleanup(func() { execLookPath = defaultExecLookPath })
+
+	projectRoot := t.TempDir()
+	configDir := filepath.Join(projectRoot, ".codex")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatalf("mkdir .codex: %v", err)
+	}
+	configPath := filepath.Join(configDir, "config.toml")
+	seed := strings.Join([]string{
+		"model = \"gpt-5.4\"",
+		"",
+		"[features]",
+		"codex_hooks = true",
+	}, "\n") + "\n"
+	if err := os.WriteFile(configPath, []byte(seed), 0644); err != nil {
+		t.Fatalf("seed config.toml: %v", err)
+	}
+
+	if err := createCodexMCPConfigQuiet(projectRoot); err != nil {
+		t.Fatalf("createCodexMCPConfigQuiet returned error: %v", err)
+	}
+
+	content := readTextFile(t, configPath)
+	assertContains(t, content, `model = "gpt-5.4"`)
+	assertContains(t, content, `[features]`)
+	assertContains(t, content, `codex_hooks = true`)
+	assertContains(t, content, `[mcp_servers.knowns]`)
+	assertContains(t, content, `args = ["mcp", "--stdio"]`)
+}
+
+func TestCreateAntigravityRulesQuietCreatesRuleFile(t *testing.T) {
+	projectRoot := t.TempDir()
+
+	if err := createAntigravityRulesQuiet(projectRoot, false); err != nil {
+		t.Fatalf("createAntigravityRulesQuiet returned error: %v", err)
+	}
+
+	content := readTextFile(t, filepath.Join(projectRoot, ".agent", "rules", "knowns.md"))
+	assertContains(t, content, "trigger: always_on")
+	assertContains(t, content, "Read `KNOWNS.md` first")
+	assertContains(t, content, "Prefer Knowns MCP tools")
+	assertContains(t, content, "`knowns`")
+}
+
+func TestCreateAntigravityMCPConfigQuietUsesAbsoluteProjectPath(t *testing.T) {
+	execLookPath = func(string) (string, error) { return "/usr/local/bin/knowns", nil }
+	home := t.TempDir()
+	osUserHomeDir = func() (string, error) { return home, nil }
+	t.Cleanup(func() {
+		execLookPath = defaultExecLookPath
+		osUserHomeDir = os.UserHomeDir
+	})
+
+	projectRoot := t.TempDir()
+
+	if err := createAntigravityMCPConfigQuiet(projectRoot); err != nil {
+		t.Fatalf("createAntigravityMCPConfigQuiet returned error: %v", err)
+	}
+
+	config := readJSONFile(t, filepath.Join(home, ".gemini", "antigravity", "mcp_config.json"))
+	mcpServers := getMap(t, config, "mcpServers")
+	knowns := getMap(t, mcpServers, "knowns")
+
+	if got := knowns["command"]; got != "knowns" {
+		t.Fatalf("expected command knowns, got %#v", got)
+	}
+
+	args, ok := knowns["args"].([]any)
+	if !ok {
+		t.Fatalf("expected args to be []any, got %T", knowns["args"])
+	}
+	expected := []string{"mcp", "--stdio", "--project", projectRoot}
+	if len(args) != len(expected) {
+		t.Fatalf("expected %d args, got %d", len(expected), len(args))
+	}
+	for i, want := range expected {
+		if args[i] != want {
+			t.Fatalf("expected args[%d] = %q, got %#v", i, want, args[i])
+		}
+	}
+}
+
+func TestRunSyncPlatformConfigsSkipsWhenPlatformsUnset(t *testing.T) {
+	projectRoot := t.TempDir()
+	home := t.TempDir()
+	execLookPath = func(string) (string, error) { return "/usr/local/bin/knowns", nil }
+	osUserHomeDir = func() (string, error) { return home, nil }
+	t.Cleanup(func() {
+		execLookPath = defaultExecLookPath
+		osUserHomeDir = os.UserHomeDir
+	})
+
+	if err := runSyncPlatformConfigs(projectRoot, true, nil); err != nil {
+		t.Fatalf("runSyncPlatformConfigs returned error: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(projectRoot, ".cursor", "mcp.json")); !os.IsNotExist(err) {
+		t.Fatalf("expected .cursor/mcp.json not to be created, got err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(projectRoot, ".agent", "rules", "knowns.md")); !os.IsNotExist(err) {
+		t.Fatalf("expected .agent/rules/knowns.md not to be created, got err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".gemini", "antigravity", "mcp_config.json")); !os.IsNotExist(err) {
+		t.Fatalf("expected antigravity MCP config not to be created, got err=%v", err)
+	}
+}
+
+func TestRunSyncPlatformConfigsCreatesCursorAndAntigravityArtifacts(t *testing.T) {
+	projectRoot := t.TempDir()
+	home := t.TempDir()
+	execLookPath = func(string) (string, error) { return "/usr/local/bin/knowns", nil }
+	osUserHomeDir = func() (string, error) { return home, nil }
+	t.Cleanup(func() {
+		execLookPath = defaultExecLookPath
+		osUserHomeDir = os.UserHomeDir
+	})
+
+	platforms := []string{"cursor", "antigravity"}
+	if err := runSyncPlatformConfigs(projectRoot, true, platforms); err != nil {
+		t.Fatalf("runSyncPlatformConfigs returned error: %v", err)
+	}
+
+	_ = readJSONFile(t, filepath.Join(projectRoot, ".cursor", "mcp.json"))
+	assertContains(t, readTextFile(t, filepath.Join(projectRoot, ".agent", "rules", "knowns.md")), "trigger: always_on")
+	config := readJSONFile(t, filepath.Join(home, ".gemini", "antigravity", "mcp_config.json"))
+	mcpServers := getMap(t, config, "mcpServers")
+	knowns := getMap(t, mcpServers, "knowns")
+	args, ok := knowns["args"].([]any)
+	if !ok {
+		t.Fatalf("expected args to be []any, got %T", knowns["args"])
+	}
+	expected := []string{"mcp", "--stdio", "--project", projectRoot}
+	if len(args) != len(expected) {
+		t.Fatalf("expected %d args, got %d", len(expected), len(args))
+	}
+	for i, want := range expected {
+		if args[i] != want {
+			t.Fatalf("expected args[%d] = %q, got %#v", i, want, args[i])
+		}
+	}
+}
+
+func TestResolveSyncPlatformTargets(t *testing.T) {
+	tests := []struct {
+		name      string
+		platform  string
+		config    []string
+		want      []string
+		wantError bool
+	}{
+		{name: "config defaults", platform: "", config: []string{"cursor"}, want: []string{"cursor"}},
+		{name: "cursor override", platform: "cursor", config: []string{"agents"}, want: []string{"cursor"}},
+		{name: "antigravity override", platform: "antigravity", config: nil, want: []string{"antigravity"}},
+		{name: "instruction-only platform returns none", platform: "claude", config: []string{"claude-code"}, want: nil},
+		{name: "unknown platform errors", platform: "unknown", config: nil, wantError: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := resolveSyncPlatformTargets(tt.platform, tt.config)
+			if tt.wantError {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("resolveSyncPlatformTargets returned error: %v", err)
+			}
+			if len(got) != len(tt.want) {
+				t.Fatalf("expected %d targets, got %d (%v)", len(tt.want), len(got), got)
+			}
+			for i, want := range tt.want {
+				if got[i] != want {
+					t.Fatalf("expected target[%d] = %q, got %q", i, want, got[i])
+				}
+			}
+		})
+	}
+}
+
+func TestSyncAntigravityMCPConfigUpdatesCommandAndProject(t *testing.T) {
+	home := t.TempDir()
+	osUserHomeDir = func() (string, error) { return home, nil }
+	t.Cleanup(func() { osUserHomeDir = os.UserHomeDir })
+
+	projectRoot := t.TempDir()
+	configPath := filepath.Join(home, ".gemini", "antigravity", "mcp_config.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatalf("mkdir antigravity dir: %v", err)
+	}
+	writeJSONFile(t, configPath, map[string]any{
+		"mcpServers": map[string]any{
+			"knowns": map[string]any{
+				"command": "npx",
+				"args":    []string{"-y", "knowns", "mcp", "--stdio"},
+			},
+		},
+	})
+
+	updated, err := syncAntigravityMCPConfig(projectRoot, "knowns", []string{"mcp", "--stdio"})
+	if err != nil {
+		t.Fatalf("syncAntigravityMCPConfig returned error: %v", err)
+	}
+	if updated != 1 {
+		t.Fatalf("expected updated=1, got %d", updated)
+	}
+
+	config := readJSONFile(t, configPath)
+	mcpServers := getMap(t, config, "mcpServers")
+	knowns := getMap(t, mcpServers, "knowns")
+	if got := knowns["command"]; got != "knowns" {
+		t.Fatalf("expected command knowns, got %#v", got)
+	}
+	args, ok := knowns["args"].([]any)
+	if !ok {
+		t.Fatalf("expected args to be []any, got %T", knowns["args"])
+	}
+	expected := []string{"mcp", "--stdio", "--project", projectRoot}
+	if len(args) != len(expected) {
+		t.Fatalf("expected %d args, got %d", len(expected), len(args))
+	}
+	for i, want := range expected {
+		if args[i] != want {
+			t.Fatalf("expected args[%d] = %q, got %#v", i, want, args[i])
+		}
+	}
+}
+
+func TestSyncCodexMCPConfigUpdatesCommand(t *testing.T) {
+	projectRoot := t.TempDir()
+	configDir := filepath.Join(projectRoot, ".codex")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatalf("mkdir .codex: %v", err)
+	}
+	configPath := filepath.Join(configDir, "config.toml")
+	seed := strings.Join([]string{
+		"[mcp_servers.knowns]",
+		`command = "npx"`,
+		`args = ["-y", "knowns", "mcp", "--stdio"]`,
+	}, "\n") + "\n"
+	if err := os.WriteFile(configPath, []byte(seed), 0644); err != nil {
+		t.Fatalf("seed config.toml: %v", err)
+	}
+
+	updated, err := syncCodexMCPConfig(projectRoot, "knowns", []string{"mcp", "--stdio"})
+	if err != nil {
+		t.Fatalf("syncCodexMCPConfig returned error: %v", err)
+	}
+	if updated != 1 {
+		t.Fatalf("expected updated=1, got %d", updated)
+	}
+
+	content := readTextFile(t, configPath)
+	assertContains(t, content, `command = "knowns"`)
+	assertContains(t, content, `args = ["mcp", "--stdio"]`)
+	assertNotContains(t, content, `command = "npx"`)
 }
 
 func TestCreateInstructionFilesQuietIncludesOpenCode(t *testing.T) {

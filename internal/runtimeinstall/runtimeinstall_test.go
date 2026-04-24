@@ -1,6 +1,7 @@
 package runtimeinstall
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,6 +55,114 @@ func TestInstallClaudeMergesExistingSettingsAndStatus(t *testing.T) {
 	}
 	if !status.Installed || status.State != StateInstalled {
 		t.Fatalf("unexpected status: %+v", status)
+	}
+}
+
+func TestInstallClaudeWindowsQuotesExecutableForBashHooks(t *testing.T) {
+	home := t.TempDir()
+	claudeDir := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(claudeDir, 0755); err != nil {
+		t.Fatalf("mkdir claude: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(claudeDir, claudeSettings), []byte(`{"hooks":{}}`), 0644); err != nil {
+		t.Fatalf("seed settings: %v", err)
+	}
+
+	exePath := `C:\Users\Admin\.knowns\bin\knowns.exe`
+	opts := Options{
+		HomeDir:        home,
+		ExecutablePath: exePath,
+		GOOS:           "windows",
+		LookPath: func(name string) (string, error) {
+			if name == "claude" {
+				return `C:\Users\Admin\AppData\Local\Programs\Claude\claude.exe`, nil
+			}
+			return "", os.ErrNotExist
+		},
+	}
+	if err := Install("claude-code", opts); err != nil {
+		t.Fatalf("install claude windows: %v", err)
+	}
+
+	body, err := os.ReadFile(filepath.Join(claudeDir, claudeSettings))
+	if err != nil {
+		t.Fatalf("read settings: %v", err)
+	}
+	text := string(body)
+	expectedExe := strings.ReplaceAll(exePath, `\`, "/")
+	if !strings.Contains(text, `"command": "\"`+expectedExe+`\"`) {
+		t.Fatalf("expected slash-normalized quoted executable path, got:\n%s", text)
+	}
+	if !strings.Contains(text, `\"runtime-memory\" \"hook\" \"--runtime\" \"claude-code\" \"--event\" \"session-start\"`) {
+		t.Fatalf("expected quoted runtime-memory hook args, got:\n%s", text)
+	}
+}
+
+func TestInstallClaudeWindowsWritesExactSessionStartHookJSON(t *testing.T) {
+	home := t.TempDir()
+	claudeDir := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(claudeDir, 0755); err != nil {
+		t.Fatalf("mkdir claude: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(claudeDir, claudeSettings), []byte(`{"hooks":{}}`), 0644); err != nil {
+		t.Fatalf("seed settings: %v", err)
+	}
+
+	exePath := `C:\Users\Admin\.knowns\bin\knowns.exe`
+	opts := Options{
+		HomeDir:        home,
+		ExecutablePath: exePath,
+		GOOS:           "windows",
+		LookPath: func(name string) (string, error) {
+			if name == "claude" {
+				return `C:\Users\Admin\AppData\Local\Programs\Claude\claude.exe`, nil
+			}
+			return "", os.ErrNotExist
+		},
+	}
+	if err := Install("claude-code", opts); err != nil {
+		t.Fatalf("install claude windows: %v", err)
+	}
+
+	body, err := os.ReadFile(filepath.Join(claudeDir, claudeSettings))
+	if err != nil {
+		t.Fatalf("read settings: %v", err)
+	}
+
+	var settings map[string]any
+	if err := json.Unmarshal(body, &settings); err != nil {
+		t.Fatalf("unmarshal settings: %v\n%s", err, string(body))
+	}
+	hooks, ok := settings["hooks"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected hooks object, got: %#v", settings["hooks"])
+	}
+	sessionStart, ok := hooks["SessionStart"].([]any)
+	if !ok || len(sessionStart) != 1 {
+		t.Fatalf("expected one SessionStart hook group, got: %#v", hooks["SessionStart"])
+	}
+	group, ok := sessionStart[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected SessionStart group object, got: %#v", sessionStart[0])
+	}
+	groupHooks, ok := group["hooks"].([]any)
+	if !ok || len(groupHooks) != 1 {
+		t.Fatalf("expected one hook entry, got: %#v", group["hooks"])
+	}
+	hook, ok := groupHooks[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected hook object, got: %#v", groupHooks[0])
+	}
+
+	expectedCommand := `"` + strings.ReplaceAll(exePath, `\`, "/") + `" "runtime-memory" "hook" "--runtime" "claude-code" "--event" "session-start"`
+	if got := hook["command"]; got != expectedCommand {
+		t.Fatalf("unexpected command\nwant: %q\n got: %q", expectedCommand, got)
+	}
+	if got := hook["type"]; got != "command" {
+		t.Fatalf("unexpected hook type: %#v", got)
+	}
+	if got := hook["statusMessage"]; got != managedStatus {
+		t.Fatalf("unexpected statusMessage: %#v", got)
 	}
 }
 

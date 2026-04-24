@@ -2,16 +2,13 @@
 title: Skills System
 description: Skill definition, sharing, and sync across platforms
 createdAt: '2026-01-23T04:07:56.363Z'
-updatedAt: '2026-04-23T11:23:34.829Z'
-tags:
-  - feature
-  - ai
-  - skills
+updatedAt: '2026-04-24T14:35:58.729Z'
+tags: []
 ---
 
 ## Overview
 
-Skills are AI workflow instructions bundled with Knowns. They are embedded in the binary and synced to platform-specific directories (`.claude/skills/`, `.agent/skills/`, etc.) during `knowns init` or `knowns sync`.
+Skills are AI workflow instructions bundled with Knowns. They are embedded in the binary and synced to platform-specific directories (`.claude/skills/`, `.agents/skills/`, `.agent/skills/`, etc.) during `knowns init` or `knowns sync`.
 
 **Related:** @doc/ai/platforms
 
@@ -22,7 +19,7 @@ Skills are AI workflow instructions bundled with Knowns. They are embedded in th
 1. Skills are embedded in the Knowns binary as SKILL.md files
 2. During `knowns init`, skills are copied to the platform directories you selected
 3. `knowns sync --skills` re-syncs skills from the binary to platform dirs
-4. AI assistants (Claude Code, Kiro, etc.) discover skills from their platform directory
+4. AI assistants (Claude Code, Codex, OpenCode, Antigravity, Kiro, etc.) discover skills from their platform directory
 
 ---
 
@@ -31,10 +28,12 @@ Skills are AI workflow instructions bundled with Knowns. They are embedded in th
 ```
 # Platform directories (auto-synced by knowns)
 .claude/skills/              # Claude Code
-.agent/skills/               # Kiro / Antigravity
+.agents/skills/              # Codex / OpenCode / Antigravity
+.kiro/skills/                # Kiro
+.agent/skills/               # Legacy generic-agent compatibility
 ```
 
-Skills are synced as SKILL.md files. The format is the same across Claude Code and Kiro/Antigravity.
+Skills are synced as SKILL.md files. Claude Code uses `.claude/skills/`. Codex, OpenCode, and Antigravity use `.agents/skills/`. Knowns still syncs an existing `.agent/skills/` directory for backwards compatibility with older projects.
 
 ---
 

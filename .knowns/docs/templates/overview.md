@@ -1,13 +1,11 @@
 ---
 title: Template System
-createdAt: '2026-01-23T03:40:02.075Z'
-updatedAt: '2026-01-25T09:49:42.347Z'
 description: Design documentation for the lightweight template/scaffolding system
-tags:
-  - feature
-  - design
-  - template
+createdAt: '2026-01-23T03:40:02.075Z'
+updatedAt: '2026-04-24T14:35:58.811Z'
+tags: []
 ---
+
 ## Overview
 
 Template System is a lightweight code generator that allows creating files/folders from predefined templates. Inspired by [Plop.js](https://plopjs.com/) but designed simpler, suitable for Knowns patterns.
@@ -51,8 +49,8 @@ Template System solves this by allowing definition of **generators** - sets of p
 
 # Auto-synced to AI platforms
 .claude/skills/                  # Claude Code
-.agent/skills/                   # Antigravity
-.cursor/rules/                   # Cursor
+.agents/skills/                  # Codex / OpenCode / Antigravity
+.kiro/skills/                    # Kiro
 GEMINI.md                        # Gemini CLI
 ```
 
@@ -105,13 +103,13 @@ knowns sync --skills
 | Platform | Skills | MCP |
 |----------|--------|-----|
 | **Claude Code** | `.claude/skills/` | ✅ |
-| **Antigravity** | `.agent/skills/` | ✅ |
+| **Antigravity** | `.agents/skills/` | ✅ |
 | **Gemini CLI** | `~/.gemini/commands/` | ✅ |
 | **Cursor** | `.cursor/rules/` | ✅ |
 | **Windsurf** | `.windsurfrules` | ⚠️ |
 | **Cline** | `.clinerules/` | ✅ |
 
-> **Note:** Claude Code and Antigravity use the same SKILL.md format - portable\!
+> **Note:** Claude Code and Antigravity use the same SKILL.md format - portable!
 
 ---
 

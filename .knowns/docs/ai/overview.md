@@ -1,14 +1,11 @@
 ---
 title: AI Integration
-createdAt: '2026-01-23T04:07:54.465Z'
-updatedAt: '2026-03-08T18:17:55.455Z'
 description: 'Multi-AI platform support: skills, MCP, configurations'
-tags:
-  - feature
-  - ai
-  - skills
-  - mcp
+createdAt: '2026-01-23T04:07:54.465Z'
+updatedAt: '2026-04-24T14:35:58.809Z'
+tags: []
 ---
+
 ## Overview
 
 Knowns supports multiple AI platforms. Skills are defined once in `.knowns/skills/`, synced to all platforms.
@@ -40,8 +37,8 @@ Knowns supports multiple AI platforms. Skills are defined once in `.knowns/skill
 
 # Auto-sync to platforms
 .claude/skills/              # Claude Code
-.agent/skills/               # Antigravity
-.cursor/rules/               # Cursor
+.agents/skills/              # Codex / OpenCode / Antigravity
+.kiro/skills/                # Kiro
 ~/.gemini/commands/          # Gemini CLI
 ```
 
@@ -75,8 +72,7 @@ knowns mcp setup
 ## Key Concepts
 
 ### Skills
-Instructions for AI workflows. Portable format (`SKILL.md`) between Claude Code and Antigravity.
+Instructions for AI workflows. Portable format (`SKILL.md`) across compatible platforms, with Knowns syncing them into the platform-specific skill directories each runtime discovers.
 
 ### MCP (Model Context Protocol)
 Allows AI to call Knowns functions directly instead of CLI commands.
-

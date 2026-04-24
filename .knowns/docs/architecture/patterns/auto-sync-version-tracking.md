@@ -1,14 +1,11 @@
 ---
 title: Auto-Sync Version Tracking
-createdAt: '2026-02-24T07:31:11.375Z'
-updatedAt: '2026-03-08T18:23:03.181Z'
 description: Pattern for automatically syncing skills when CLI version changes
-tags:
-  - pattern
-  - auto-sync
-  - skills
-  - versioning
+createdAt: '2026-02-24T07:31:11.375Z'
+updatedAt: '2026-04-24T14:35:58.882Z'
+tags: []
 ---
+
 # Auto-Sync Version Tracking
 
 Pattern for automatically syncing skills when CLI version changes.
@@ -33,7 +30,7 @@ Each platform directory contains `.version`:
 
 ```
 .claude/skills/.version
-.agent/skills/.version
+.agents/skills/.version
 ```
 
 **Format:**
@@ -51,7 +48,7 @@ User runs any command
        |
 findProjectRoot()
        |
-For each platform in [".claude/skills", ".agent/skills"]:
+For each platform in [".claude/skills", ".agents/skills"]:
   - Skip if directory doesn't exist
   - Read .version file
   - Compare cliVersion with current
@@ -74,7 +71,7 @@ var platforms = []struct {
     Dir string
 }{
     {ID: "claude", Dir: ".claude/skills"},
-    {ID: "antigravity", Dir: ".agent/skills"},
+    {ID: "agent-compatible", Dir: ".agents/skills"},
 }
 
 func CheckAndAutoSync(cliVersion string) (synced bool, message string) {
@@ -120,7 +117,7 @@ if synced && msg != "" {
 ### Output
 
 ```
-Auto-synced 10 skills for claude, antigravity (0.11.2 -> 0.11.3)
+Auto-synced 10 skills for claude, agent-compatible (0.11.2 -> 0.11.3)
 ```
 
 ---

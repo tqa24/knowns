@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 
 	"github.com/howznguyen/knowns/internal/codegen"
@@ -114,10 +115,10 @@ Creates a .knowns/ directory with the required structure and a default config.js
 }
 
 // allPlatformIDs is the full ordered list of supported platform identifiers.
-var allPlatformIDs = []string{"claude-code", "opencode", "codex", "kiro", "gemini", "copilot", "agents"}
+var allPlatformIDs = []string{"claude-code", "opencode", "codex", "kiro", "antigravity", "cursor", "gemini", "copilot", "agents"}
 
 // wizardPlatformIDs is the subset shown in the wizard multi-select.
-var wizardPlatformIDs = []string{"claude-code", "opencode", "codex", "kiro", "gemini", "copilot", "agents"}
+var wizardPlatformIDs = []string{"claude-code", "opencode", "codex", "kiro", "antigravity", "cursor", "gemini", "copilot", "agents"}
 
 // platformLabel returns the human-readable label for a platform ID.
 func platformLabel(id string) string {
@@ -127,6 +128,10 @@ func platformLabel(id string) string {
 	switch id {
 	case "gemini":
 		return "Google Gemini  (GEMINI.md)"
+	case "antigravity":
+		return "Antigravity  (.agent/rules/knowns.md, ~/.gemini/antigravity/mcp_config.json)"
+	case "cursor":
+		return "Cursor  (.cursor/mcp.json)"
 	case "copilot":
 		return "GitHub Copilot  (.github/copilot-instructions.md)"
 	case "agents":
@@ -250,6 +255,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Determine if interactive mode
 	interactive := !noWizard
+	if interactive && isTTYFn() && terminalWidthFn() < 90 {
+		fmt.Println(warnStyle.Render("Terminal width is too small for the interactive setup wizard."))
+		fmt.Println(dimStyle.Render("  Falling back to non-interactive defaults. Re-run with a wider terminal for the full wizard."))
+		fmt.Println()
+		interactive = false
+	}
 
 	if interactive && len(args) == 0 {
 		// Load any existing config to pre-populate wizard defaults.
@@ -431,6 +442,36 @@ func runInit(cmd *cobra.Command, args []string) error {
 			label: "Creating Kiro MCP config",
 			run: func() error {
 				return createKiroMCPConfigQuiet(cwd)
+			},
+		})
+	}
+	if hasPlatform(cfg.Platforms, "codex") {
+		steps = append(steps, initStep{
+			label: "Creating Codex MCP config",
+			run: func() error {
+				return createCodexMCPConfigQuiet(cwd)
+			},
+		})
+	}
+	if hasPlatform(cfg.Platforms, "cursor") {
+		steps = append(steps, initStep{
+			label: "Creating Cursor MCP config",
+			run: func() error {
+				return createCursorMCPConfigQuiet(cwd)
+			},
+		})
+	}
+	if hasPlatform(cfg.Platforms, "antigravity") {
+		steps = append(steps, initStep{
+			label: "Creating Antigravity rules",
+			run: func() error {
+				return createAntigravityRulesQuiet(cwd, force)
+			},
+		})
+		steps = append(steps, initStep{
+			label: "Creating Antigravity MCP config",
+			run: func() error {
+				return createAntigravityMCPConfigQuiet(cwd)
 			},
 		})
 	}
@@ -641,7 +682,8 @@ func runWizard(cwd string, gitTracked, gitIgnored bool, gitAvailable bool, exist
 	groups = append(groups, group2, group3, group5, group6)
 
 	form := huh.NewForm(groups...).
-		WithTheme(huh.ThemeCatppuccin())
+		WithTheme(huh.ThemeCatppuccin()).
+		WithProgramOptions(tea.WithAltScreen())
 
 	if err := form.Run(); err != nil {
 		return nil, err
@@ -674,6 +716,15 @@ var execCommand = exec.Command
 
 // defaultExecCommand is the original value of execCommand for test cleanup.
 var defaultExecCommand = exec.Command
+
+// terminalWidthFn is overridable in tests.
+var terminalWidthFn = terminalWidth
+
+// isTTYFn is overridable in tests.
+var isTTYFn = isTTY
+
+// osUserHomeDir is overridable in tests.
+var osUserHomeDir = os.UserHomeDir
 
 func isGitAvailable() bool {
 	_, err := execLookPath("git")
@@ -831,6 +882,143 @@ func createKiroMCPConfigQuiet(projectRoot string) error {
 		"args":        args,
 		"disabled":    false,
 		"autoApprove": []string{"*"},
+	}
+
+	config["mcpServers"] = servers
+
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(configPath, append(data, '\n'), 0644)
+}
+
+func createCursorMCPConfigQuiet(projectRoot string) error {
+	settingsDir := filepath.Join(projectRoot, ".cursor")
+	if err := os.MkdirAll(settingsDir, 0755); err != nil {
+		return fmt.Errorf("create .cursor: %w", err)
+	}
+
+	configPath := filepath.Join(settingsDir, "mcp.json")
+	config := map[string]any{}
+
+	if data, err := os.ReadFile(configPath); err == nil {
+		if err := json.Unmarshal(data, &config); err != nil {
+			return fmt.Errorf("parse .cursor/mcp.json: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	servers, ok := config["mcpServers"].(map[string]any)
+	if !ok || servers == nil {
+		servers = make(map[string]any)
+	}
+
+	cmd, args := mcpCommand()
+	servers["knowns"] = map[string]any{
+		"command": cmd,
+		"args":    args,
+	}
+
+	config["mcpServers"] = servers
+
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(configPath, append(data, '\n'), 0644)
+}
+
+func createCodexMCPConfigQuiet(projectRoot string) error {
+	configDir := filepath.Join(projectRoot, ".codex")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return fmt.Errorf("create .codex: %w", err)
+	}
+
+	configPath := filepath.Join(configDir, "config.toml")
+	body, err := readTextIfExistsCLI(configPath)
+	if err != nil {
+		return err
+	}
+
+	cmd, args := mcpCommand()
+	updated := runtimeinstall.SetCodexMCPServer(body, cmd, args)
+	return os.WriteFile(configPath, []byte(updated), 0644)
+}
+
+func createAntigravityRulesQuiet(projectRoot string, force bool) error {
+	rulesDir := filepath.Join(projectRoot, ".agent", "rules")
+	if err := os.MkdirAll(rulesDir, 0755); err != nil {
+		return fmt.Errorf("create .agent/rules: %w", err)
+	}
+
+	rulePath := filepath.Join(rulesDir, "knowns.md")
+	if _, err := os.Stat(rulePath); err == nil && !force {
+		return nil
+	}
+
+	content := `---
+trigger: always_on
+description: Always load Knowns project guidance and prefer Knowns tools for project context.
+---
+
+# Knowns Project Guidance
+
+- Read ` + "`KNOWNS.md`" + ` first. It is the canonical source of truth for this repository.
+- Treat Knowns docs, tasks, and memory as the working layer for the project.
+- Prefer Knowns MCP tools for docs, tasks, search, and validation when available.
+- If MCP is unavailable, fall back to the ` + "`knowns`" + ` CLI.
+`
+
+	return os.WriteFile(rulePath, []byte(content), 0644)
+}
+
+func readTextIfExistsCLI(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	return string(data), nil
+}
+
+func createAntigravityMCPConfigQuiet(projectRoot string) error {
+	home, err := osUserHomeDir()
+	if err != nil {
+		return fmt.Errorf("resolve user home: %w", err)
+	}
+
+	settingsDir := filepath.Join(home, ".gemini", "antigravity")
+	if err := os.MkdirAll(settingsDir, 0755); err != nil {
+		return fmt.Errorf("create antigravity config dir: %w", err)
+	}
+
+	configPath := filepath.Join(settingsDir, "mcp_config.json")
+	config := map[string]any{}
+
+	if data, err := os.ReadFile(configPath); err == nil {
+		if err := json.Unmarshal(data, &config); err != nil {
+			return fmt.Errorf("parse antigravity mcp_config.json: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	servers, ok := config["mcpServers"].(map[string]any)
+	if !ok || servers == nil {
+		servers = make(map[string]any)
+	}
+
+	cmd, args := mcpCommand()
+	args = append(args, "--project", projectRoot)
+	servers["knowns"] = map[string]any{
+		"command": cmd,
+		"args":    args,
 	}
 
 	config["mcpServers"] = servers
@@ -1162,7 +1350,6 @@ func renderCompatibilityInstructionContent(relativePath, platform, projectRoot s
 	sb.WriteString("knowns doc \"<path>\" --plain --smart  # View doc\n")
 	sb.WriteString("knowns search \"query\" --plain        # Search docs/tasks\n")
 	sb.WriteString("knowns retrieve \"query\" --json      # Retrieve structured context pack (CLI fallback)\n")
-	sb.WriteString("knowns guidelines --plain             # Full workflow reference\n")
 	sb.WriteString("```\n\n")
 	sb.WriteString("<!-- KNOWNS GUIDELINES END -->\n")
 	return sb.String()

@@ -90,6 +90,7 @@ func handleMemoryAdd(getStore func() *storage.Store, req mcp.CallToolRequest) (*
 	if err != nil {
 		return errResult("content is required")
 	}
+	content = unescapeText(content)
 
 	args := req.GetArguments()
 	title, _ := stringArg(args, "title")
@@ -242,7 +243,7 @@ func handleMemoryUpdate(getStore func() *storage.Store, req mcp.CallToolRequest)
 	}
 	if clearFields["content"] {
 		entry.Content = ""
-	} else if v, ok := stringArg(args, "content"); ok && v != "" {
+	} else if v, ok := textArg(args, "content"); ok && v != "" {
 		entry.Content = v
 	}
 	if clearFields["category"] {

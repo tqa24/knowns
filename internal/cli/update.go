@@ -15,6 +15,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/howznguyen/knowns/internal/runtimeinstall"
 	"github.com/howznguyen/knowns/internal/runtimequeue"
 	"github.com/howznguyen/knowns/internal/util"
 	"github.com/spf13/cobra"
@@ -759,6 +760,21 @@ func syncMCPConfigs() error {
 		updated += n
 	}
 
+	// Sync .cursor/mcp.json
+	if n, err := syncCursorMCPConfig(projectRoot, cmd, args); err == nil {
+		updated += n
+	}
+
+	// Sync .codex/config.toml
+	if n, err := syncCodexMCPConfig(projectRoot, cmd, args); err == nil {
+		updated += n
+	}
+
+	// Sync ~/.gemini/antigravity/mcp_config.json
+	if n, err := syncAntigravityMCPConfig(projectRoot, cmd, args); err == nil {
+		updated += n
+	}
+
 	// Sync opencode.json
 	if n, err := syncOpenCodeConfig(projectRoot, cmd, args); err == nil {
 		updated += n
@@ -859,6 +875,134 @@ func syncKiroMCPConfig(projectRoot, cmd string, args []string) (int, error) {
 
 	fmt.Printf("  %s %s\n", StyleInfo.Render("synced"), ".kiro/settings/mcp.json")
 	return 1, nil
+}
+
+// syncCursorMCPConfig updates .cursor/mcp.json to use the direct binary.
+func syncCursorMCPConfig(projectRoot, cmd string, args []string) (int, error) {
+	configPath := filepath.Join(projectRoot, ".cursor", "mcp.json")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return 0, nil
+	}
+
+	var config map[string]any
+	if err := json.Unmarshal(data, &config); err != nil {
+		return 0, err
+	}
+
+	servers, ok := config["mcpServers"].(map[string]any)
+	if !ok {
+		return 0, nil
+	}
+
+	knowns, ok := servers["knowns"].(map[string]any)
+	if !ok {
+		return 0, nil
+	}
+
+	if knowns["command"] == cmd {
+		return 0, nil
+	}
+
+	knowns["command"] = cmd
+	knowns["args"] = args
+
+	out, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return 0, err
+	}
+
+	if err := os.WriteFile(configPath, append(out, '\n'), 0644); err != nil {
+		return 0, err
+	}
+
+	fmt.Printf("  %s %s\n", StyleInfo.Render("synced"), ".cursor/mcp.json")
+	return 1, nil
+}
+
+// syncCodexMCPConfig updates .codex/config.toml to use the direct binary.
+func syncCodexMCPConfig(projectRoot, cmd string, args []string) (int, error) {
+	configPath := filepath.Join(projectRoot, ".codex", "config.toml")
+	body, err := readTextIfExistsCLI(configPath)
+	if err != nil || body == "" {
+		return 0, nil
+	}
+
+	updatedBody := runtimeinstall.SetCodexMCPServer(body, cmd, args)
+	if updatedBody == body {
+		return 0, nil
+	}
+
+	if err := os.WriteFile(configPath, []byte(updatedBody), 0644); err != nil {
+		return 0, err
+	}
+
+	fmt.Printf("  %s %s\n", StyleInfo.Render("synced"), ".codex/config.toml")
+	return 1, nil
+}
+
+// syncAntigravityMCPConfig updates ~/.gemini/antigravity/mcp_config.json to use
+// the direct binary and current project path.
+func syncAntigravityMCPConfig(projectRoot, cmd string, args []string) (int, error) {
+	home, err := osUserHomeDir()
+	if err != nil {
+		return 0, err
+	}
+
+	configPath := filepath.Join(home, ".gemini", "antigravity", "mcp_config.json")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return 0, nil
+	}
+
+	var config map[string]any
+	if err := json.Unmarshal(data, &config); err != nil {
+		return 0, err
+	}
+
+	servers, ok := config["mcpServers"].(map[string]any)
+	if !ok {
+		return 0, nil
+	}
+
+	knowns, ok := servers["knowns"].(map[string]any)
+	if !ok {
+		return 0, nil
+	}
+
+	expectedArgs := append(append([]string(nil), args...), "--project", projectRoot)
+	currentArgs, _ := knowns["args"].([]any)
+	if knowns["command"] == cmd && sameStringSlice(currentArgs, expectedArgs) {
+		return 0, nil
+	}
+
+	knowns["command"] = cmd
+	knowns["args"] = expectedArgs
+
+	out, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return 0, err
+	}
+
+	if err := os.WriteFile(configPath, append(out, '\n'), 0644); err != nil {
+		return 0, err
+	}
+
+	fmt.Printf("  %s %s\n", StyleInfo.Render("synced"), "~/.gemini/antigravity/mcp_config.json")
+	return 1, nil
+}
+
+func sameStringSlice(values []any, expected []string) bool {
+	if len(values) != len(expected) {
+		return false
+	}
+	for i, want := range expected {
+		got, _ := values[i].(string)
+		if got != want {
+			return false
+		}
+	}
+	return true
 }
 
 // syncOpenCodeConfig updates opencode.json MCP command to use the direct binary.

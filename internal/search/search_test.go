@@ -586,6 +586,26 @@ func TestEngineRetrieve_FiltersSourceTypes(t *testing.T) {
 	}
 }
 
+func TestEngineRetrieve_AllFallsBackToKeywordWhenMainSemanticUnavailable(t *testing.T) {
+	store := newRetrievalTestStore(t)
+	engine := NewEngine(store, nil, nil)
+
+	resp, err := engine.Retrieve(models.RetrievalOptions{
+		Query: "retrieval foundation",
+		Mode:  string(ModeHybrid),
+		Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("Retrieve: %v", err)
+	}
+	if resp.Mode != string(ModeKeyword) {
+		t.Fatalf("response mode = %q, want %q", resp.Mode, ModeKeyword)
+	}
+	if len(resp.Candidates) == 0 {
+		t.Fatal("expected candidates from keyword fallback")
+	}
+}
+
 func TestEngineRetrieve_ExpandsReferences(t *testing.T) {
 	store := newRetrievalTestStore(t)
 	engine := NewEngine(store, nil, nil)
