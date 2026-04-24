@@ -37,7 +37,6 @@ knowns task <id> --plain              # View task
 knowns doc "<path>" --plain --smart  # View doc
 knowns search "query" --plain        # Search docs/tasks
 knowns retrieve "query" --json      # Retrieve structured context pack (CLI fallback)
-knowns guidelines --plain             # Full workflow reference
 ```
 
 <!-- KNOWNS GUIDELINES END -->

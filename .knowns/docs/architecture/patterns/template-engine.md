@@ -1,13 +1,11 @@
 ---
 title: Template Engine Architecture
-createdAt: '2026-01-25T09:48:44.135Z'
-updatedAt: '2026-03-08T18:22:46.883Z'
 description: Internal architecture of the template engine for developers
-tags:
-  - pattern
-  - template
-  - architecture
+createdAt: '2026-01-25T09:48:44.135Z'
+updatedAt: '2026-04-24T14:50:54.883Z'
+tags: []
 ---
+
 ## Overview
 
 Template Engine is the core module that handles code generation in Knowns. It uses Go's built-in `text/template` package. This document describes the internal architecture for developers.
@@ -362,18 +360,17 @@ func LoadSkill(dir string) (*Skill, error) {
 
 ### Multi-Platform Sync (`skill_sync.go`)
 
-Syncs skills to 6 AI platforms:
+Syncs skills to the platform directories Knowns manages:
 
 | Platform | Directory | Format | MCP |
 |----------|-----------|--------|-----|
 | Claude Code | `.claude/skills/` | SKILL.md | Yes |
-| Antigravity | `.agent/skills/` | SKILL.md | Yes |
-| Cursor | `.cursor/rules/` | SKILL.md | Yes |
-| Gemini CLI | `~/.gemini/` | GEMINI.md | Yes |
-| Windsurf | `.windsurfrules` | Single file | Partial |
-| Cline | `.clinerules/` | SKILL.md | Yes |
+| Codex | `.agents/skills/` | SKILL.md | Yes |
+| OpenCode | `.agents/skills/` | SKILL.md | Yes |
+| Antigravity | `.agents/skills/` | SKILL.md | Yes |
+| Kiro | `.kiro/skills/` | SKILL.md | No |
+| Generic Agents (legacy) | `.agent/skills/` | SKILL.md | No |
 
----
 ## Error Handling
 
 ### TemplateError

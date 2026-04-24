@@ -2,7 +2,7 @@
   <img src="./images/logo.png" alt="Knowns" width="120">
 </p>
 
-# Knowns
+<h1 align="center">Knowns</h1>
 
 <p align="center">
   <a href="https://go.dev/"><img src="https://img.shields.io/badge/go-%3E%3D1.24.2-00ADD8?style=flat-square&logo=go" alt="Go"></a>
@@ -13,16 +13,22 @@
 </p>
 
 <p align="center">
-  <strong>Give your AI coding assistant structured access to tasks, docs, specs, and decisions — so it stops guessing and starts building.</strong>
+  <a href="https://knowns.sh">Homepage</a> |
+  <a href="./README.vi.md">Tiếng Việt</a> |
+  <a href="./docs/README.md">Documentation</a>
+</p>
+
+<p align="center">
+  <strong>Give your AI coding assistant structured access to tasks, docs, specs, and decisions - so it stops guessing and starts building.</strong>
 </p>
 
 ---
 
-Every time you start a new AI coding session, you re-explain your architecture, paste docs, repeat conventions, and clarify past decisions. Your AI assistant is powerful — but it forgets everything between sessions.
+Every time you start a new AI coding session, you re-explain your architecture, paste docs, repeat conventions, and clarify past decisions. Your AI assistant is powerful - but it forgets everything between sessions.
 
 **Knowns fixes that.** It gives AI assistants like Claude, Cursor, Copilot, and others structured, persistent access to your project's tasks, documentation, specs, acceptance criteria, and architectural decisions. Instead of prompting from scratch, your AI reads what it needs and picks up where you left off.
 
-⭐ If you believe AI should truly understand software projects, consider giving **Knowns** a star.
+If you believe AI should truly understand software projects, consider giving **Knowns** a star.
 
 <p align="center">
   <img src="./images/task-workflow.gif" alt="Knowns task workflow demo" width="100%">
@@ -71,10 +77,10 @@ Knowns gives it that access.
 |---|---|
 | "We use the repository pattern with..." _(paste 50 lines)_ | AI reads `@doc/patterns/repository` automatically |
 | "Here's the task, the acceptance criteria are..." _(re-type everything)_ | AI reads the task, its ACs, linked specs, and related docs |
-| "Remember, we decided last week to..." _(hope it sticks)_ | Decision is stored in project memory — AI recalls it every session |
+| "Remember, we decided last week to..." _(hope it sticks)_ | Decision is stored in project memory - AI recalls it every session |
 | "The auth flow works like this..." _(explain for the 4th time)_ | AI follows `@doc/architecture/auth` and builds on it |
 | "Are we done? Let me check the requirements again..." | AI checks acceptance criteria and validates completion itself |
-| Session starts cold — 10 min of context-setting | Session starts warm — AI already knows the project |
+| Session starts cold - 10 min of context-setting | Session starts warm - AI already knows the project |
 
 ---
 
@@ -82,7 +88,7 @@ Knowns gives it that access.
 
 Knowns is a **local-first, self-hostable project context layer** for AI-native development.
 
-It stores your project knowledge in structured, AI-readable files — and exposes them to AI assistants through CLI and [MCP (Model Context Protocol)](https://modelcontextprotocol.io/).
+It stores your project knowledge in structured, AI-readable files - and exposes them to AI assistants through CLI and [MCP (Model Context Protocol)](https://modelcontextprotocol.io/).
 
 <p align="center">
   <img src="./images/knowledge-graph.svg" alt="Knowns Knowledge Graph" width="100%">
@@ -93,10 +99,10 @@ Concretely, Knowns manages:
 - **Tasks** with acceptance criteria, implementation plans, and status tracking
 - **Documentation** in nested markdown folders with cross-references
 - **Specs** that define what "done" looks like for a feature
-- **Memory** — project-level, session-level, and global knowledge that AI can recall
+- **Memory** - project-level, session-level, and global knowledge that AI can recall
 - **Templates** for code generation with Handlebars
 - **References** like `@task-42` and `@doc/patterns/auth` that AI can follow and resolve
-- **Code intelligence** — AST-indexed symbols, dependency graphs, and semantic code search
+- **Code intelligence** - AST-indexed symbols, dependency graphs, and semantic code search
 
 Everything lives in a `.knowns/` directory in your repo. Plain files. Committable to Git. No cloud required.
 
@@ -119,12 +125,12 @@ Knowns sits alongside your existing tools. Your stack stays the same.
   <img src="./images/architecture.svg" alt="Knowns Architecture" width="100%">
 </p>
 
-1. **You structure your project knowledge** — tasks, docs, specs, decisions — using the Knowns CLI or Web UI
-2. **AI reads it** — through MCP integration or CLI commands, your AI assistant accesses exactly the context it needs
-3. **AI acts on it** — follows references, checks acceptance criteria, updates task status, and builds with full awareness
-4. **Knowledge accumulates** — decisions, patterns, and conventions persist across sessions instead of disappearing
+1. **You structure your project knowledge** - tasks, docs, specs, decisions - using the Knowns CLI or Web UI
+2. **AI reads it** - through MCP integration or CLI commands, your AI assistant accesses exactly the context it needs
+3. **AI acts on it** - follows references, checks acceptance criteria, updates task status, and builds with full awareness
+4. **Knowledge accumulates** - decisions, patterns, and conventions persist across sessions instead of disappearing
 
-Your specs → understood. Your tasks → connected. Your docs → usable. Your decisions → remembered.
+Your specs -> understood. Your tasks -> connected. Your docs -> usable. Your decisions -> remembered.
 
 ---
 
@@ -135,10 +141,18 @@ Your specs → understood. Your tasks → connected. Your docs → usable. Your 
 brew install knowns-dev/tap/knowns
 # or: npm install -g knowns
 # or: curl -fsSL https://knowns.sh/script/install | sh
+# or on Windows PowerShell:
+# irm https://knowns.sh/script/install.ps1 | iex
+
+# verify the install
+knowns --version
 
 # Initialize in your project
 cd your-project
 knowns init
+
+# or run without a global install
+npx knowns init
 
 # Create your first task
 knowns task create "Add user authentication" \
@@ -155,17 +169,20 @@ knowns doc create "Auth Architecture" \
 # Open the Web UI
 knowns browser --open
 
+# Update Knowns later
+knowns update
+
 # Connect to your AI assistant via MCP
-# See: docs/mcp-integration.md
+# See: docs/en/guides/mcp-integration.md
 ```
 
-Now when your AI reads the project, it sees structured tasks with acceptance criteria, linked documentation, and clear definitions of done — instead of guessing.
+Now when your AI reads the project, it sees structured tasks with acceptance criteria, linked documentation, and clear definitions of done - instead of guessing.
 
 ---
 
 ## Core Capabilities
 
-### 📋 Task & Workflow Management
+### Task & Workflow Management
 
 Create tasks with acceptance criteria, implementation plans, and status tracking. AI can read tasks, follow plans, check off ACs, and know exactly when work is complete.
 
@@ -175,7 +192,7 @@ knowns task edit <id> -s in-progress
 knowns task edit <id> --check-ac 1
 ```
 
-### 📖 Structured Documentation
+### Structured Documentation
 
 Organize project knowledge in nested markdown folders. Cross-reference with `@doc/path` and `@task-id`. AI follows these references to load exactly the context it needs.
 
@@ -184,30 +201,30 @@ knowns doc create "API Design" -f "architecture"
 knowns doc "architecture/api-design" --smart --plain
 ```
 
-### 🧠 Project Memory
+### Project Memory
 
-Three-layer memory system — **project**, **session**, and **global** — so AI recalls decisions, patterns, and conventions without you repeating them.
+Three-layer memory system - **project**, **session**, and **global** - so AI recalls decisions, patterns, and conventions without you repeating them.
 
 ```bash
 knowns memory add "We use repository pattern for data access" --category decision
 knowns memory list --plain
 ```
 
-### 🔍 Semantic Search
+### Semantic Search
 
-Search by meaning, not just keywords. Runs locally with ONNX models — fully offline, no API keys needed.
+Search by meaning, not just keywords. Runs locally with ONNX models - fully offline, no API keys needed.
 
 ```bash
 knowns search "how does authentication work" --plain
 ```
 
-### 🤖 MCP Integration
+### MCP Integration
 
-Full [Model Context Protocol](https://modelcontextprotocol.io/) server. Claude, Cursor, and other MCP-compatible assistants get native access to tasks, docs, memory, search, and validation — no copy-pasting required.
+Full [Model Context Protocol](https://modelcontextprotocol.io/) server. Claude, Cursor, and other MCP-compatible assistants get native access to tasks, docs, memory, search, and validation - no copy-pasting required.
 
-### 🏗️ Code Intelligence
+### Code Intelligence
 
-AST-based indexing for Go, TypeScript, JavaScript, and Python. Search symbols, trace dependencies, and explore your codebase structure — all accessible to AI.
+AST-based indexing for Go, TypeScript, JavaScript, and Python. Search symbols, trace dependencies, and explore your codebase structure - all accessible to AI.
 
 ```bash
 knowns code ingest
@@ -215,7 +232,7 @@ knowns code search "oauth login" --neighbors 5
 knowns code deps --type calls
 ```
 
-### 🔄 Templates & Code Generation
+### Templates & Code Generation
 
 Handlebars-based templates for scaffolding. Define patterns once, generate consistently.
 
@@ -224,13 +241,13 @@ knowns template list
 knowns template run <name> --name "UserService"
 ```
 
-### 🖥️ AI Agent Workspaces
+### AI Agent Workspaces
 
-Multi-phase agent orchestration with git worktree isolation, live terminal streaming, and automatic phase progression (research → plan → implement → review).
+Multi-phase agent orchestration with git worktree isolation, live terminal streaming, and automatic phase progression (research -> plan -> implement -> review).
 
-### 🌐 Web UI
+### Web UI
 
-Kanban board, document browser, knowledge graph visualization, and mermaid diagram support — all in a local browser UI.
+Kanban board, document browser, knowledge graph visualization, and mermaid diagram support - all in a local browser UI.
 
 ```bash
 knowns browser --open
@@ -267,10 +284,10 @@ When using Claude Code with Knowns, skills (slash commands) provide a guided wor
 </p>
 
 ```
-/kn-init     → Read project docs, understand context
-/kn-plan     → Take task, gather context, create plan (wait for approval)
-/kn-implement → Follow plan, check ACs, track progress
-/kn-commit   → Commit with conventional format
+/kn-init      -> Read project docs, understand context
+/kn-plan      -> Take task, gather context, create plan (wait for approval)
+/kn-implement -> Follow plan, check ACs, track progress
+/kn-commit    -> Commit with conventional format
 ```
 
 ### Example Session
@@ -315,7 +332,7 @@ Claude: [Creates conventional commit]
 
 | Skill | Description |
 |---|---|
-| `/kn-init` | Initialize session — read docs, load memory, understand project |
+| `/kn-init` | Initialize session - read docs, load memory, understand project |
 | `/kn-plan <id>` | Take task, gather context, create implementation plan |
 | `/kn-implement <id>` | Execute plan, track progress, check acceptance criteria |
 | `/kn-research` | Search codebase, find patterns, explore before coding |
@@ -365,7 +382,7 @@ The shell installer on macOS/Linux and the PowerShell installer on Windows both 
 ### npm
 
 ```bash
-# Global install — auto-downloads platform-specific binary
+# Global install - auto-downloads platform-specific binary
 npm install -g knowns
 
 # Or run without installing
@@ -446,18 +463,18 @@ knowns sync
 
 | Guide | Description |
 |---|---|
-| [User Guide](./docs/user-guide.md) | Getting started and daily usage |
-| [Command Reference](./docs/commands.md) | All CLI commands with examples |
-| [Workflow Guide](./docs/workflow.md) | Task lifecycle from creation to completion |
-| [MCP Integration](./docs/mcp-integration.md) | Claude Desktop / Cursor setup with MCP tools |
-| [Reference System](./docs/reference-system.md) | How `@doc/` and `@task-` linking works |
-| [Semantic Search](./docs/semantic-search.md) | Setup and usage of AI-powered search |
-| [Templates](./docs/templates.md) | Code generation with Handlebars |
-| [Web UI](./docs/web-ui.md) | Kanban board, doc browser, and knowledge graph |
-| [Configuration](./docs/configuration.md) | Project structure and options |
-| [Skills](./docs/skills.md) | Claude Code skills reference |
-| [Developer Guide](./docs/developer-guide.md) | Technical docs for contributors |
-| [Multi-Platform](./docs/multi-platform.md) | Cross-platform build and distribution |
+| [User Guide](./docs/en/guides/user-guide.md) | Getting started and daily usage |
+| [Command Reference](./docs/en/reference/commands.md) | Core CLI commands with examples |
+| [Workflow Guide](./docs/en/guides/workflow.md) | Recommended human + AI workflow |
+| [MCP Integration](./docs/en/guides/mcp-integration.md) | MCP setup and supported platforms |
+| [Reference System](./docs/en/reference/reference-system.md) | How `@doc/` and `@task-` linking works |
+| [Semantic Search](./docs/en/reference/semantic-search.md) | Setup and usage of semantic search |
+| [Templates](./docs/en/integrations/templates.md) | Code generation and template workflows |
+| [Web UI](./docs/en/guides/web-ui.md) | Board, docs, graph, and chat UI |
+| [Configuration](./docs/en/reference/configuration.md) | Project config and platform IDs |
+| [Skills](./docs/en/integrations/skills.md) | Skill paths and regeneration |
+| [Developer Guide](./docs/en/contributing/developer-guide.md) | Notes for contributors |
+| [Platforms](./docs/en/integrations/platforms.md) | Platform integration mapping |
 
 ---
 
@@ -465,15 +482,15 @@ knowns sync
 
 ### AI Agent Workspaces ✅ (Active)
 
-Multi-phase agent orchestration — assign tasks to AI agents with git worktree isolation, live terminal streaming, and automatic phase progression (research → plan → implement → review).
+Multi-phase agent orchestration - assign tasks to AI agents with git worktree isolation, live terminal streaming, and automatic phase progression (research -> plan -> implement -> review).
 
 ### Self-Hosted Team Sync 🚧 (Planned)
 
 Optional self-hosted sync server for shared visibility without giving up local-first workflows.
 
-- **Real-time visibility** — See who is working on what
-- **Shared knowledge** — Sync tasks and documentation across the team
-- **Full data control** — Self-hosted, no cloud dependency
+- **Real-time visibility** - See who is working on what
+- **Shared knowledge** - Sync tasks and documentation across the team
+- **Full data control** - Self-hosted, no cloud dependency
 
 ---
 
@@ -482,7 +499,7 @@ Optional self-hosted sync server for shared visibility without giving up local-f
 Requires **Go 1.24.2+** and optionally **Node.js + pnpm** for UI development.
 
 ```bash
-make build              # Build binary → bin/knowns
+make build              # Build binary -> bin/knowns
 make dev                # Build with race detector
 make test               # Run unit tests
 make test-e2e           # Run CLI + MCP E2E tests
@@ -521,6 +538,18 @@ tests/               # E2E tests
 For design principles and long-term direction, see [Philosophy](./PHILOSOPHY.md).
 
 For technical details, see [Architecture](./ARCHITECTURE.md) and [Contributing](./CONTRIBUTING.md).
+
+---
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=knowns-dev%2Fknowns&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=knowns-dev/knowns&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=knowns-dev/knowns&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=knowns-dev/knowns&type=date&legend=top-left" />
+ </picture>
+</a>
 
 ---
 

@@ -1,5 +1,26 @@
 package handlers
 
+import "strings"
+
+// unescapeText replaces literal \n and \t sequences with actual newlines and tabs.
+// This mirrors the CLI's unescapeText helper so that MCP callers sending
+// escaped newlines (e.g. "line1\\nline2" in JSON) get real line breaks stored.
+func unescapeText(s string) string {
+	s = strings.ReplaceAll(s, `\n`, "\n")
+	s = strings.ReplaceAll(s, `\t`, "\t")
+	return s
+}
+
+// textArg extracts a string argument and unescapes \n and \t sequences.
+// Use for multiline text fields (description, content, plan, notes, etc.).
+func textArg(args map[string]any, key string) (string, bool) {
+	v, ok := stringArg(args, key)
+	if ok {
+		v = unescapeText(v)
+	}
+	return v, ok
+}
+
 // stringArg safely extracts a string argument from the args map.
 func stringArg(args map[string]any, key string) (string, bool) {
 	v, ok := args[key]

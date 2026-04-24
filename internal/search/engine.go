@@ -69,7 +69,7 @@ func (e *Engine) Search(opts SearchOptions) ([]models.SearchResult, error) {
 	}
 
 	mode := SearchMode(opts.Mode)
-	semanticAvailable := e.SemanticAvailable() || e.memorySemanticAvailable()
+	semanticAvailable := e.semanticAvailableForType(opts.Type)
 
 	// Auto-detect mode: if semantic not available, fall back to keyword.
 	if mode != ModeKeyword && !semanticAvailable {
@@ -109,7 +109,7 @@ func (e *Engine) Search(opts SearchOptions) ([]models.SearchResult, error) {
 
 // Retrieve executes mixed-source retrieval and assembles a context pack.
 func (e *Engine) Retrieve(opts models.RetrievalOptions) (*models.RetrievalResponse, error) {
-	semanticAvailable := e.SemanticAvailable() || e.memorySemanticAvailable()
+	semanticAvailable := e.semanticAvailableForType(typeFilterFromSources(opts.SourceTypes))
 	searchOpts := SearchOptions{
 		Query:    opts.Query,
 		Mode:     opts.Mode,
@@ -150,6 +150,17 @@ func (e *Engine) Retrieve(opts models.RetrievalOptions) (*models.RetrievalRespon
 		response.ContextPack.Items = []models.ContextItem{}
 	}
 	return response, nil
+}
+
+func (e *Engine) semanticAvailableForType(searchType string) bool {
+	switch searchType {
+	case "memory":
+		return e.memorySemanticAvailable()
+	case "", "all":
+		return e.SemanticAvailable() || e.memorySemanticAvailable()
+	default:
+		return e.SemanticAvailable()
+	}
 }
 
 func effectiveMode(mode string, semanticAvailable bool) string {
@@ -748,6 +759,9 @@ func (e *Engine) semanticSearch(query string, opts SearchOptions) ([]models.Sear
 	if opts.Type == "memory" {
 		return e.semanticMemorySearch(query, opts)
 	}
+	if e.embedder == nil || e.vecStore == nil {
+		return nil, fmt.Errorf("semantic search is not available")
+	}
 	queryVec, err := e.embedder.EmbedQuery(query)
 	if err != nil {
 		return nil, err
@@ -834,6 +848,9 @@ func (e *Engine) hybridMemorySearch(query string, opts SearchOptions) ([]models.
 }
 
 func (e *Engine) semanticSearchSingleStore(query string, opts SearchOptions, memoryLayer string, memoryStore string) ([]models.SearchResult, error) {
+	if e.embedder == nil || e.vecStore == nil {
+		return nil, fmt.Errorf("semantic search is not available")
+	}
 	queryVec, err := e.embedder.EmbedQuery(query)
 	if err != nil {
 		return nil, err

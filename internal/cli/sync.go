@@ -77,6 +77,13 @@ func runSync(cmd *cobra.Command, args []string) error {
 		if err := runSyncInstructions(projectRoot, effectivePlatform, force, configPlatforms); err != nil {
 			return fmt.Errorf("sync instructions: %w", err)
 		}
+		platformsForConfigs, err := resolveSyncPlatformTargets(effectivePlatform, configPlatforms)
+		if err != nil {
+			return fmt.Errorf("resolve platform configs: %w", err)
+		}
+		if err := runSyncPlatformConfigs(projectRoot, force, platformsForConfigs); err != nil {
+			return fmt.Errorf("sync platform configs: %w", err)
+		}
 		fmt.Println()
 	}
 
@@ -129,6 +136,60 @@ func runSync(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+func resolveSyncPlatformTargets(platform string, configPlatforms []string) ([]string, error) {
+	if platform == "" {
+		return configPlatforms, nil
+	}
+
+	normalized := strings.ToLower(strings.TrimSpace(platform))
+	switch normalized {
+	case "cursor", "antigravity":
+		return []string{normalized}, nil
+	case "claude", "opencode", "gemini", "copilot", "agents":
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("unknown platform %q", platform)
+	}
+}
+
+// runSyncPlatformConfigs syncs platform-specific integration artifacts that are
+// not instruction shims, such as MCP config files and agent rule files.
+// This intentionally requires explicit platform selection in config to avoid
+// creating new global configs for older projects whose platform list is empty.
+func runSyncPlatformConfigs(projectRoot string, force bool, platforms []string) error {
+	if len(platforms) == 0 {
+		return nil
+	}
+
+	if hasPlatform(platforms, "cursor") {
+		if err := createCursorMCPConfigQuiet(projectRoot); err != nil {
+			return err
+		}
+		fmt.Printf("  %s %s\n", StyleSuccess.Render("[cursor]"), StyleDim.Render(".cursor/mcp.json synced."))
+	}
+
+	if hasPlatform(platforms, "codex") {
+		if err := createCodexMCPConfigQuiet(projectRoot); err != nil {
+			return err
+		}
+		fmt.Printf("  %s %s\n", StyleSuccess.Render("[codex]"), StyleDim.Render(".codex/config.toml synced."))
+	}
+
+	if hasPlatform(platforms, "antigravity") {
+		if err := createAntigravityRulesQuiet(projectRoot, force); err != nil {
+			return err
+		}
+		fmt.Printf("  %s %s\n", StyleSuccess.Render("[antigravity]"), StyleDim.Render(".agent/rules/knowns.md synced."))
+
+		if err := createAntigravityMCPConfigQuiet(projectRoot); err != nil {
+			return err
+		}
+		fmt.Printf("  %s %s\n", StyleSuccess.Render("[antigravity]"), StyleDim.Render("~/.gemini/antigravity/mcp_config.json synced."))
+	}
+
+	return nil
+}
+
 // runSyncModel downloads the embedding model configured in config.json if not already installed.
 func runSyncModel(store *storage.Store, force bool) error {
 	cfg, err := store.Config.Load()
@@ -165,6 +226,9 @@ func runSyncSkillsForPlatforms(projectRoot string, force bool, platforms []strin
 	}
 
 	fmt.Printf("%s\n", RenderInfo(fmt.Sprintf("Syncing %s skill(s)...", StyleBold.Render(fmt.Sprintf("%d", count)))))
+	if codegen.UsesLegacyAgentSkillsDir(projectRoot, platforms) {
+		fmt.Printf("  %s\n", StyleWarning.Render("Legacy .agent/skills detected. Knowns will continue syncing it for compatibility, but new projects should use .agents/skills."))
+	}
 
 	if err := codegen.SyncSkillsForPlatforms(projectRoot, platforms); err != nil {
 		return err

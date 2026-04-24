@@ -2,12 +2,8 @@
 title: Sync Command
 description: knowns sync — apply config.json to set up skills, instructions, model, git, and search index
 createdAt: '2026-03-27T07:10:42.070Z'
-updatedAt: '2026-04-02T09:38:29.325Z'
-tags:
-  - feature
-  - cli
-  - sync
-  - setup
+updatedAt: '2026-04-24T14:35:58.882Z'
+tags: []
 ---
 
 ## Overview
@@ -23,7 +19,7 @@ knowns sync        # sets up everything from config.json
 
 ## What It Does
 
-1. **Skills** — copies built-in skills to platform directories (`.claude/skills/`, `.agent/skills/`, `.kiro/skills/`)
+1. **Skills** — copies built-in skills to platform directories (`.claude/skills/`, `.agents/skills/`, `.kiro/skills/`; plus legacy `.agent/skills/` when an older project already uses it)
 2. **Instructions** — generates agent instruction files (KNOWNS.md, CLAUDE.md, AGENTS.md, etc.) for configured platforms. Always overwrites to stay in sync with templates.
 3. **Git integration** — applies `.gitignore` rules based on `gitTrackingMode` setting
 4. **Model download** — downloads the configured embedding model if not installed locally
@@ -39,7 +35,7 @@ knowns sync        # sets up everything from config.json
 | `--skills` | Sync skills only |
 | `--instructions` | Sync instruction files only |
 | `--model` | Download embedding model only |
-| `--platform <name>` | Sync specific platform (claude, gemini, copilot, agents) |
+| `--platform <name>` | Sync specific platform (claude, gemini, copilot, agents, cursor, antigravity) |
 
 ## Auto-Setup Warning
 

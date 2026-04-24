@@ -39,22 +39,22 @@
       "dimensions": 384,
       "maxTokens": 512
     },
-    "serverPort": 6420,
+    "serverPort": 4455,
     "platforms": [
       "claude-code",
-      "codex",
       "opencode",
+      "codex",
+      "kiro",
       "gemini",
       "copilot",
-      "kiro",
       "agents"
     ],
     "enableChatUI": true,
     "opencodeModels": {
       "version": 1,
       "defaultModel": {
-        "providerID": "openai",
-        "modelID": "gpt-5.4"
+        "providerID": "knowns-hub",
+        "modelID": "cx/gpt-5.4"
       },
       "variantModels": {
         "anthropic:claude-sonnet-4-5": "high",
@@ -62,10 +62,7 @@
       },
       "activeModels": [
         "anthropic:claude-sonnet-4-5",
-        "kiro-claude-code:claude-opus-4.6",
-        "kiro-claude-code:claude-sonnet-4.6",
-        "knowns-hub:cx/gpt-5.4",
-        "knowns-hub:minimax/MiniMax-M2.7"
+        "knowns-hub:cx/gpt-5.4"
       ]
     }
   }

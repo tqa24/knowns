@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -267,7 +268,7 @@ func validateInstallable(spec runtimeSpec, opts Options) error {
 }
 
 func hookCommandPath(spec runtimeSpec, opts Options) string {
-	return strings.Join(hookCommandArgs(spec, opts), " ")
+	return shellCommandString(hookCommandArgs(spec, opts), opts.GOOS)
 }
 
 func hookCommandArgs(spec runtimeSpec, opts Options) []string {
@@ -275,7 +276,27 @@ func hookCommandArgs(spec runtimeSpec, opts Options) []string {
 }
 
 func legacyPromptCommandPath(spec runtimeSpec, opts Options) string {
-	return strings.Join([]string{opts.ExecutablePath, "runtime-memory", "hook", "--runtime", spec.Runtime, "--event", defaultHookEvent}, " ")
+	return shellCommandString([]string{opts.ExecutablePath, "runtime-memory", "hook", "--runtime", spec.Runtime, "--event", defaultHookEvent}, opts.GOOS)
+}
+
+func shellCommandString(args []string, goos string) string {
+	quoted := make([]string, 0, len(args))
+	for i, arg := range args {
+		if i == 0 {
+			arg = shellExecutablePath(arg, goos)
+		}
+		quoted = append(quoted, strconv.Quote(arg))
+	}
+	return strings.Join(quoted, " ")
+}
+
+func shellExecutablePath(path, goos string) string {
+	if goos != "windows" {
+		return path
+	}
+	// Claude for Windows runs command hooks through bash, so backslashes in a raw
+	// Windows path are treated as escapes and collapse (e.g. C:\foo -> C:foo).
+	return strings.ReplaceAll(path, `\`, "/")
 }
 
 const (
@@ -788,6 +809,53 @@ func setCodexFeature(body, key string, enabled bool) string {
 	insertAt := featuresEnd
 	lines = append(lines[:insertAt], append([]string{valueLine}, lines[insertAt:]...)...)
 	return strings.Join(lines, "\n")
+}
+
+func SetCodexMCPServer(body, command string, args []string) string {
+	lines := strings.Split(body, "\n")
+	sectionStart := -1
+	sectionEnd := len(lines)
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "[mcp_servers.knowns]" {
+			sectionStart = i
+			for j := i + 1; j < len(lines); j++ {
+				t := strings.TrimSpace(lines[j])
+				if strings.HasPrefix(t, "[") && strings.HasSuffix(t, "]") {
+					sectionEnd = j
+					break
+				}
+			}
+			break
+		}
+	}
+
+	newSection := []string{
+		"[mcp_servers.knowns]",
+		fmt.Sprintf("command = %q", command),
+		fmt.Sprintf("args = [%s]", joinQuotedTOML(args)),
+	}
+
+	if sectionStart == -1 {
+		body = strings.TrimRight(body, "\n")
+		if body != "" {
+			body += "\n\n"
+		}
+		return body + strings.Join(newSection, "\n") + "\n"
+	}
+
+	replacement := append([]string{}, lines[:sectionStart]...)
+	replacement = append(replacement, newSection...)
+	replacement = append(replacement, lines[sectionEnd:]...)
+	return strings.Join(replacement, "\n")
+}
+
+func joinQuotedTOML(values []string) string {
+	quoted := make([]string, 0, len(values))
+	for _, value := range values {
+		quoted = append(quoted, fmt.Sprintf("%q", value))
+	}
+	return strings.Join(quoted, ", ")
 }
 
 func readTextIfExists(path string) (string, error) {

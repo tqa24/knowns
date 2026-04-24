@@ -1,0 +1,3 @@
+[mcp_servers.knowns]
+command = "knowns"
+args = ["mcp", "--stdio"]

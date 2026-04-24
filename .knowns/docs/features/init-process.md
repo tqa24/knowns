@@ -2,11 +2,8 @@
 title: Init Process
 description: Detailed init wizard flow and configuration steps
 createdAt: '2026-01-23T04:13:12.738Z'
-updatedAt: '2026-03-27T07:11:30.211Z'
-tags:
-  - feature
-  - init
-  - wizard
+updatedAt: '2026-04-24T15:25:23.756Z'
+tags: []
 ---
 
 ## Overview
@@ -196,91 +193,6 @@ The selected model determines which files are downloaded in the post-wizard phas
 
 ---
 
-## Progressive Step Animation
-
-After the wizard completes, all setup tasks run sequentially with animated feedback. Steps appear one by one — each step is only shown once the previous step finishes.
-
-### Step Types
-
-There are two types of steps, each with a different animation strategy:
-
-**Task steps** use a goroutine-based spinner (not bubbletea). This avoids terminal escape sequence issues that can occur when mixing bubbletea programs with raw terminal output.
-
-```go
-// Goroutine spinner — writes directly to stderr
-go func() {
-    for !stopped.Load() {
-        frame := StyleDim.Render(spinnerFrames[i%len(spinnerFrames)])
-        fmt.Fprintf(os.Stderr, "\r  %s %s", frame, step.label)
-        time.Sleep(80 * time.Millisecond)
-        i++
-    }
-}()
-```
-
-**Download steps** are batched and run via a bubbletea `setupModel` with progress bars, spinners, speed display, and size tracking.
-
-### Visual States
-
-Each step displays in one of four visual states:
-
-| State | Icon | Description |
-|-------|------|-------------|
-| Done | `✓` (green) | Step completed successfully |
-| Active | `⠋` (spinner) | Currently executing |
-| Pending | `○` (dim) | Waiting for previous steps |
-| Error | `✗` (yellow) | Step failed with error message |
-
-### Example Output
-
-```
-  ✓ Creating project structure
-  ✓ Applying settings
-  ✓ Configuring git integration
-  ⠋ ONNX Runtime (darwin/arm64)
-    ▓▓▓▓▓▓▓░░░░░░░░░░░░░ 35%  12MB/35MB  2.1MB/s
-  ○ gte-small (recommended) — model.onnx
-  ○ gte-small (recommended) — tokenizer.json
-  ○ gte-small (recommended) — config.json
-```
-
-After all downloads complete:
-
-```
-  ✓ Creating project structure
-  ✓ Applying settings
-  ✓ Configuring git integration
-  ✓ ONNX Runtime (darwin/arm64) (35MB)
-  ✓ gte-small (recommended) — model.onnx (67MB)
-  ✓ gte-small (recommended) — tokenizer.json (712KB)
-  ✓ gte-small (recommended) — config.json (1KB)
-  ✓ Syncing skills
-  ✓ Creating MCP config
-  ✓ Creating instruction files
-```
-
-### Step Execution Logic
-
-The `runInitSteps` function in `init_steps.go` processes steps sequentially:
-
-1. **Task steps** (steps with a `run` function): Executed with `runTaskStepAnimated()` — a goroutine spinner writes to stderr while the task runs on the main goroutine.
-2. **Download steps** (steps with a `url` field): Consecutive download steps are batched and run together through a bubbletea `setupModel` program with progress bars.
-
-```go
-func runInitSteps(steps []initStep) error {
-    for i < len(steps) {
-        if step.run != nil {
-            // Task step — goroutine spinner
-            runTaskStepAnimated(step)
-        } else {
-            // Batch consecutive download steps
-            // Run via bubbletea setupModel with progress bars
-        }
-    }
-}
-```
-
----
 
 ## Post-Wizard Steps (In Order)
 
@@ -479,3 +391,14 @@ The `drainStdin()` function in `download_setup.go` reads and discards pending by
 ### AI platforms are auto-configured
 
 Unlike the previous Node version which had an AI platform selection step, the Go version automatically generates instruction files for all supported platforms (Claude Code, OpenCode, Gemini CLI, GitHub Copilot, Generic AI) and writes project-level MCP config for Claude Code and OpenCode. This reduces wizard friction since most users want the common AI tooling configured during init.
+
+
+## Terminal Behavior
+
+The init wizard is optimized for normal interactive terminals, but some terminal conditions affect how it renders:
+
+- **Narrow terminals:** if the terminal is too narrow, Knowns falls back to non-interactive defaults instead of trying to render the full wizard in an unusable layout.
+- **Terminal resize during wizard:** the wizard runs in an alternate screen to reduce duplicated lines and redraw artifacts when the terminal is resized while the form is active.
+- **Installer output:** third-party installers (for example the OpenCode install script) write directly to the terminal, so their output may still appear verbose or visually noisy even when the rest of the wizard is well-behaved.
+
+This behavior is intentional: prefer a readable fallback over a broken wizard, and isolate the form UI from the main terminal screen when possible.
