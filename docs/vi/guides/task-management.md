@@ -2,32 +2,30 @@
 
 Task là đơn vị công việc chính trong Knowns.
 
-## Một task thường có gì?
+## Task gồm gì?
 
-Một task điển hình có thể gồm:
-
-- tiêu đề
-- mô tả
-- trạng thái
-- mức độ ưu tiên
-- nhãn
-- người phụ trách
+- title
+- description
+- status
+- priority
+- labels
+- assignee
 - acceptance criteria
-- kế hoạch thực hiện
-- ghi chú thực hiện
+- implementation plan
+- implementation notes
 
-## Vì sao task quan trọng?
+## Tại sao cần task?
 
-Task quan trọng vì nó cho cả con người lẫn AI một mục tiêu công việc cụ thể.
+Task cho cả người và AI một mục tiêu rõ ràng.
 
-Thay vì nói chung chung kiểu “làm phần auth đi”, bạn có thể định nghĩa rõ:
+Thay vì nói "làm phần auth đi", define cụ thể:
 
-- cần xây gì
-- kiểm tra thành công bằng cách nào
-- ngữ cảnh nào liên quan
-- hiện tại đã làm đến đâu
+- cần build gì
+- check thành công bằng cách nào
+- context nào liên quan
+- đang làm đến đâu
 
-## Luồng điển hình
+## Flow điển hình
 
 ```bash
 knowns task create "Add authentication" \
@@ -37,7 +35,7 @@ knowns task create "Add authentication" \
   --priority high
 
 knowns task edit <id> -s in-progress
-knowns task edit <id> --plan $'1. Review auth pattern\n2. Implement endpoints\n3. Add tests'
+knowns task edit <id> --plan '1. Review auth pattern\n2. Implement endpoints\n3. Add tests'
 knowns task edit <id> --check-ac 1
 knowns task edit <id> --append-notes "Completed middleware"
 knowns task edit <id> -s done
@@ -45,23 +43,23 @@ knowns task edit <id> -s done
 
 ## Acceptance criteria
 
-Acceptance criteria đặc biệt quan trọng khi làm việc cùng AI vì chúng biến khái niệm “xong” thành thứ có thể kiểm tra được.
+AC đặc biệt quan trọng khi làm việc với AI — biến khái niệm "xong" thành thứ kiểm tra được.
 
-Acceptance criteria tốt nên:
+AC tốt nên:
 
 - cụ thể
-- quan sát được
-- đủ nhỏ để kiểm từng cái một
+- observable
+- đủ nhỏ để check từng cái
 
-## Tham chiếu trong task
+## Reference trong task
 
-Task có thể tham chiếu tới doc hoặc thực thể khác, ví dụ:
+Task có thể reference tới doc hoặc entity khác:
 
 - `@doc/architecture/auth`
 - `@task-abc123`
 
-## Liên quan
+## Xem thêm
 
-- [Tra cứu lệnh](../reference/commands.md)
-- [Hệ thống tham chiếu](../reference/reference-system.md)
-- [Cách làm việc đề xuất](./workflow.md)
+- [Lệnh](../reference/commands.md)
+- [Reference system](../reference/reference-system.md)
+- [Workflow](./workflow.md)

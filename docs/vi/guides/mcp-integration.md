@@ -1,16 +1,16 @@
-# Tích hợp MCP
+# MCP
 
-Knowns cung cấp MCP server để AI assistants có thể truy cập trực tiếp task, tài liệu, memory, search, validation, và code tools.
+Knowns expose MCP server để AI assistants truy cập trực tiếp task, doc, memory, search, validation, và code tools.
 
-## Lệnh server
+## Server command
 
 ```bash
 knowns mcp --stdio
 ```
 
-## Các nền tảng hiện đang hỗ trợ
+## Platform support
 
-| Nền tảng | Tệp cấu hình | Phạm vi | Tự động thiết lập |
+| Platform | Config file | Scope | Auto setup |
 |---|---|---|---|
 | Claude Code | `.mcp.json` | per-project | yes |
 | Kiro | `.kiro/settings/mcp.json` | per-project | yes |
@@ -20,7 +20,7 @@ knowns mcp --stdio
 | Antigravity | `~/.gemini/antigravity/mcp_config.json` | global | yes |
 | Claude Desktop | app config | global | manual |
 
-## Ví dụ cấu hình điển hình
+## Config ví dụ
 
 ### Claude Code
 
@@ -71,11 +71,11 @@ args = ["mcp", "--stdio"]
 }
 ```
 
-## Lưu ý quan trọng với các client MCP dùng cấu hình toàn cục
+## Lưu ý với global MCP clients
 
-Với các cấu hình MCP toàn cục, server có thể không biết dự án nào cần dùng ngay từ đầu phiên làm việc.
+Với config MCP global, server có thể không biết project nào cần dùng lúc bắt đầu session.
 
-Hãy chọn dự án đang làm trước:
+Set active project trước:
 
 ```json
 { "action": "detect" }
@@ -83,8 +83,8 @@ Hãy chọn dự án đang làm trước:
 { "action": "current" }
 ```
 
-## Vì sao MCP hữu ích?
+## Tại sao MCP hữu ích
 
-- AI truy cập trạng thái của dự án theo dạng có cấu trúc
-- ít phải phân tích shell output hoặc copy-paste prompt
-- dễ làm các luồng validation và retrieval hơn
+- AI truy cập project state có cấu trúc
+- Ít phải parse shell output
+- Validation và retrieval workflows dễ hơn

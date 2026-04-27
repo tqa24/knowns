@@ -1,61 +1,61 @@
-# Bắt đầu nhanh
+# Quick start
 
-Đây là cách đơn giản nhất để bắt đầu một dự án với Knowns.
+Cách nhanh nhất để có một project Knowns chạy được.
 
-## 1. Khởi tạo dự án
+## 1. Init project
 
 ```bash
 knowns init
-# hoặc, nếu chưa cài global:
+# hoặc không cài global:
 npx knowns init
 ```
 
-Khi chạy `knowns init`, bạn có thể cấu hình:
+Init wizard cho phép cấu hình:
 
-- tên dự án
-- chế độ theo dõi bằng Git
-- các nền tảng AI cần tích hợp
-- Chat UI dùng OpenCode (tùy chọn)
+- tên project
+- git tracking mode
+- AI platforms cần tích hợp
+- Chat UI qua OpenCode (tùy chọn)
 - semantic search
-- mô hình embedding
+- embedding model
 
-Nếu cửa sổ terminal quá hẹp, Knowns có thể tự chuyển sang cấu hình mặc định không tương tác thay vì cố hiển thị toàn bộ wizard.
+Nếu terminal quá hẹp, Knowns tự chuyển sang non-interactive defaults.
 
-## 2. Tạo task đầu tiên
+## 2. Tạo task
 
 ```bash
-knowns task create "Setup project" -d "Khởi tạo dự án với Knowns"
+knowns task create "Setup project" -d "Init project với Knowns"
 ```
 
-## 3. Tạo tài liệu đầu tiên
+## 3. Tạo doc
 
 ```bash
 knowns doc create "Architecture" -d "Tổng quan hệ thống" -f architecture
 ```
 
-## 4. Mở giao diện web
+## 4. Mở Web UI
 
 ```bash
 knowns browser --open
 ```
 
-## 5. Đồng bộ lại các tệp được tạo khi cần
+## 5. Sync khi cần
 
 ```bash
 knowns sync
 knowns update
 ```
 
-Dùng `knowns sync` sau khi clone repo, sau khi đổi nền tảng đã chọn, hoặc sau khi cập nhật CLI.
+Chạy `knowns sync` sau khi clone repo, đổi platform, hoặc update CLI.
 
-## 6. Mở lại giao diện web khi cần
+## 6. Mở lại Web UI
 
 ```bash
 knowns browser --open
 ```
 
-## Đọc tiếp
+## Tiếp theo
 
 - [Dự án đầu tiên](./first-project.md)
 - [Hướng dẫn sử dụng](../guides/user-guide.md)
-- [Cách làm việc đề xuất](../guides/workflow.md)
+- [Workflow](../guides/workflow.md)

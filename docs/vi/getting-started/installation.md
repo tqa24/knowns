@@ -1,28 +1,28 @@
 # Cài đặt
 
-Bạn có thể cài Knowns qua package manager hoặc build trực tiếp từ source.
+Cài qua package manager hoặc build từ source.
 
 ## Yêu cầu
 
-- môi trường terminal được hỗ trợ trên macOS, Linux, hoặc Windows
-- Git nếu bạn muốn `knowns init` hoạt động theo ngữ cảnh repository
-- tùy chọn: tải model cục bộ nếu bạn định dùng semantic search
+- Terminal trên macOS, Linux, hoặc Windows
+- Git (nếu muốn `knowns init` nhận diện repo)
+- Tùy chọn: local model cho semantic search
 
-## Cài bằng Homebrew
+## Homebrew
 
 ```bash
 brew install knowns-dev/tap/knowns
 ```
 
-Đây là cách nên dùng trên macOS và Linux nếu bạn muốn một bản cài đặt dạng package.
+Cách nên dùng trên macOS/Linux.
 
-## Cài bằng npm
+## npm
 
 ```bash
 npm install -g knowns
 ```
 
-Phù hợp khi môi trường của bạn đã dùng sẵn Node tooling.
+Phù hợp nếu đã dùng Node tooling sẵn.
 
 ## Shell installer (macOS/Linux)
 
@@ -42,22 +42,22 @@ irm https://knowns.sh/script/install.ps1 | iex
 go build -o ./bin/knowns ./cmd/knowns
 ```
 
-Đây là lựa chọn phù hợp nhất khi bạn đang phát triển chính Knowns.
+Dùng khi đang dev chính Knowns.
 
-## Kiểm tra cài đặt
+## Kiểm tra
 
 ```bash
 knowns --version
 ```
 
-## Chạy mà không cần cài global
+## Không muốn cài global?
 
-Nếu bạn không muốn cài global, vẫn có thể chạy Knowns qua npm:
+Chạy qua npx:
 
 ```bash
 npx knowns init
 ```
 
-## Đọc tiếp
+## Tiếp theo
 
-- [Bắt đầu nhanh](./quick-start.md)
+- [Quick start](./quick-start.md)

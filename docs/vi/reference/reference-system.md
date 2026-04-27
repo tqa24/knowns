@@ -1,6 +1,6 @@
-# Reference System
+# Reference system
 
-Knowns hỗ trợ các tham chiếu có cấu trúc giữa task, tài liệu, memory, và template.
+Knowns hỗ trợ structured references giữa task, doc, memory, và template.
 
 ## Các dạng phổ biến
 
@@ -9,17 +9,17 @@ Knowns hỗ trợ các tham chiếu có cấu trúc giữa task, tài liệu, me
 - `@memory-xyz789`
 - `@template/react-component`
 
-## Các hậu tố hữu ích cho tài liệu
+## Doc suffixes
 
-- `@doc/path:42`
-- `@doc/path:10-20`
-- `@doc/path#heading-slug`
+- `@doc/path:42` — dòng cụ thể
+- `@doc/path:10-20` — range
+- `@doc/path#heading-slug` — heading
 
-## Vì sao tham chiếu quan trọng
+## Tại sao cần reference
 
-Tham chiếu giúp cả con người lẫn AI di chuyển trong ngữ cảnh project mà không phải đoán filename hay ID bằng tay.
+Reference giúp navigate giữa các entity mà không cần nhớ path hay ID.
 
-## Các lệnh liên quan
+## Lệnh liên quan
 
 ```bash
 knowns resolve "@doc/specs/auth{implements}" --plain

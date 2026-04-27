@@ -1,13 +1,13 @@
 # Dự án đầu tiên
 
-Sau khi chạy `knowns init`, bạn nên làm bốn việc sau để có một dự án dùng được ngay:
+Sau `knowns init`, nên làm 4 việc để project dùng được ngay:
 
 1. tạo task
-2. tạo một hoặc hai tài liệu
-3. xác nhận tìm kiếm hoạt động
-4. kết nối các AI runtime mà bạn thực sự dùng
+2. tạo 1-2 doc
+3. kiểm tra search hoạt động
+4. kết nối AI runtime đang dùng
 
-## Ví dụ một phiên làm việc
+## Ví dụ
 
 ```bash
 knowns task create "Add authentication" \
@@ -24,14 +24,14 @@ knowns validate --plain
 knowns browser --open
 ```
 
-## Vì sao các bước này quan trọng?
+## Tại sao?
 
-- task cho AI một mục tiêu cụ thể để làm
-- tài liệu cho AI một lớp ngữ cảnh rõ ràng thay vì giải thích rời rạc trong chat
-- tìm kiếm giúp xác nhận cơ chế truy xuất cục bộ đang hoạt động
-- validation kiểm tra xem cấu trúc cơ bản của dự án đã ổn chưa
+- Task cho AI mục tiêu cụ thể
+- Doc cho AI context có cấu trúc thay vì giải thích rời rạc trong chat
+- Search xác nhận retrieval đang chạy
+- Validate kiểm tra cấu trúc project cơ bản
 
-## Đọc tiếp
+## Tiếp theo
 
 - [Hướng dẫn sử dụng](../guides/user-guide.md)
-- [Tích hợp MCP](../guides/mcp-integration.md)
+- [MCP](../guides/mcp-integration.md)

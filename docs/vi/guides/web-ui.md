@@ -1,8 +1,8 @@
-# Giao diện web
+# Web UI
 
-Knowns có giao diện web để bạn làm việc trực quan với task, tài liệu, graph, cấu hình, và chat.
+Knowns có giao diện web để làm việc trực quan với task, doc, graph, config, và chat.
 
-## Mở giao diện
+## Mở
 
 ```bash
 knowns browser
@@ -11,14 +11,14 @@ knowns browser --open
 
 ## Các khu vực chính
 
-- bảng công việc và task views
-- trình duyệt tài liệu
-- graph / knowledge views
-- các trang cấu hình
-- trang chat
+- Board và task views
+- Doc browser
+- Graph / knowledge views
+- Config pages
+- Chat
 
-## Khi nào nên dùng?
+## Khi nào nên dùng
 
-- khi bạn muốn xem task theo kiểu bảng công việc
-- khi duyệt tài liệu trong giao diện web tiện hơn CLI
-- khi bạn muốn khám phá graph hoặc dùng các luồng chat-driven
+- Xem task theo kiểu board
+- Duyệt doc tiện hơn CLI
+- Explore graph hoặc dùng chat-driven workflows

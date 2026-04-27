@@ -1,30 +1,34 @@
-# Hệ memory
+# Memory
 
-Memory là nơi Knowns lưu phần ngữ cảnh cần được nhớ lại về sau.
+Memory là nơi Knowns lưu context cần nhớ lại sau này.
 
-## Ba lớp memory
+## Ba layer
 
-- **working memory**: ngữ cảnh ngắn hạn, chỉ sống trong một phiên làm việc
-- **project memory**: quyết định, pattern, và convention riêng của một repository
-- **global memory**: sở thích hoặc quy tắc có thể áp dụng lại giữa nhiều dự án
+- **working memory** — context ngắn hạn, chỉ sống trong một session
+- **project memory** — decision, pattern, convention riêng của một repo
+- **global memory** — preference hoặc rule dùng được across projects
 
-## Khi nào nên dùng memory thay vì doc?
+## Memory hay doc?
 
-Hãy dùng memory khi thông tin đó:
+Dùng memory khi:
 
-- ngắn gọn và cần gọi lại nhanh
-- thiên về quyết định hơn là giải thích dài
-- hữu ích cho nhiều lần làm việc sau này
+- ngắn gọn, cần recall nhanh
+- thiên về decision hơn là giải thích dài
+- hữu ích cho nhiều lần làm việc sau
 
-Hãy dùng doc khi bạn cần giải thích dài hơn hoặc cần nội dung chia thành nhiều phần rõ ràng.
+Dùng doc khi cần giải thích dài hoặc chia thành nhiều section.
 
-## Ví dụ điển hình
+## Ví dụ
 
-- “We use repository pattern for data access”
-- “Always validate before marking a task done”
-- “This team prefers semantic search before manual grep for exploratory work”
+```
+"We use repository pattern for data access"
+"Always validate before marking a task done"
+"Prefer semantic search over manual grep for exploration"
+```
 
-## Các lệnh liên quan
+Nội dung memory thường viết bằng tiếng Anh vì AI đọc trực tiếp.
+
+## Lệnh
 
 ```bash
 knowns memory add "We use repository pattern" --category decision
@@ -32,7 +36,7 @@ knowns memory list --plain
 knowns memory <id> --plain
 ```
 
-## Liên quan
+## Xem thêm
 
 - [Quản lý task](./task-management.md)
-- [Hệ thống tham chiếu](../reference/reference-system.md)
+- [Reference system](../reference/reference-system.md)

@@ -1,6 +1,6 @@
-# Nền tảng
+# Platforms
 
-Knowns có thể tạo và sync các artifact khác nhau cho nhiều nền tảng AI khác nhau.
+Knowns generate và sync artifacts khác nhau cho từng AI platform.
 
 ## Platform IDs
 
@@ -14,9 +14,9 @@ Knowns có thể tạo và sync các artifact khác nhau cho nhiều nền tản
 - `copilot`
 - `agents`
 
-## Mapping hiện tại
+## Mapping
 
-| Nền tảng | Skills | MCP/config | Runtime hooks |
+| Platform | Skills | MCP/config | Runtime hooks |
 |---|---|---|---|
 | Claude Code | `.claude/skills` | `.mcp.json` | yes |
 | OpenCode | `.agents/skills` | `opencode.json` | plugin/runtime |
@@ -30,5 +30,5 @@ Knowns có thể tạo và sync các artifact khác nhau cho nhiều nền tản
 
 ## Ghi chú
 
-- `.agents/skills` là path chính cho các nền tảng agent-compatible
-- `.agent/skills` được giữ cho legacy/generic compatibility
+- `.agents/skills` là primary path cho agent-compatible platforms
+- `.agent/skills` giữ cho legacy/generic compatibility
