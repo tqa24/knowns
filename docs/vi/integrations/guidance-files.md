@@ -1,12 +1,12 @@
-# Các tệp hướng dẫn
+# Guidance files
 
-Knowns dùng một file canonical và nhiều file tương thích cho các AI runtimes.
+Knowns dùng một file canonical và nhiều compatibility files cho các AI runtimes.
 
-## File canonical
+## Canonical
 
 - `KNOWNS.md`
 
-## Các file tương thích
+## Compatibility files
 
 - `CLAUDE.md`
 - `OPENCODE.md`
@@ -14,7 +14,7 @@ Knowns dùng một file canonical và nhiều file tương thích cho các AI ru
 - `AGENTS.md`
 - `.github/copilot-instructions.md`
 
-## Làm mới nội dung được tạo
+## Refresh
 
 ```bash
 knowns sync
@@ -22,4 +22,4 @@ knowns sync --instructions
 knowns agents --sync
 ```
 
-Hiện không còn command riêng `knowns guidelines` nữa.
+Không còn command riêng `knowns guidelines` nữa.

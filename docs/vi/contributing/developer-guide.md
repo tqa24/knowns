@@ -1,6 +1,6 @@
-# Hướng dẫn cho người đóng góp
+# Developer guide
 
-Hãy bắt đầu từ đây nếu bạn đang đóng góp cho Knowns.
+Bắt đầu từ đây nếu muốn đóng góp cho Knowns.
 
 ## Đọc trước
 
@@ -8,7 +8,7 @@ Hãy bắt đầu từ đây nếu bạn đang đóng góp cho Knowns.
 2. `README.md`
 3. `docs/en/README.md`
 
-## Các thư mục quan trọng
+## Thư mục quan trọng
 
 - `internal/cli/`
 - `internal/mcp/handlers/`
@@ -19,7 +19,7 @@ Hãy bắt đầu từ đây nếu bạn đang đóng góp cho Knowns.
 - `tests/`
 - `ui/`
 
-## Các lệnh hữu ích
+## Lệnh hay dùng
 
 ```bash
 go build -o ./bin/knowns ./cmd/knowns
@@ -28,6 +28,6 @@ go test ./internal/cli -count=1
 go test ./tests -count=1
 ```
 
-## Nguyên tắc thực tế
+## Nguyên tắc
 
-Khi behavior thay đổi, hãy cố giữ code, tests, và docs đồng bộ trong cùng một pass.
+Khi behavior thay đổi, giữ code, tests, và docs đồng bộ trong cùng một pass.

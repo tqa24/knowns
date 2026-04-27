@@ -1,17 +1,17 @@
-# Đồng bộ
+# Sync
 
-`knowns sync` áp lại `.knowns/config.json` lên máy hiện tại.
+`knowns sync` re-apply `.knowns/config.json` lên máy hiện tại.
 
-## Khi nào nên dùng?
+## Khi nào dùng
 
-Hãy dùng `knowns sync` sau khi:
+Chạy `knowns sync` sau khi:
 
-- clone một repository đã có `.knowns/`
-- thay đổi các nền tảng đã chọn
-- nâng cấp CLI
-- muốn các file được tạo khớp lại với config hiện tại
+- clone repo có sẵn `.knowns/`
+- đổi platforms
+- upgrade CLI
+- muốn generated files khớp lại với config
 
-## Các cách dùng phổ biến
+## Các dạng dùng
 
 ```bash
 knowns sync
@@ -22,18 +22,18 @@ knowns sync --instructions --platform claude
 knowns sync --instructions --platform cursor
 ```
 
-## Nó có thể làm mới những gì?
+## Refresh được gì
 
 - skills
 - instruction files
 - MCP config
-- cấu hình riêng theo từng nền tảng
+- platform-specific config
 - git integration
 - semantic-search setup
-- search index trong các flow liên quan
+- search indexes
 
-## Liên quan
+## Xem thêm
 
 - [Cấu hình](./configuration.md)
 - [Tương thích](../integrations/compatibility.md)
-- [Tự động đồng bộ](../integrations/auto-sync.md)
+- [Auto sync](../integrations/auto-sync.md)

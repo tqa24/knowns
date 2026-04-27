@@ -1,8 +1,8 @@
 # Templates
 
-Templates được dùng cho các workflow scaffold và generation lặp lại.
+Templates dùng cho repeatable scaffolding và generation workflows.
 
-## Các lệnh thường dùng
+## Lệnh
 
 ```bash
 knowns template list
@@ -11,8 +11,8 @@ knowns template run <name>
 knowns template create <name>
 ```
 
-## Các tình huống sử dụng điển hình
+## Use cases
 
-- scaffold code modules
-- tạo tài liệu hoặc specs có cấu trúc cố định
-- giữ naming conventions đồng nhất
+- Scaffold code modules
+- Generate docs/specs có cấu trúc cố định
+- Giữ naming conventions đồng nhất

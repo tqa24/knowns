@@ -1,12 +1,12 @@
-# Hướng dẫn cho AI agent
+# Làm việc với AI
 
-Tài liệu này giải thích cách dùng Knowns hiệu quả khi làm việc cùng AI assistants.
+Cách dùng Knowns hiệu quả khi làm việc cùng AI assistants.
 
 ## Ý chính
 
-AI làm việc tốt hơn rất nhiều khi nó không phải tự đoán ngữ cảnh của dự án.
+AI làm việc tốt hơn nhiều khi không phải tự đoán context.
 
-Knowns cung cấp cho AI một cách có cấu trúc để truy cập:
+Knowns cho AI truy cập có cấu trúc vào:
 
 - task
 - doc
@@ -15,53 +15,53 @@ Knowns cung cấp cho AI một cách có cấu trúc để truy cập:
 - validation
 - search và retrieval
 
-## Cách dùng được khuyến nghị
+## Cách dùng
 
-### 1. Để AI nạp guidance trước
+### 1. Load guidance trước
 
-AI nên bắt đầu từ file hướng dẫn canonical của repo là `KNOWNS.md`.
+AI nên bắt đầu từ `KNOWNS.md` — file hướng dẫn canonical của repo.
 
-### 2. Dùng task làm mục tiêu thực thi
+### 2. Dùng task làm mục tiêu
 
-Thay vì đưa prompt mơ hồ, hãy cho AI làm việc dựa trên một task có acceptance criteria rõ ràng.
+Thay vì prompt mơ hồ, trỏ AI vào task có acceptance criteria rõ ràng.
 
-### 3. Dùng doc cho phần giải thích lâu dài
+### 3. Dùng doc cho context lâu dài
 
-Kiến trúc, pattern, và hướng dẫn vận hành nên nằm trong doc thay vì chỉ tồn tại trong chat.
+Architecture, pattern, hướng dẫn vận hành nên nằm trong doc, không chỉ tồn tại trong chat.
 
-### 4. Dùng memory cho các quyết định cần nhớ lâu
+### 4. Dùng memory cho decision cần nhớ
 
-Lưu decision, convention, và failure vào memory để có thể gọi lại về sau.
+Lưu decision, convention, failure vào memory để gọi lại sau.
 
 ### 5. Validate trước khi coi là xong
 
-Validation nên là một phần của workflow bình thường.
+Validation nên là phần bình thường của workflow.
 
 ## MCP hay CLI?
 
 ### Ưu tiên MCP khi:
 
 - AI runtime hỗ trợ MCP
-- bạn muốn tool call có cấu trúc
-- bạn muốn giảm việc parse shell output hoặc copy-paste prompt
+- muốn structured tool calls
+- muốn giảm parse shell output
 
 ### Ưu tiên CLI khi:
 
-- MCP không có sẵn
-- bạn đang script bên ngoài một runtime hỗ trợ MCP
-- bạn muốn tự xem output trực tiếp trong terminal
+- MCP không có
+- đang script ngoài MCP-aware runtime
+- muốn xem output trực tiếp trong terminal
 
-## Ví dụ một workflow điển hình
+## Ví dụ workflow
 
 1. AI đọc `KNOWNS.md`
-2. AI đọc task mục tiêu
-3. AI follow các reference như `@doc/...` hoặc `@task-...`
-4. AI search hoặc retrieve thêm context nếu cần
-5. AI thực hiện thay đổi
+2. AI đọc target task
+3. AI follow `@doc/...` hoặc `@task-...` references
+4. AI search/retrieve thêm context nếu cần
+5. AI implement
 6. AI chạy validation hoặc test
 
-## Liên quan
+## Xem thêm
 
 - [Quản lý task](./task-management.md)
-- [Tích hợp MCP](./mcp-integration.md)
-- [Cách làm việc đề xuất](./workflow.md)
+- [MCP](./mcp-integration.md)
+- [Workflow](./workflow.md)

@@ -1,17 +1,17 @@
-# Tự động đồng bộ
+# Auto sync
 
-Knowns dùng `knowns sync` và `knowns update` để giữ các tệp được tạo luôn đồng bộ với binary và cấu hình dự án hiện tại.
+Knowns dùng `knowns sync` và `knowns update` để giữ generated artifacts đồng bộ với binary và project config.
 
-## Những gì được đồng bộ
+## Sync được gì
 
 - instruction files
 - skills
 - MCP config
-- cấu hình riêng theo từng nền tảng
+- platform-specific config
 - git integration
 - semantic setup và indexing
 
-## Các lệnh liên quan
+## Lệnh
 
 ```bash
 knowns sync
@@ -20,6 +20,6 @@ knowns sync --instructions
 knowns update
 ```
 
-## Ghi chú về tương thích cũ
+## Legacy
 
-Nếu một dự án cũ vẫn dùng `.agent/skills`, Knowns sẽ tiếp tục đồng bộ để giữ khả năng tương thích và có thể in warning nhẹ.
+Project cũ vẫn dùng `.agent/skills` → Knowns tiếp tục sync để giữ tương thích, có thể in warning.

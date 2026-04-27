@@ -1,17 +1,17 @@
-# Cách làm việc đề xuất
+# Workflow
 
-Đây là cách làm việc được khuyến nghị khi kết hợp con người và AI với Knowns.
+Cách làm việc đề xuất khi kết hợp người và AI với Knowns.
 
-## Vòng lặp đề xuất
+## Vòng lặp chính
 
-1. chạy `knowns init` một lần cho mỗi dự án
-2. tạo task và tài liệu hỗ trợ
-3. để AI đọc `KNOWNS.md`, task, tài liệu, và memory
-4. thực hiện thay đổi
-5. validate
-6. sync hoặc cập nhật các tệp được tạo khi cần
+1. `knowns init` một lần cho mỗi project
+2. Tạo task và doc hỗ trợ
+3. AI đọc `KNOWNS.md`, task, doc, memory
+4. Implement
+5. Validate
+6. Sync khi cần
 
-## Các lệnh thường đi cùng nhau
+## Lệnh hay đi cùng nhau
 
 ```bash
 knowns task create "..."
@@ -22,15 +22,15 @@ knowns validate --plain
 knowns sync
 ```
 
-## Vì sao cách này hiệu quả?
+## Tại sao cách này hiệu quả?
 
-- task định nghĩa mục tiêu cần thực hiện
-- tài liệu giải thích cấu trúc và mục đích
-- memory giữ lại quyết định và convention
-- retrieval nối tất cả lại cho cả con người lẫn AI
+- Task define mục tiêu
+- Doc giải thích cấu trúc và intent
+- Memory giữ lại decision và convention
+- Retrieval nối tất cả lại cho cả người và AI
 
-## Khi nào nên dùng từng cách tương tác
+## Khi nào dùng gì
 
-- CLI: thao tác nhanh, dễ script hóa
-- MCP: tích hợp AI có cấu trúc
-- giao diện web: phù hợp cho các luồng bảng công việc, tài liệu, graph, và chat
+- **CLI**: thao tác nhanh, dễ script
+- **MCP**: structured AI integration
+- **Web UI**: board, docs, graph, chat

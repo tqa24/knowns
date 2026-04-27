@@ -1,16 +1,16 @@
-# Kiểm tra hợp lệ
+# Validate
 
-`knowns validate` dùng để kiểm tra tính nhất quán của lớp ngữ cảnh hiện tại trong dự án.
+`knowns validate` kiểm tra tính nhất quán của project context hiện tại.
 
-## Nó dùng để làm gì?
+## Dùng để làm gì
 
-Hãy dùng validation để phát hiện các vấn đề như:
+Phát hiện:
 
-- tham chiếu bị hỏng
+- broken references
 - quan hệ task/spec chưa đầy đủ
-- chênh lệch giữa cấu trúc mong đợi và dữ liệu đang lưu
+- drift giữa cấu trúc mong đợi và data thực tế
 
-## Các lệnh thường dùng
+## Lệnh
 
 ```bash
 knowns validate --plain
@@ -19,9 +19,9 @@ knowns validate --scope sdd --plain
 knowns validate --strict --plain
 ```
 
-## Khi nào nên chạy?
+## Khi nào chạy
 
-- trước khi chốt một task
-- sau khi sắp xếp lại docs
-- sau khi thay đổi references hoặc generated files
-- trước khi để AI dựa nhiều vào project context đã lưu
+- trước khi chốt task
+- sau khi restructure docs
+- sau khi đổi references hoặc generated files
+- trước khi để AI dựa nhiều vào stored project context
