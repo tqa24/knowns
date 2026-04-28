@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 
 	ort "github.com/yalue/onnxruntime_go"
 )
@@ -177,9 +178,19 @@ func (r *ORTRuntime) CloseModel() {
 	r.model = ORTModelConfig{}
 }
 
-// Close releases all ONNX Runtime resources including the global environment.
+// Close releases the model session resources.
+// The global ONNX Runtime environment is intentionally kept alive for the
+// lifetime of the process because it is shared across all sessions.
+// Destroying it while another goroutine holds a session (or is about to
+// create one) causes a use-after-free crash in the native ONNX library.
+// Use DestroyEnvironmentOnShutdown for final process cleanup if needed.
 func (r *ORTRuntime) Close() {
 	r.CloseModel()
+}
+
+// DestroyEnvironmentOnShutdown tears down the global ONNX Runtime environment.
+// Call this only during process shutdown when no other goroutine will use ONNX.
+func DestroyEnvironmentOnShutdown() {
 	if ort.IsInitialized() {
 		_ = ort.DestroyEnvironment()
 	}
@@ -187,37 +198,42 @@ func (r *ORTRuntime) Close() {
 
 // --- environment & library resolution ---
 
+var (
+	ortInitOnce sync.Once
+	ortInitErr  error
+)
+
 func ensureORTEnvironment() error {
-	if ort.IsInitialized() {
-		return nil
-	}
-	lib := ResolveORTLibraryPath()
-	if lib != "" {
-		ort.SetSharedLibraryPath(lib)
-	} else {
-		libName := ortSharedLibName()
-		// Check if a library file exists but was skipped due to arch mismatch.
-		archMismatch := false
-		if home, err := os.UserHomeDir(); err == nil {
-			candidate := filepath.Join(home, ".knowns", "bin", libName)
-			if ortIsFile(candidate) && !ortMatchesArch(candidate) {
-				archMismatch = true
+	ortInitOnce.Do(func() {
+		lib := ResolveORTLibraryPath()
+		if lib != "" {
+			ort.SetSharedLibraryPath(lib)
+		} else {
+			libName := ortSharedLibName()
+			// Check if a library file exists but was skipped due to arch mismatch.
+			archMismatch := false
+			if home, err := os.UserHomeDir(); err == nil {
+				candidate := filepath.Join(home, ".knowns", "bin", libName)
+				if ortIsFile(candidate) && !ortMatchesArch(candidate) {
+					archMismatch = true
+				}
+			}
+			if archMismatch {
+				fmt.Fprintf(os.Stderr, "warning: %s found but has wrong CPU architecture (expected %s); reinstall knowns for the correct platform or set KNOWNS_ORT_LIB\n", libName, runtime.GOARCH)
+			} else {
+				fmt.Fprintf(os.Stderr, "warning: bundled %s not found next to executable, sibling lib dirs, or ~/.knowns/bin; falling back to system search which may load an incompatible version\n", libName)
 			}
 		}
-		if archMismatch {
-			fmt.Fprintf(os.Stderr, "warning: %s found but has wrong CPU architecture (expected %s); reinstall knowns for the correct platform or set KNOWNS_ORT_LIB\n", libName, runtime.GOARCH)
-		} else {
-			fmt.Fprintf(os.Stderr, "warning: bundled %s not found next to executable, sibling lib dirs, or ~/.knowns/bin; falling back to system search which may load an incompatible version\n", libName)
+		if err := ort.InitializeEnvironment(); err != nil {
+			hint := ""
+			if lib == "" {
+				hint = fmt.Sprintf(" (no bundled %s was found — a system copy may have been loaded with an incompatible version; reinstall knowns or set KNOWNS_ORT_LIB to the correct path)", ortSharedLibName())
+			}
+			ortInitErr = fmt.Errorf("initialize onnxruntime: %w%s", err, hint)
+			return
 		}
-	}
-	if err := ort.InitializeEnvironment(); err != nil {
-		hint := ""
-		if lib == "" {
-			hint = fmt.Sprintf(" (no bundled %s was found — a system copy may have been loaded with an incompatible version; reinstall knowns or set KNOWNS_ORT_LIB to the correct path)", ortSharedLibName())
-		}
-		return fmt.Errorf("initialize onnxruntime: %w%s", err, hint)
-	}
-	return nil
+	})
+	return ortInitErr
 }
 
 func ortSharedLibName() string {
