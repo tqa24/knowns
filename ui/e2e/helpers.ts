@@ -4,6 +4,7 @@
 
 import { execSync, spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync, existsSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,16 +20,27 @@ const BINARY = process.env.TEST_BINARY
 	? resolve(process.cwd(), process.env.TEST_BINARY)
 	: defaultBinary;
 
-/** Find an available port */
-function findPort(): number {
-	// Use a random port in the high range
-	return 10000 + Math.floor(Math.random() * 50000);
+/** Find a genuinely available port by binding to port 0 and reading the OS-assigned port */
+function findPort(): Promise<number> {
+	return new Promise((resolve, reject) => {
+		const srv = createServer();
+		srv.listen(0, "127.0.0.1", () => {
+			const addr = srv.address();
+			if (addr && typeof addr === "object") {
+				const port = addr.port;
+				srv.close(() => resolve(port));
+			} else {
+				srv.close(() => reject(new Error("Failed to get port from server address")));
+			}
+		});
+		srv.on("error", reject);
+	});
 }
 
 /** Wait for HTTP server to be ready */
 async function waitForServer(
 	url: string,
-	timeoutMs = 15000,
+	timeoutMs = 30000,
 ): Promise<void> {
 	const start = Date.now();
 	while (Date.now() - start < timeoutMs) {
@@ -87,7 +99,7 @@ export async function startServer(): Promise<TestServer> {
 	});
 
 	// Find available port and start server
-	const port = findPort();
+	const port = await findPort();
 	const serverProcess: ChildProcess = spawn(
 		BINARY,
 		["browser", "--port", String(port), "--no-open"],
@@ -98,6 +110,12 @@ export async function startServer(): Promise<TestServer> {
 		},
 	);
 
+	// Collect stderr for diagnostics if startup fails
+	let serverStderr = "";
+	serverProcess.stderr?.on("data", (chunk: Buffer) => {
+		serverStderr += chunk.toString();
+	});
+
 	const baseURL = `http://localhost:${port}`;
 
 	// Wait for server to be ready
@@ -106,7 +124,10 @@ export async function startServer(): Promise<TestServer> {
 	} catch (err) {
 		serverProcess.kill("SIGTERM");
 		rmSync(projectDir, { recursive: true, force: true });
-		throw err;
+		const detail = serverStderr ? `\nServer stderr:\n${serverStderr}` : "";
+		throw new Error(
+			`Server not ready at ${baseURL} after timeout.${detail}`,
+		);
 	}
 
 	const cli = (args: string): string => {

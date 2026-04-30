@@ -9,7 +9,7 @@ import (
 func isCodeFile(path string) bool {
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
-	case ".go", ".ts", ".tsx", ".js", ".jsx", ".py":
+	case ".go", ".ts", ".tsx", ".js", ".jsx", ".py", ".java", ".rs", ".cs":
 		return true
 	}
 	return false
@@ -26,7 +26,14 @@ func isTestFile(path string) bool {
 		strings.HasSuffix(base, ".spec.ts") ||
 		strings.HasSuffix(base, ".test.ts") ||
 		strings.HasSuffix(base, ".spec.js") ||
-		strings.HasSuffix(base, ".test.js")
+		strings.HasSuffix(base, ".test.js") ||
+		strings.HasSuffix(base, "Test.java") ||
+		strings.HasSuffix(base, "Tests.java") ||
+		strings.HasSuffix(base, "_test.rs") ||
+		strings.HasSuffix(base, "Test.cs") ||
+		strings.HasSuffix(base, "Tests.cs") ||
+		strings.Contains(path, "/test/") ||
+		strings.Contains(path, "/tests/")
 }
 
 func listCodeCandidateFiles(projectRoot string, includeTests bool) ([]string, error) {

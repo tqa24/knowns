@@ -4,8 +4,11 @@ import {
 	Activity,
 	AlertCircle,
 	CheckCircle2,
+	ChevronDown,
+	ChevronRight,
 	Clock,
 	Filter,
+	FolderOpen,
 	Loader2,
 	RefreshCw,
 	ShieldAlert,
@@ -219,6 +222,7 @@ function RecentTab({
 }
 
 function EventRow({ event }: { event: AuditEvent }) {
+	const [expanded, setExpanded] = useState(false);
 	const rc = resultColors[event.result] ?? {
 		bg: "bg-gray-500/10",
 		text: "text-gray-600 dark:text-gray-400",
@@ -231,39 +235,98 @@ function EventRow({ event }: { event: AuditEvent }) {
 
 	const toolDisplay = event.action ? `${event.toolName}.${event.action}` : event.toolName;
 
+	const hasDetails =
+		(event.argumentSummary && Object.keys(event.argumentSummary).length > 0) ||
+		event.projectRoot;
+
 	return (
-		<div className="flex items-start gap-3 px-3 py-2 rounded-md hover:bg-muted/50 transition-colors group">
-			<div className={cn("mt-0.5 p-1 rounded", rc.bg)}>
-				<ResultIcon className={cn("w-3.5 h-3.5", rc.text)} />
-			</div>
-			<div className="flex-1 min-w-0">
-				<div className="flex items-center gap-2">
-					<span className="font-mono text-sm font-medium">{toolDisplay}</span>
-					<span className={cn("text-xs", classColors[event.actionClass] || "text-muted-foreground")}>
-						{event.actionClass}
-					</span>
-					{event.dryRun && (
-						<span className="text-xs px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-600 dark:text-yellow-400">
-							dry-run
-						</span>
-					)}
-					<span className="text-xs text-muted-foreground ml-auto">
-						{event.durationMs}ms
-					</span>
+		<div
+			className={cn(
+				"rounded-md hover:bg-muted/50 transition-colors group",
+				expanded && "bg-muted/30",
+			)}
+		>
+			<div
+				className="flex items-start gap-3 px-3 py-2 cursor-pointer"
+				onClick={() => hasDetails && setExpanded(!expanded)}
+			>
+				{/* Expand indicator */}
+				<div className="mt-1 w-3.5 flex-shrink-0">
+					{hasDetails ? (
+						expanded ? (
+							<ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
+						) : (
+							<ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
+						)
+					) : null}
 				</div>
-				{event.errorMessage && (
-					<p className="text-xs text-red-500 mt-0.5 truncate">{event.errorMessage}</p>
-				)}
-				{event.entityRefs && event.entityRefs.length > 0 && (
-					<p className="text-xs text-muted-foreground mt-0.5 truncate">
-						{event.entityRefs.join(", ")}
-					</p>
-				)}
+
+				<div className={cn("mt-0.5 p-1 rounded", rc.bg)}>
+					<ResultIcon className={cn("w-3.5 h-3.5", rc.text)} />
+				</div>
+				<div className="flex-1 min-w-0">
+					<div className="flex items-center gap-2">
+						<span className="font-mono text-sm font-medium">{toolDisplay}</span>
+						<span className={cn("text-xs", classColors[event.actionClass] || "text-muted-foreground")}>
+							{event.actionClass}
+						</span>
+						{event.dryRun && (
+							<span className="text-xs px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-600 dark:text-yellow-400">
+								dry-run
+							</span>
+						)}
+						<span className="text-xs text-muted-foreground ml-auto">
+							{event.durationMs}ms
+						</span>
+					</div>
+					{event.errorMessage && (
+						<p className="text-xs text-red-500 mt-0.5 truncate">{event.errorMessage}</p>
+					)}
+					{event.entityRefs && event.entityRefs.length > 0 && (
+						<p className="text-xs text-muted-foreground mt-0.5 truncate">
+							{event.entityRefs.join(", ")}
+						</p>
+					)}
+				</div>
+				<div className="text-xs text-muted-foreground text-right whitespace-nowrap">
+					<div>{timeStr}</div>
+					<div>{dateStr}</div>
+				</div>
 			</div>
-			<div className="text-xs text-muted-foreground text-right whitespace-nowrap">
-				<div>{timeStr}</div>
-				<div>{dateStr}</div>
-			</div>
+
+			{/* Expanded details */}
+			{expanded && hasDetails && (
+				<div className="px-3 pb-3 ml-10 space-y-2 border-t border-border/50 pt-2">
+					{event.projectRoot && (
+						<div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+							<FolderOpen className="w-3 h-3 flex-shrink-0" />
+							<span className="font-medium">Project:</span>
+							<span className="font-mono truncate">{event.projectRoot}</span>
+						</div>
+					)}
+					{event.argumentSummary && Object.keys(event.argumentSummary).length > 0 && (
+						<div>
+							<p className="text-xs font-medium text-muted-foreground mb-1">Arguments</p>
+							<div className="rounded-md bg-muted/50 border border-border/50 overflow-hidden">
+								<table className="w-full text-xs">
+									<tbody>
+										{Object.entries(event.argumentSummary).map(([key, value]) => (
+											<tr key={key} className="border-b border-border/30 last:border-b-0">
+												<td className="px-2 py-1 font-mono font-medium text-muted-foreground whitespace-nowrap align-top">
+													{key}
+												</td>
+												<td className="px-2 py-1 font-mono break-all">
+													{value}
+												</td>
+											</tr>
+										))}
+									</tbody>
+								</table>
+							</div>
+						</div>
+					)}
+				</div>
+			)}
 		</div>
 	);
 }

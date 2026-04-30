@@ -13,12 +13,12 @@ require (
 	github.com/mattn/go-isatty v0.0.20
 	github.com/rs/cors v1.11.1
 	github.com/spf13/cobra v1.10.2
-	github.com/yalue/onnxruntime_go v1.27.0
 	github.com/tree-sitter/go-tree-sitter v0.25.0
 	github.com/tree-sitter/tree-sitter-go v0.25.0
 	github.com/tree-sitter/tree-sitter-javascript v0.25.0
 	github.com/tree-sitter/tree-sitter-python v0.25.0
 	github.com/tree-sitter/tree-sitter-typescript v0.23.2
+	github.com/yalue/onnxruntime_go v1.27.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.46.1
 )
@@ -28,6 +28,9 @@ require (
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/sahilm/fuzzy v0.1.1 // indirect
+	github.com/tree-sitter/tree-sitter-c-sharp v0.23.5 // indirect
+	github.com/tree-sitter/tree-sitter-java v0.23.5 // indirect
+	github.com/tree-sitter/tree-sitter-rust v0.24.2 // indirect
 	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546 // indirect
 	modernc.org/libc v1.67.6 // indirect
 	modernc.org/mathutil v1.7.1 // indirect

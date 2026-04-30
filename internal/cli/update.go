@@ -53,10 +53,6 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 
 	if cmp <= 0 {
 		fmt.Printf("  %s Already on the latest version %s\n", RenderSuccess(""), StyleBold.Render("v"+current))
-		// Still sync configs even if up to date
-		if !checkOnly {
-			return runSync(syncCmd, nil)
-		}
 		return nil
 	}
 
@@ -77,9 +73,21 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// 3. Full sync (skills, instructions, model, search index, MCP configs)
+	// 3. Sync MCP configs only (lightweight — skip full sync)
 	fmt.Println()
-	return runSync(syncCmd, nil)
+	if err := syncMCPConfigs(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: MCP config sync failed: %v\n", err)
+	}
+
+	// 4. Restart runtime if needed
+	if err := restartRuntimeIfNeeded(latest); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: runtime restart failed: %v\n", err)
+	}
+
+	fmt.Printf("\n  %s Run %s to sync skills and rebuild the search index.\n",
+		StyleInfo.Render("ℹ"),
+		StyleBold.Render("knowns sync"))
+	return nil
 }
 
 // runUpgrade detects the install method and runs the appropriate upgrade command.

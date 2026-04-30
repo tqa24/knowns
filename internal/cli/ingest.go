@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -22,7 +23,8 @@ var ingestCmd = &cobra.Command{
 	Long: `Index all code files in the project using tree-sitter AST parsing.
 
 This command walks the project directory, parses AST for Go, TypeScript,
-JavaScript, and Python files, and stores code symbols as indexed code data.
+JavaScript, Python, Java, Rust, and C# files, and stores code symbols as
+indexed code data.
 
 Files matching .gitignore and test files (*_test.go, *.spec.ts, etc.)
 are skipped by default. Use --include-tests to include them.
@@ -240,16 +242,76 @@ func runIngestWithProgress(projectRoot string, includeTests bool) (symCount, fil
 
 		vecStore.RemoveByPrefix("code::")
 
-		var chunks []search.Chunk
+		// Pre-compute chunks and sort by content length to minimize padding
+		// waste in ORT batch inference (all texts in a batch are padded to
+		// the longest one).
+		type indexedChunk struct {
+			idx   int
+			chunk search.Chunk
+		}
+		preChunks := make([]indexedChunk, 0, len(syms))
 		for i, sym := range syms {
-			chunk := sym.ToChunk()
-			vec, err := embedder.EmbedDocument(chunk.Content)
+			preChunks = append(preChunks, indexedChunk{idx: i, chunk: sym.ToChunk()})
+		}
+
+		// Truncate embedding content to ~2000 chars. The model uses max 512
+		// tokens (~2000 chars for code). Sending longer text only wastes
+		// tokenizer CPU without improving the embedding vector.
+		const maxEmbedChars = 2000
+		for i := range preChunks {
+			if len(preChunks[i].chunk.Content) > maxEmbedChars {
+				preChunks[i].chunk.Content = preChunks[i].chunk.Content[:maxEmbedChars]
+			}
+		}
+
+		sort.Slice(preChunks, func(a, b int) bool {
+			return len(preChunks[a].chunk.Content) < len(preChunks[b].chunk.Content)
+		})
+
+		// Batch embed for much better throughput.
+		// Use adaptive batch size: larger batches for short content,
+		// smaller for long content to manage memory.
+		var chunks []search.Chunk
+		i := 0
+		for i < len(preChunks) {
+			// Adaptive batch size based on content length of first item.
+			batchSize := 64
+			if len(preChunks[i].chunk.Content) > 1000 {
+				batchSize = 32
+			}
+			end := i + batchSize
+			if end > len(preChunks) {
+				end = len(preChunks)
+			}
+			batch := preChunks[i:end]
+
+			texts := make([]string, len(batch))
+			for j, ic := range batch {
+				texts[j] = ic.chunk.Content
+			}
+
+			vecs, err := embedder.EmbedDocumentBatch(texts)
 			if err != nil {
+				// Fallback: embed one-by-one on batch failure
+				for j, ic := range batch {
+					vec, err := embedder.EmbedDocument(ic.chunk.Content)
+					if err != nil {
+						continue
+					}
+					ic.chunk.Embedding = vec
+					chunks = append(chunks, ic.chunk)
+					state.processed = i + j + 1
+				}
+				i = end
 				continue
 			}
-			chunk.Embedding = vec
-			chunks = append(chunks, chunk)
-			state.processed = i + 1
+
+			for j := range batch {
+				batch[j].chunk.Embedding = vecs[j]
+				chunks = append(chunks, batch[j].chunk)
+			}
+			state.processed = end
+			i = end
 		}
 
 		vecStore.AddChunks(chunks)

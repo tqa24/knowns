@@ -5,11 +5,15 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 
 	sitter "github.com/tree-sitter/go-tree-sitter"
+	tree_sitter_c_sharp "github.com/tree-sitter/tree-sitter-c-sharp/bindings/go"
 	tree_sitter_go "github.com/tree-sitter/tree-sitter-go/bindings/go"
+	tree_sitter_java "github.com/tree-sitter/tree-sitter-java/bindings/go"
 	tree_sitter_javascript "github.com/tree-sitter/tree-sitter-javascript/bindings/go"
 	tree_sitter_python "github.com/tree-sitter/tree-sitter-python/bindings/go"
+	tree_sitter_rust "github.com/tree-sitter/tree-sitter-rust/bindings/go"
 	tree_sitter_typescript "github.com/tree-sitter/tree-sitter-typescript/bindings/go"
 )
 
@@ -86,16 +90,12 @@ func parseRawFile(docPath, absPath string) ([]CodeSymbol, []CodeEdge, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	lang := detectLang(docPath)
-	if lang == nil {
+	ext := strings.ToLower(filepath.Ext(docPath))
+	parser := acquireParserForExt(ext)
+	if parser == nil {
 		return nil, nil, nil
 	}
-
-	parser := sitter.NewParser()
-	defer parser.Close()
-	if err := parser.SetLanguage(lang); err != nil {
-		return nil, nil, err
-	}
+	defer releaseParser(ext, parser)
 
 	tree := parser.Parse(data, nil)
 	if tree == nil {
@@ -110,6 +110,75 @@ func parseRawFile(docPath, absPath string) ([]CodeSymbol, []CodeEdge, error) {
 
 	syms, eds := extractSymbols(docPath, data, root)
 	return syms, eds, nil
+}
+
+// ─── parser pool ─────────────────────────────────────────────────────
+// Reuse parser instances to avoid alloc/dealloc overhead per file.
+// Keyed by file extension so each language gets its own pool.
+
+var parserPool sync.Map // map[string]*parserStack
+
+func acquireParser(lang *sitter.Language) *sitter.Parser {
+	// We don't have a direct language key, so callers should use acquireParserForExt.
+	p := sitter.NewParser()
+	_ = p.SetLanguage(lang)
+	return p
+}
+
+func acquireParserForExt(ext string) *sitter.Parser {
+	if pool, ok := parserPool.Load(ext); ok {
+		if p := pool.(*parserStack).pop(); p != nil {
+			return p
+		}
+	}
+	lang := detectLang("file" + ext)
+	if lang == nil {
+		return nil
+	}
+	p := sitter.NewParser()
+	_ = p.SetLanguage(lang)
+	return p
+}
+
+func releaseParser(ext string, p *sitter.Parser) {
+	if p == nil {
+		return
+	}
+	pool, _ := parserPool.LoadOrStore(ext, &parserStack{})
+	stack := pool.(*parserStack)
+	if !stack.push(p) {
+		p.Close()
+	}
+}
+
+// parserStack is a simple bounded stack for parser reuse.
+type parserStack struct {
+	mu      sync.Mutex
+	parsers []*sitter.Parser
+}
+
+const maxPooledParsers = 4
+
+func (s *parserStack) pop() *sitter.Parser {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := len(s.parsers)
+	if n == 0 {
+		return nil
+	}
+	p := s.parsers[n-1]
+	s.parsers = s.parsers[:n-1]
+	return p
+}
+
+func (s *parserStack) push(p *sitter.Parser) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.parsers) >= maxPooledParsers {
+		return false
+	}
+	s.parsers = append(s.parsers, p)
+	return true
 }
 
 func finalizeCodeParse(symbols []CodeSymbol, edges []CodeEdge) ([]CodeSymbol, []CodeEdge, error) {
@@ -138,6 +207,12 @@ func detectLang(path string) *sitter.Language {
 		return sitter.NewLanguage(tree_sitter_javascript.Language())
 	case ".py":
 		return sitter.NewLanguage(tree_sitter_python.Language())
+	case ".java":
+		return sitter.NewLanguage(tree_sitter_java.Language())
+	case ".rs":
+		return sitter.NewLanguage(tree_sitter_rust.Language())
+	case ".cs":
+		return sitter.NewLanguage(tree_sitter_c_sharp.Language())
 	default:
 		return nil
 	}

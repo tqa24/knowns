@@ -59,7 +59,7 @@ func runWatch(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("check semantic search: %w", err)
 	}
 	if !semanticEnabled {
-		fmt.Printf("Warning: semantic search not enabled. Run 'knowns ingest' first to enable code indexing.\n")
+		fmt.Printf("Warning: semantic search not enabled. Run 'knowns code ingest' first to enable code indexing.\n")
 	}
 
 	// projectRoot is the parent of knDir

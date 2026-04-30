@@ -112,12 +112,8 @@ export default function MemoryPage() {
 	const fetchEntries = useCallback(async () => {
 		try {
 			const layer = activeLayer === "all" ? undefined : activeLayer;
-			const [persistent, working] = await Promise.all([
-				memoryApi.list(layer),
-				workingMemoryApi.list(),
-			]);
+			const persistent = await memoryApi.list(layer);
 			setPersistentEntries(persistent);
-			setWorkingEntries(working);
 		} catch (err) {
 			console.error("Failed to load memory:", err);
 		} finally {
@@ -130,9 +126,8 @@ export default function MemoryPage() {
 		void fetchEntries();
 	}, [fetchEntries]);
 
-	const visibleEntries = scope === "persistent" ? persistentEntries : workingEntries;
+	const visibleEntries = persistentEntries;
 	const persistentCount = persistentEntries.length;
-	const workingCount = workingEntries.length;
 	const meta = scopeMeta[scope];
 	const dialogOpen = modalMode !== null;
 	const selectedPersistentEntry =
@@ -274,7 +269,7 @@ export default function MemoryPage() {
 							<div className="flex flex-wrap items-baseline gap-3">
 								<h1 className="text-3xl font-semibold tracking-tight">Memories</h1>
 								<span className="text-sm text-muted-foreground">
-									{persistentCount + workingCount} total entries
+									{persistentCount} total entries
 								</span>
 							</div>
 							<p className="text-sm text-muted-foreground">
@@ -299,41 +294,29 @@ export default function MemoryPage() {
 					<Card className="flex h-full min-h-0 flex-col overflow-hidden border-border/60 shadow-sm">
 						<CardHeader className="gap-4 border-b border-border/50">
 							<div className="flex flex-wrap items-start justify-between gap-4">
-								<div className="grid min-w-[280px] flex-1 gap-2 sm:grid-cols-2 lg:max-w-md">
+								<div className="grid min-w-[280px] flex-1 gap-2 lg:max-w-md">
 									<ScopeButton
 										label={`Memories (${persistentCount})`}
 										description="Project and global"
-										active={scope === "persistent"}
+										active={true}
 										onClick={() => {
-											setScope("persistent");
-											closeModal();
-										}}
-									/>
-									<ScopeButton
-										label={`Working (${workingCount})`}
-										description="Session only"
-										active={scope === "working"}
-										onClick={() => {
-											setScope("working");
 											closeModal();
 										}}
 									/>
 								</div>
 
 								<div className="flex flex-wrap items-center gap-2">
-									{scope === "persistent" && (
-										<div className="flex flex-wrap gap-1.5">
-											{["all", ...persistentLayerOrder].map((layer) => (
-												<FilterChip
-													key={layer}
-													active={activeLayer === layer}
-													onClick={() => setActiveLayer(layer as "all" | PersistentMemoryLayer)}
-												>
-													{layer.charAt(0).toUpperCase() + layer.slice(1)}
-												</FilterChip>
-											))}
-										</div>
-									)}
+									<div className="flex flex-wrap gap-1.5">
+										{["all", ...persistentLayerOrder].map((layer) => (
+											<FilterChip
+												key={layer}
+												active={activeLayer === layer}
+												onClick={() => setActiveLayer(layer as "all" | PersistentMemoryLayer)}
+											>
+												{layer.charAt(0).toUpperCase() + layer.slice(1)}
+											</FilterChip>
+										))}
+									</div>
 									<button
 										type="button"
 										onClick={() => {
@@ -345,20 +328,11 @@ export default function MemoryPage() {
 										<Plus className="h-4 w-4" />
 										New
 									</button>
-									{scope === "working" && (
-										<button
-											type="button"
-											onClick={handleClearWorking}
-											className="rounded-lg border border-border/60 px-3 py-2 text-sm font-medium hover:bg-accent transition-colors"
-										>
-											Clear session
-										</button>
-									)}
 								</div>
 							</div>
 							<div>
-								<CardTitle className="text-base">{meta.label}</CardTitle>
-								<CardDescription className="mt-1">{meta.description}</CardDescription>
+								<CardTitle className="text-base">Memories</CardTitle>
+								<CardDescription className="mt-1">Project and global knowledge that persists across sessions.</CardDescription>
 							</div>
 						</CardHeader>
 

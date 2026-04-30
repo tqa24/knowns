@@ -135,6 +135,42 @@ func extractFileImports(docPath string, data []byte) fileImportIndex {
 			}
 			idx.Namespace[alias] = modulePath
 		}
+	case ".java":
+		// Java: import com.example.MyClass; or import static com.example.MyClass.method;
+		javaImportRE := regexp.MustCompile(`(?m)^\s*import\s+(?:static\s+)?([\w.]+)\s*;`)
+		for _, m := range javaImportRE.FindAllStringSubmatch(text, -1) {
+			modulePath := strings.TrimSpace(m[1])
+			if modulePath == "" {
+				continue
+			}
+			alias := pathBase(strings.ReplaceAll(modulePath, ".", "/"))
+			idx.Namespace[alias] = modulePath
+		}
+	case ".cs":
+		// C#: using System.Collections.Generic; or using Alias = Namespace;
+		csUsingRE := regexp.MustCompile(`(?m)^\s*using\s+(?:static\s+)?(?:(\w+)\s*=\s*)?([\w.]+)\s*;`)
+		for _, m := range csUsingRE.FindAllStringSubmatch(text, -1) {
+			alias := strings.TrimSpace(m[1])
+			modulePath := strings.TrimSpace(m[2])
+			if modulePath == "" {
+				continue
+			}
+			if alias == "" {
+				alias = pathBase(strings.ReplaceAll(modulePath, ".", "/"))
+			}
+			idx.Namespace[alias] = modulePath
+		}
+	case ".rs":
+		// Rust: use std::collections::HashMap; or use crate::module::Type;
+		rsUseRE := regexp.MustCompile(`(?m)^\s*use\s+([\w:]+(?:::\w+)*)\s*;`)
+		for _, m := range rsUseRE.FindAllStringSubmatch(text, -1) {
+			modulePath := strings.TrimSpace(m[1])
+			if modulePath == "" {
+				continue
+			}
+			alias := pathBase(strings.ReplaceAll(modulePath, "::", "/"))
+			idx.Namespace[alias] = modulePath
+		}
 	}
 
 	return idx
