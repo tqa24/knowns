@@ -8,6 +8,7 @@ import { useTheme } from "@/ui/App";
 import { GraphDetailPanel } from "./GraphDetailPanel";
 import { CodeGraphLegend } from "./graph/GraphLegend";
 import { useContainerSize } from "./graph/useContainerSize";
+import { cn } from "../lib/utils";
 import {
 	buildSelectedNodeReferences,
 	CODE_GRAPH_FILTERS,
@@ -297,72 +298,72 @@ export default function CodeGraphPage() {
 
 	if (error) {
 		return (
-			<div className="flex-1 flex items-center justify-center">
+			<div className={cn('flex-1', 'flex', 'items-center', 'justify-center')}>
 				<div className="text-center">
-					<div className="text-destructive mb-2">{error}</div>
-					<p className="text-xs text-muted-foreground">Run <code className="font-mono bg-muted px-1 rounded">knowns ingest</code> to index code files first.</p>
+					<div className={cn('text-destructive', 'mb-2')}>{error}</div>
+					<p className={cn('text-xs', 'text-muted-foreground')}>Run <code className={cn('font-mono', 'bg-muted', 'px-1', 'rounded')}>knowns code ingest</code> to index code files first.</p>
 				</div>
 			</div>
 		);
 	}
 
 	return (
-		<div className="flex-1 flex flex-col min-h-0 bg-background">
-			<div className="flex items-center gap-2 px-4 py-2 border-b border-border/50 bg-background/95 flex-wrap">
+		<div className={cn('flex-1', 'flex', 'flex-col', 'min-h-0', 'bg-background')}>
+			<div className={cn('flex', 'items-center', 'gap-2', 'px-4', 'py-2', 'border-b', 'border-border/50', 'bg-background/95', 'flex-wrap')}>
 				<div className="relative">
-					<Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+					<Search className={cn('absolute', 'left-2', 'top-1/2', '-translate-y-1/2', 'w-3', 'h-3', 'text-muted-foreground')} />
 					<input
 						type="text"
 						value={searchQuery}
 						onChange={(e) => setSearchQuery(e.target.value)}
 						placeholder="Search symbols..."
-						className="h-7 w-40 rounded-md border bg-background pl-7 pr-7 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+						className={cn('h-7', 'w-40', 'rounded-md', 'border', 'bg-background', 'pl-7', 'pr-7', 'text-xs', 'placeholder:text-muted-foreground', 'focus:outline-none', 'focus:ring-1', 'focus:ring-ring')}
 					/>
 					{searchQuery && (
 						<button
 							type="button"
 							onClick={() => setSearchQuery("")}
-							className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+							className={cn('absolute', 'right-2', 'top-1/2', '-translate-y-1/2', 'text-muted-foreground', 'hover:text-foreground')}
 						>
-							<X className="w-3 h-3" />
+							<X className={cn('w-3', 'h-3')} />
 						</button>
 					)}
 				</div>
 
-				{debouncedSearchQuery && <span className="text-xs text-muted-foreground">{forceData.matches} matches</span>}
+				{debouncedSearchQuery && <span className={cn('text-xs', 'text-muted-foreground')}>{forceData.matches} matches</span>}
 
 				<div className="flex-1" />
 
-				<span className="text-xs text-muted-foreground">
+				<span className={cn('text-xs', 'text-muted-foreground')}>
 					{visibleKindCount}
 					{data && visibleKindCount !== data.nodes.length ? ` / ${data.nodes.length}` : ""} symbols, {edgeCount}
 					{data && edgeCount !== data.edges.length ? ` / ${data.edges.length}` : ""} edges
 				</span>
 
-				{engineRunning && <span className="text-xs text-amber-600 dark:text-amber-400">Layouting...</span>}
+				{engineRunning && <span className={cn('text-xs', 'text-amber-600', 'dark:text-amber-400')}>Layouting...</span>}
 
-				<div className="flex items-center gap-0.5">
+				<div className={cn('flex', 'items-center', 'gap-0.5')}>
 					<button
 						type="button"
 						onClick={handleZoomToFit}
-						className="rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+						className={cn('rounded-md', 'p-1.5', 'text-muted-foreground', 'hover:text-foreground', 'hover:bg-accent', 'transition-colors')}
 						title="Zoom to fit"
 					>
-						<Scan className="w-4 h-4" />
+						<Scan className={cn('w-4', 'h-4')} />
 					</button>
 					<button
 						type="button"
 						onClick={toggleFullscreen}
-						className="rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+						className={cn('rounded-md', 'p-1.5', 'text-muted-foreground', 'hover:text-foreground', 'hover:bg-accent', 'transition-colors')}
 						title="Toggle fullscreen"
 					>
-						{isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+						{isFullscreen ? <Minimize2 className={cn('w-4', 'h-4')} /> : <Maximize2 className={cn('w-4', 'h-4')} />}
 					</button>
 				</div>
 			</div>
 
-			<div className="flex-1 min-h-0 relative">
-				<div ref={graphContainerRef} className="absolute inset-0" />
+			<div className={cn('flex-1', 'min-h-0', 'relative')}>
+				<div ref={graphContainerRef} className={cn('absolute', 'inset-0')} />
 				{filteredData && (
 					<ForceGraph2D
 						ref={graphRef}
@@ -458,20 +459,20 @@ export default function CodeGraphPage() {
 				)}
 
 				{loading && (
-					<div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none bg-background/50">
-						<div className="flex items-center gap-2 text-muted-foreground">
-							<Loader2 className="w-5 h-5 animate-spin" />
+					<div className={cn('absolute', 'inset-0', 'flex', 'items-center', 'justify-center', 'z-20', 'pointer-events-none', 'bg-background/50')}>
+						<div className={cn('flex', 'items-center', 'gap-2', 'text-muted-foreground')}>
+							<Loader2 className={cn('w-5', 'h-5', 'animate-spin')} />
 							<span>Loading code graph...</span>
 						</div>
 					</div>
 				)}
 
 				{!loading && data?.nodes.length === 0 && (
-					<div className="absolute inset-0 flex items-center justify-center z-10">
+					<div className={cn('absolute', 'inset-0', 'flex', 'items-center', 'justify-center', 'z-10')}>
 						<div className="text-center">
-							<p className="text-sm text-muted-foreground mb-1">No code indexed yet.</p>
-							<p className="text-xs text-muted-foreground">
-								Run <code className="font-mono bg-muted px-1 rounded">knowns ingest</code> to index code files.
+							<p className={cn('text-sm', 'text-muted-foreground', 'mb-1')}>No code indexed yet.</p>
+							<p className={cn('text-xs', 'text-muted-foreground')}>
+								Run <code className={cn('font-mono', 'bg-muted', 'px-1', 'rounded')}>knowns code ingest</code> to index code files.
 							</p>
 						</div>
 					</div>
@@ -480,7 +481,7 @@ export default function CodeGraphPage() {
 				<CodeGraphLegend data={data} filters={filters} onToggleKind={toggleFilter} />
 
 				{selectedNode && (
-					<div className="absolute top-3 right-3 z-10">
+					<div className={cn('absolute', 'top-3', 'right-3', 'z-10')}>
 							<GraphDetailPanel
 							node={selectedNode}
 							onClose={clearSelection}

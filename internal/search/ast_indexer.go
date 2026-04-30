@@ -209,9 +209,15 @@ func enrichCodeSymbolContent(symbols []CodeSymbol, edges []CodeEdge) []CodeSymbo
 	}
 
 	edgeSummaryByID := make(map[string]*edgeLists, len(symbols))
+	// Also collect method signatures per class/interface for compact content.
+	methodSigsByOwner := make(map[string][]string)
 	for _, edge := range edges {
 		if !strings.HasPrefix(edge.From, "code::") {
 			continue
+		}
+		if edge.Type == "has_method" {
+			// Collect method signatures for the owning class.
+			methodSigsByOwner[edge.From] = append(methodSigsByOwner[edge.From], edge.TargetName)
 		}
 		lists := edgeSummaryByID[edge.From]
 		if lists == nil {
@@ -231,6 +237,19 @@ func enrichCodeSymbolContent(symbols []CodeSymbol, edges []CodeEdge) []CodeSymbo
 			lists.instantiates = append(lists.instantiates, target)
 		case "implements":
 			lists.implements = append(lists.implements, target)
+		}
+	}
+
+	// Build a signature lookup for method symbols.
+	sigByName := make(map[string]string, len(symbols))
+	for _, sym := range symbols {
+		if sym.Kind == "method" || sym.Kind == "function" {
+			key := CodeChunkID(sym.DocPath, sym.Name)
+			if strings.TrimSpace(sym.Signature) != "" {
+				sigByName[key] = sym.Signature
+			} else {
+				sigByName[key] = sym.Name
+			}
 		}
 	}
 
@@ -267,8 +286,26 @@ func enrichCodeSymbolContent(symbols []CodeSymbol, edges []CodeEdge) []CodeSymbo
 		summary := strings.Join(parts, " - ")
 		if symbol.Kind == "file" || strings.TrimSpace(symbol.Source) == "" {
 			updated.Content = summary
+		} else if symbol.Kind == "function" || symbol.Kind == "method" {
+			// Functions/methods: signature + edges is enough for search.
+			updated.Content = summary
 		} else {
-			updated.Content = summary + "\n\n" + strings.TrimSpace(symbol.Source)
+			// Classes/interfaces: list member signatures instead of full source.
+			id := CodeChunkID(symbol.DocPath, symbol.Name)
+			if methods, ok := methodSigsByOwner[id]; ok && len(methods) > 0 {
+				var memberLines []string
+				for _, methodName := range methods {
+					methodID := CodeChunkID(symbol.DocPath, methodName)
+					if sig, ok := sigByName[methodID]; ok {
+						memberLines = append(memberLines, "+ "+sig)
+					} else {
+						memberLines = append(memberLines, "+ "+methodName)
+					}
+				}
+				updated.Content = summary + "\n" + strings.Join(memberLines, "\n")
+			} else {
+				updated.Content = summary
+			}
 		}
 		enriched = append(enriched, updated)
 	}

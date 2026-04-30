@@ -164,11 +164,13 @@ func walkTree(node *sitter.Node, v *symbolVisitor) {
 		}
 		childKind := child.Kind()
 		switch childKind {
-		case "function_declaration", "function_definition":
+		case "function_declaration", "function_definition",
+			"function_item", "local_function_statement":
 			if name := v.functionName(*child); name != "" {
 				v.funcStack = append(v.funcStack, name)
 			}
-		case "method_declaration", "method_definition":
+		case "method_declaration", "method_definition",
+			"constructor_declaration":
 			if name := v.methodName(*child); name != "" {
 				v.funcStack = append(v.funcStack, name)
 			}
@@ -176,22 +178,33 @@ func walkTree(node *sitter.Node, v *symbolVisitor) {
 			if name := v.functionVariableName(*child); name != "" {
 				v.funcStack = append(v.funcStack, name)
 			}
-		case "class_declaration", "class_definition":
+		case "class_declaration", "class_definition",
+			"struct_declaration", "struct_item",
+			"record_declaration", "enum_declaration",
+			"enum_item":
 			if name := v.className(*child); name != "" {
 				v.classStack = append(v.classStack, name)
 			}
-		case "interface_declaration", "interface_specifier":
+		case "interface_declaration", "interface_specifier",
+			"trait_item":
 			if name := v.interfaceName(*child); name != "" {
+				v.classStack = append(v.classStack, name)
+			}
+		case "impl_item":
+			if name := v.implItemTypeName(*child); name != "" {
 				v.classStack = append(v.classStack, name)
 			}
 		}
 		walkTree(child, v)
 		switch childKind {
-		case "function_declaration", "function_definition", "method_declaration", "method_definition", "variable_declarator":
+		case "function_declaration", "function_definition", "method_declaration", "method_definition",
+			"variable_declarator", "function_item", "constructor_declaration", "local_function_statement":
 			if len(v.funcStack) > 0 {
 				v.funcStack = v.funcStack[:len(v.funcStack)-1]
 			}
-		case "class_declaration", "class_definition", "interface_declaration", "interface_specifier":
+		case "class_declaration", "class_definition", "interface_declaration", "interface_specifier",
+			"struct_declaration", "struct_item", "record_declaration", "enum_declaration",
+			"enum_item", "trait_item", "impl_item":
 			if len(v.classStack) > 0 {
 				v.classStack = v.classStack[:len(v.classStack)-1]
 			}
@@ -201,7 +214,8 @@ func walkTree(node *sitter.Node, v *symbolVisitor) {
 
 func (v *symbolVisitor) visit(node sitter.Node) {
 	switch node.Kind() {
-	case "function_declaration", "function_definition":
+	case "function_declaration", "function_definition",
+		"function_item", "local_function_statement":
 		if name := v.functionName(node); name != "" {
 			v.addSymbol(name, "function", node)
 		}
@@ -209,7 +223,23 @@ func (v *symbolVisitor) visit(node sitter.Node) {
 		if name := v.methodName(node); name != "" {
 			v.addSymbol(name, "method", node)
 		}
+	case "constructor_declaration":
+		if name := v.methodName(node); name != "" {
+			v.addSymbol(name, "method", node)
+		}
 	case "class_declaration", "class_definition":
+		if name := v.className(node); name != "" {
+			v.addSymbol(name, "class", node)
+		}
+	case "struct_declaration", "struct_item":
+		if name := v.className(node); name != "" {
+			v.addSymbol(name, "class", node)
+		}
+	case "record_declaration":
+		if name := v.className(node); name != "" {
+			v.addSymbol(name, "class", node)
+		}
+	case "enum_declaration", "enum_item":
 		if name := v.className(node); name != "" {
 			v.addSymbol(name, "class", node)
 		}
@@ -217,6 +247,13 @@ func (v *symbolVisitor) visit(node sitter.Node) {
 		if name := v.interfaceName(node); name != "" {
 			v.addSymbol(name, "interface", node)
 		}
+	case "trait_item":
+		if name := v.interfaceName(node); name != "" {
+			v.addSymbol(name, "interface", node)
+		}
+	case "impl_item":
+		// Rust impl blocks: extract methods inside, track as class context
+		// The impl block itself is not a symbol, but its methods are.
 	case "type_declaration", "type_spec":
 		name, symbolKind := v.typeDeclarationSymbol(node)
 		if name != "" && symbolKind != "" {
@@ -230,21 +267,21 @@ func (v *symbolVisitor) visit(node sitter.Node) {
 		if name := v.functionVariableName(node); name != "" {
 			v.addSymbol(name, "function", node)
 		}
-	case "class_heritage", "extends_clause":
+	case "class_heritage", "extends_clause", "base_list", "superclass":
 		if len(v.classStack) > 0 {
 			if target := v.extendsTarget(node); target.TargetName != "" {
 				target.ReceiverTypeHint = v.currentReceiverType()
 				v.addEdge(v.currentReceiverType(), target, "extends")
 			}
 		}
-	case "call_expression":
+	case "call_expression", "invocation_expression":
 		if len(v.funcStack) > 0 {
 			if target := v.callExpressionTarget(node); target.TargetName != "" {
 				target.ReceiverTypeHint = v.currentReceiverType()
 				v.addEdge(v.funcStack[len(v.funcStack)-1], target, "calls")
 			}
 		}
-	case "new_expression", "composite_literal":
+	case "new_expression", "composite_literal", "object_creation_expression":
 		if len(v.funcStack) > 0 {
 			if target := v.instantiatedTarget(node); target.TargetName != "" {
 				target.ReceiverTypeHint = v.currentReceiverType()
@@ -292,6 +329,24 @@ func (v *symbolVisitor) interfaceName(node sitter.Node) string {
 	for i := 0; i < int(node.ChildCount()); i++ {
 		child := node.Child(uint(i))
 		if child != nil && (child.Kind() == "type_identifier" || child.Kind() == "identifier") {
+			return v.extractNodeText(child)
+		}
+	}
+	return ""
+}
+
+// implItemTypeName extracts the type name from a Rust impl block.
+// e.g. `impl MyStruct { ... }` → "MyStruct"
+func (v *symbolVisitor) implItemTypeName(node sitter.Node) string {
+	// In Rust tree-sitter, impl_item has a "type" field
+	typeNode := node.ChildByFieldName("type")
+	if typeNode != nil {
+		return v.extractNodeText(typeNode)
+	}
+	// Fallback: look for type_identifier child
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(uint(i))
+		if child != nil && child.Kind() == "type_identifier" {
 			return v.extractNodeText(child)
 		}
 	}

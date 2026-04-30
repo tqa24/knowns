@@ -337,7 +337,6 @@ func runSemanticSetup(modelID string, force ...bool) error {
 	}
 
 	if !forceDownload && isModelInstalled(selected) {
-		fmt.Println(StyleSuccess.Render(fmt.Sprintf("✓ Semantic search ready (model: %s)", modelID)))
 		return nil
 	}
 
@@ -500,5 +499,7 @@ func ensureProjectAndGlobalSemanticReady(projectStore *storage.Store, defaultMod
 	if err != nil {
 		return projectChanged, false, err
 	}
+	// Print ready message once after both stores are set up.
+	fmt.Println(StyleSuccess.Render(fmt.Sprintf("✓ Semantic search ready (model: %s)", defaultModelID)))
 	return projectChanged, globalChanged, nil
 }
