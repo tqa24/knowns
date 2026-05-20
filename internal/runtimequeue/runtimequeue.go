@@ -54,22 +54,31 @@ type Job struct {
 	StartedAt   *time.Time `json:"startedAt,omitempty"`
 	Attempts    int        `json:"attempts,omitempty"`
 	LastError   string     `json:"lastError,omitempty"`
-	Phase       string     `json:"phase,omitempty"`
-	Processed   int        `json:"processed,omitempty"`
-	Total       int        `json:"total,omitempty"`
+	Phase       string      `json:"phase,omitempty"`
+	Processed   int         `json:"processed,omitempty"`
+	Total       int         `json:"total,omitempty"`
+	Details     *JobDetails `json:"details,omitempty"`
+}
+
+type JobDetails struct {
+	Phase     string         `json:"phase,omitempty"`
+	Processed int            `json:"processed,omitempty"`
+	Total     int            `json:"total,omitempty"`
+	Stats     map[string]int `json:"stats,omitempty"`
 }
 
 type JobResult struct {
-	JobID        string    `json:"jobId"`
-	Key          string    `json:"key"`
-	Kind         JobKind   `json:"kind"`
-	Target       string    `json:"target,omitempty"`
-	Success      bool      `json:"success"`
-	Error        string    `json:"error,omitempty"`
-	CompletedAt  time.Time `json:"completedAt"`
-	RequestedAt  time.Time `json:"requestedAt"`
-	StartedAt    time.Time `json:"startedAt"`
-	AttemptCount int       `json:"attemptCount"`
+	JobID        string      `json:"jobId"`
+	Key          string      `json:"key"`
+	Kind         JobKind     `json:"kind"`
+	Target       string      `json:"target,omitempty"`
+	Success      bool        `json:"success"`
+	Error        string      `json:"error,omitempty"`
+	CompletedAt  time.Time   `json:"completedAt"`
+	RequestedAt  time.Time   `json:"requestedAt"`
+	StartedAt    time.Time   `json:"startedAt"`
+	AttemptCount int         `json:"attemptCount"`
+	Details      *JobDetails `json:"details,omitempty"`
 }
 
 type QueueState struct {
@@ -515,6 +524,21 @@ func ReportProgress(storeRoot, jobID, phase string, processed, total int) error 
 	})
 }
 
+// ReportDetails stores structured completion details on a running job.
+// Called by executors before returning so CompleteJob can carry them into JobResult.
+func ReportDetails(storeRoot, jobID string, details JobDetails) error {
+	return updateQueue(storeRoot, func(state *QueueState) error {
+		for _, job := range state.Jobs {
+			if job.ID != jobID {
+				continue
+			}
+			job.Details = &details
+			return nil
+		}
+		return nil
+	})
+}
+
 func CompleteJob(storeRoot string, job Job, err error) error {
 	return updateQueue(storeRoot, func(state *QueueState) error {
 		jobs := state.Jobs[:0]
@@ -541,6 +565,14 @@ func CompleteJob(storeRoot string, job Job, err error) error {
 		}
 		if err != nil {
 			result.Error = err.Error()
+		}
+		result.Details = job.Details
+		if result.Details == nil && (job.Phase != "" || job.Processed > 0) {
+			result.Details = &JobDetails{
+				Phase:     job.Phase,
+				Processed: job.Processed,
+				Total:     job.Total,
+			}
 		}
 		state.Recent = append([]JobResult{result}, state.Recent...)
 		if len(state.Recent) > maxRecentResults {

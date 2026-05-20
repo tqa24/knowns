@@ -1,6 +1,11 @@
 package handlers
 
-import "strings"
+import (
+	"github.com/mark3labs/mcp-go/server"
+	"strings"
+
+	"github.com/mark3labs/mcp-go/mcp"
+)
 
 // unescapeText replaces literal \n and \t sequences with actual newlines and tabs.
 // This mirrors the CLI's unescapeText helper so that MCP callers sending
@@ -119,6 +124,15 @@ func intSliceArg(args map[string]any, key string) ([]int, bool) {
 }
 
 // containsString checks if a string slice contains a value.
+type toolRegistrar interface {
+	AddTool(mcp.Tool, server.ToolHandlerFunc)
+	RegisterHelp(string, HelpEntry)
+}
+
+func registerHelp(s toolRegistrar, key string, entry HelpEntry) {
+	s.RegisterHelp(key, entry)
+}
+
 func containsString(slice []string, val string) bool {
 	for _, s := range slice {
 		if s == val {

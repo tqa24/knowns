@@ -102,7 +102,7 @@ Concretely, Knowns manages:
 - **Memory** - project-level, session-level, and global knowledge that AI can recall
 - **Templates** for code generation with Handlebars
 - **References** like `@task-42` and `@doc/patterns/auth` that AI can follow and resolve
-- **Code intelligence** - AST-indexed symbols, dependency graphs, and semantic code search
+- **Code intelligence** - LSP-based symbols, definitions, references, diagnostics, and safe edits
 
 Everything lives in a `.knowns/` directory in your repo. Plain files. Committable to Git. No cloud required.
 
@@ -224,12 +224,11 @@ Full [Model Context Protocol](https://modelcontextprotocol.io/) server. Claude, 
 
 ### Code Intelligence
 
-AST-based indexing for Go, TypeScript, JavaScript, and Python. Search symbols, trace dependencies, and explore your codebase structure - all accessible to AI.
+LSP-based code intelligence for supported languages. List symbols, jump to definitions, find references, inspect diagnostics, and make safe symbol-aware edits through MCP.
 
 ```bash
-knowns code ingest
-knowns code search "oauth login" --neighbors 5
-knowns code deps --type calls
+knowns lsp list
+knowns lsp install <language>
 ```
 
 ### Templates & Code Generation
@@ -270,7 +269,7 @@ knowns browser --open
 | **Memory System** | Project / session / global memory for persistent AI recall |
 | **MCP Server** | Native AI assistant integration with full tool access |
 | **AI Workspaces** | Multi-phase agent orchestration with worktree isolation |
-| **Code Intelligence** | AST indexing, symbol search, and dependency graphs |
+| **Code Intelligence** | LSP-based symbols, definitions, references, diagnostics, and safe edits |
 | **Web UI** | Kanban board, doc browser, knowledge graph, mermaid diagrams |
 
 ---
@@ -447,10 +446,9 @@ knowns search "query" --plain
 knowns validate
 
 # Code intelligence
-knowns code ingest
-knowns code search "oauth login" --neighbors 5
-knowns code deps --type calls
-knowns code symbols --kind function
+knowns lsp list
+knowns lsp install <language>
+# Use the MCP code tool for symbols, definitions, references, diagnostics, and edits
 
 # AI Guidelines
 knowns agents --sync

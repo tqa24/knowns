@@ -83,8 +83,32 @@ Set the active project first:
 { "action": "current" }
 ```
 
+## Session start
+
+Call `initial` at the start of every session. It returns:
+
+- project state (knowledge counts, active timer, LSP status)
+- code intelligence rules (which tools to use for code operations)
+- workflow guidance (tool orchestration patterns)
+- available tools summary
+
+No need to call `project({ action: "status" })` separately — `initial` covers it.
+
+## On-demand help
+
+Use `help` for detailed per-action documentation:
+
+```json
+{ "action": "query", "queries": ["code.find"] }
+{ "action": "query", "queries": ["code.*"] }
+{ "action": "query", "queries": ["insert"] }
+```
+
+Returns JSON structured as `{ tool: { action: { when, params, ... } } }`.
+
 ## Why MCP is useful
 
 - structured AI access to project state
 - less shell parsing and less prompt copy-paste
 - easier validation and retrieval workflows for AI assistants
+- `initial` + `help` minimize token overhead while maximizing agent context

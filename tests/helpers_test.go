@@ -314,6 +314,12 @@ func (c *MCPClient) sendRequest(method string, params any) (map[string]any, erro
 // Initialize sends the MCP initialize handshake.
 func (c *MCPClient) Initialize() {
 	c.t.Helper()
+	c.InitializeRaw()
+}
+
+// InitializeRaw sends the MCP initialize handshake and returns the full response.
+func (c *MCPClient) InitializeRaw() map[string]any {
+	c.t.Helper()
 	resp, err := c.sendRequest("initialize", map[string]any{
 		"protocolVersion": "2024-11-05",
 		"capabilities":    map[string]any{},
@@ -325,6 +331,7 @@ func (c *MCPClient) Initialize() {
 	if resp["error"] != nil {
 		c.t.Fatalf("MCP initialize error: %v", resp["error"])
 	}
+	return resp
 }
 
 // SetProject sets the active project directory.

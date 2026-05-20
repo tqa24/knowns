@@ -83,8 +83,32 @@ Set active project trước:
 { "action": "current" }
 ```
 
+## Bắt đầu session
+
+Gọi `initial` khi bắt đầu mỗi session. Nó trả về:
+
+- project state (số lượng knowledge, active timer, LSP status)
+- code intelligence rules (dùng tool nào cho code operations)
+- workflow guidance (cách phối hợp tools)
+- danh sách tools có sẵn
+
+Không cần gọi `project({ action: "status" })` riêng — `initial` đã bao gồm.
+
+## Help on-demand
+
+Dùng `help` để xem hướng dẫn chi tiết cho từng action:
+
+```json
+{ "action": "query", "queries": ["code.find"] }
+{ "action": "query", "queries": ["code.*"] }
+{ "action": "query", "queries": ["insert"] }
+```
+
+Trả về JSON dạng `{ tool: { action: { when, params, ... } } }`.
+
 ## Tại sao MCP hữu ích
 
 - AI truy cập project state có cấu trúc
 - Ít phải parse shell output
 - Validation và retrieval workflows dễ hơn
+- `initial` + `help` giảm token overhead, tăng context cho agent

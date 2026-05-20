@@ -34,7 +34,7 @@ Canonical repository guidance for agents working in this project.
 ## TL;DR
 
 - Read `KNOWNS.md` first.
-- Call MCP `status` (or `knowns status --json`) at session start to check project readiness, available capabilities, and knowledge counts.
+- Call `initial` at session start to check project readiness, available capabilities, and knowledge counts.
 - Use Knowns as the memory layer for humans and the AI-friendly working layer for agents.
 - Search before reading; read only the sections and docs relevant to the current task.
 - Never manually edit Knowns-managed task or doc markdown.
@@ -63,7 +63,8 @@ Canonical repository guidance for agents working in this project.
 
 ## Tool Selection
 
-- Use MCP `status` at session start to check project readiness and available capabilities before acting.
+- Use `initial` at session start; it includes project readiness and available capabilities.
+- Use `help("tool.action")` or `help("tool.*")` for detailed per-action documentation on demand.
 - Use Knowns MCP tools first for tasks, docs, templates, validation, and time tracking.
 - Use file reading and search tools for local code and text inspection.
 - Use shell commands for git, tests, builds, generators, and other terminal operations.

@@ -425,6 +425,75 @@ export async function getSDDStats(): Promise<SDDResult> {
 }
 
 
+export interface RuntimeJob {
+	id: string;
+	key: string;
+	kind: string;
+	target?: string;
+	requestedAt: string;
+	runAfter: string;
+	startedAt?: string;
+	attempts?: number;
+	lastError?: string;
+	phase?: string;
+	processed?: number;
+	total?: number;
+}
+
+export interface JobDetails {
+	phase?: string;
+	processed?: number;
+	total?: number;
+	stats?: Record<string, number>;
+}
+
+export interface RuntimeJobResult {
+	jobId: string;
+	key: string;
+	kind: string;
+	target?: string;
+	success: boolean;
+	error?: string;
+	completedAt: string;
+	requestedAt: string;
+	startedAt: string;
+	attemptCount: number;
+	details?: JobDetails;
+}
+
+export interface RuntimeClient {
+	clientKind: string;
+	projectRoot: string;
+	pid: number;
+	updatedAt: string;
+}
+
+export interface RuntimeProjectSnapshot {
+	root: string;
+	running: RuntimeJob[];
+	queued: RuntimeJob[];
+	recent: RuntimeJobResult[];
+}
+
+export interface RuntimeStatusResponse {
+	status: {
+		running: boolean;
+		pid?: number;
+		version?: string;
+		clients: RuntimeClient[];
+		projects: Array<{ projectRoot: string; queuedJobs: number; runningJobs: number }>;
+	};
+	projects: RuntimeProjectSnapshot[];
+}
+
+export async function getRuntimePs(): Promise<RuntimeStatusResponse> {
+	const res = await fetch(`${API_BASE}/api/runtime/ps`);
+	if (!res.ok) {
+		throw new Error("Failed to fetch runtime status");
+	}
+	return res.json();
+}
+
 // Import API
 export interface Import {
 	name: string;
@@ -1472,11 +1541,6 @@ export async function getGraph(): Promise<GraphData> {
 	return res.json();
 }
 
-export async function getCodeGraph(): Promise<GraphData> {
-	const res = await fetch(`${API_BASE}/api/graph/code`);
-	if (!res.ok) throw new Error("Failed to fetch code graph");
-	return res.json();
-}
 
 export interface SemanticDocReferenceFragment {
 	raw?: string;

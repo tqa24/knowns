@@ -8,14 +8,19 @@ import (
 	"github.com/howznguyen/knowns/internal/models"
 	"github.com/howznguyen/knowns/internal/storage"
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
 )
 
 // RegisterTemplateTool registers the consolidated template MCP tool.
-func RegisterTemplateTool(s *server.MCPServer, getStore func() *storage.Store) {
+func RegisterTemplateTool(s toolRegistrar, getStore func() *storage.Store) {
 	s.AddTool(
 		mcp.NewTool("templates",
-			mcp.WithDescription("Code generation template operations. Use 'action' to specify: create, get, list, run."),
+			mcp.WithDescription(`Code generation template operations. Use 'action' to specify: create, get, list, run.
+
+- create: Create a template definition. Required: name. Optional: description, doc. Returns: created template metadata.
+- get: Read a template definition. Required: name. Optional: none. Returns: template metadata, prompts, actions, messages, and source path.
+- list: List available templates. Required: none. Optional: none. Returns: template summaries with names, descriptions, versions, docs, and paths.
+- run: Render and optionally write files from a template. Required: name. Optional: variables, dryRun (default true). Returns: generated file previews or write results with template messages.
+`),
 			mcp.WithString("action",
 				mcp.Required(),
 				mcp.Description("Action to perform"),
@@ -56,6 +61,11 @@ func RegisterTemplateTool(s *server.MCPServer, getStore func() *storage.Store) {
 			}
 		},
 	)
+
+	registerHelp(s, "templates.create", HelpEntry{When: "Create a reusable code generation template definition.", Params: map[string]string{"name": "required — template name", "description": "template summary", "doc": "linked documentation path"}})
+	registerHelp(s, "templates.get", HelpEntry{When: "Read a template definition before running or modifying generation behavior.", Params: map[string]string{"name": "required — template name"}})
+	registerHelp(s, "templates.list", HelpEntry{When: "List available templates before choosing generation boilerplate.", Params: map[string]string{}})
+	registerHelp(s, "templates.run", HelpEntry{When: "Render a template with variables and optionally write generated files.", Params: map[string]string{"name": "required — template name", "variables": "template variables object", "dryRun": "preview only without writing files; default true"}, Why: "Use dryRun first to preview generated files before writing.", Examples: []string{`templates({ action: "run", name: "go-feature", variables: {"name": "label"}, dryRun: true })`}})
 }
 
 func handleTemplateList(getStore func() *storage.Store, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

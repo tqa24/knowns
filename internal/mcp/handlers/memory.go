@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/howznguyen/knowns/internal/models"
@@ -17,11 +18,11 @@ import (
 func RegisterMemoryTool(s *server.MCPServer, getStore func() *storage.Store) {
 	s.AddTool(
 		mcp.NewTool("memory",
-			mcp.WithDescription("Persistent memory operations. Use 'action' to specify: add, get, update, delete, list, promote, demote."),
+			mcp.WithDescription("Persistent memory operations. Use 'action' to specify: add, get, update, delete, list, promote, demote, cleanup."),
 			mcp.WithString("action",
 				mcp.Required(),
 				mcp.Description("Action to perform"),
-				mcp.Enum("add", "get", "update", "delete", "list", "promote", "demote"),
+				mcp.Enum("add", "get", "update", "delete", "list", "promote", "demote", "cleanup"),
 			),
 			mcp.WithString("id",
 				mcp.Description("Memory entry ID (required for get, update, delete, promote, demote)"),
@@ -52,6 +53,12 @@ func RegisterMemoryTool(s *server.MCPServer, getStore func() *storage.Store) {
 				mcp.Description("Explicitly clear string fields like title, content, or category (update)"),
 				mcp.WithStringItems(),
 			),
+			mcp.WithNumber("olderThanDays",
+				mcp.Description("Minimum stale age in days for cleanup candidates (default: 7)"),
+			),
+			mcp.WithNumber("limit",
+				mcp.Description("Maximum cleanup candidates to return (default: 20)"),
+			),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			action, err := req.RequireString("action")
@@ -73,6 +80,8 @@ func RegisterMemoryTool(s *server.MCPServer, getStore func() *storage.Store) {
 				return handleMemoryPromote(getStore, req)
 			case "demote":
 				return handleMemoryDemote(getStore, req)
+			case "cleanup":
+				return handleMemoryCleanup(getStore, req)
 			default:
 				return errResultf("unknown memory action: %s", action)
 			}
@@ -215,6 +224,93 @@ func handleMemoryList(getStore func() *storage.Store, req mcp.CallToolRequest) (
 	}
 
 	out, _ := json.MarshalIndent(summaries, "", "  ")
+	return mcp.NewToolResultText(string(out)), nil
+}
+
+type memoryCleanupCandidate struct {
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	Layer     string    `json:"layer"`
+	Category  string    `json:"category,omitempty"`
+	Tags      []string  `json:"tags,omitempty"`
+	Content   string    `json:"content"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+	AgeDays   int       `json:"ageDays"`
+}
+
+func memoryEffectiveUpdatedAt(entry *models.MemoryEntry) time.Time {
+	if !entry.UpdatedAt.IsZero() {
+		return entry.UpdatedAt
+	}
+	return entry.CreatedAt
+}
+
+func cleanupMemoryCandidates(entries []*models.MemoryEntry, olderThanDays, limit int, now time.Time) []memoryCleanupCandidate {
+	if olderThanDays <= 0 {
+		olderThanDays = 7
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	threshold := now.Add(-time.Duration(olderThanDays) * 24 * time.Hour)
+	candidates := make([]memoryCleanupCandidate, 0)
+	for _, entry := range entries {
+		effective := memoryEffectiveUpdatedAt(entry)
+		if effective.IsZero() || !effective.Before(threshold) {
+			continue
+		}
+		ageDays := int(now.Sub(effective).Hours() / 24)
+		candidates = append(candidates, memoryCleanupCandidate{
+			ID:        entry.ID,
+			Title:     entry.Title,
+			Layer:     entry.Layer,
+			Category:  entry.Category,
+			Tags:      entry.Tags,
+			Content:   entry.Content,
+			CreatedAt: entry.CreatedAt,
+			UpdatedAt: entry.UpdatedAt,
+			AgeDays:   ageDays,
+		})
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].AgeDays > candidates[j].AgeDays
+	})
+	if len(candidates) > limit {
+		candidates = candidates[:limit]
+	}
+	return candidates
+}
+
+func handleMemoryCleanup(getStore func() *storage.Store, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	store := getStore()
+	if store == nil {
+		return noProjectError()
+	}
+
+	args := req.GetArguments()
+	layer, _ := stringArg(args, "layer")
+	if layer == "" {
+		layer = models.MemoryLayerProject
+	}
+	if !models.ValidPersistentMemoryLayer(layer) {
+		return errResult("layer must be 'project' or 'global'")
+	}
+	olderThanDays := 7
+	if v, ok := intArg(args, "olderThanDays"); ok && v > 0 {
+		olderThanDays = v
+	}
+	limit := 20
+	if v, ok := intArg(args, "limit"); ok && v > 0 {
+		limit = v
+	}
+
+	entries, err := store.Memory.ListPersistent(layer)
+	if err != nil {
+		return errFailed("list memories", err)
+	}
+	result := cleanupMemoryCandidates(entries, olderThanDays, limit, time.Now().UTC())
+	out, _ := json.MarshalIndent(result, "", "  ")
 	return mcp.NewToolResultText(string(out)), nil
 }
 

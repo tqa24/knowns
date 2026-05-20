@@ -51,8 +51,10 @@ type Chunk struct {
 	MemoryStore string `json:"memoryStore,omitempty"`
 
 	// Code fields (populated when Type == ChunkTypeCode).
-	Name      string `json:"name,omitempty"`      // symbol name e.g. "getGraph"
-	Signature string `json:"signature,omitempty"` // function/method signature
+	Name       string `json:"name,omitempty"`       // symbol name e.g. "getGraph"
+	Signature  string `json:"signature,omitempty"`  // function/method signature
+	Visibility string `json:"visibility,omitempty"` // exported/private when known
+	Detail     string `json:"detail,omitempty"`     // LSP detail/type info when known
 }
 
 // ChunkResult is the output of chunking a single task or doc.

@@ -15,6 +15,17 @@ type Project struct {
 }
 
 // ProjectSettings holds all user-configurable options for a project.
+type LSPSettings struct {
+	Languages map[string]LSPLanguageSettings `json:"languages,omitempty"`
+}
+
+type LSPLanguageSettings struct {
+	Enabled  *bool          `json:"enabled,omitempty"`
+	Binary   string         `json:"binary,omitempty"`
+	Version  string         `json:"version,omitempty"`
+	Settings map[string]any `json:"settings,omitempty"`
+}
+
 type ProjectSettings struct {
 	DefaultAssignee string   `json:"defaultAssignee,omitempty"`
 	DefaultPriority string   `json:"defaultPriority"`
@@ -65,6 +76,9 @@ type ProjectSettings struct {
 	// Permissions configures the AI permission policy for this project.
 	// When nil, the implicit default preset (read-write-no-delete) is used.
 	Permissions *permissions.PermissionConfig `json:"permissions,omitempty"`
+
+	// LSP configures language server enable/disable and binary overrides.
+	LSP *LSPSettings `json:"lsp,omitempty"`
 }
 
 // RuntimeMemorySettings configures runtime-level memory injection.

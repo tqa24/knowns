@@ -102,7 +102,7 @@ Cụ thể, Knowns quản lý:
 - **Memory** — project-level, session-level, global knowledge để AI recall
 - **Templates** cho code generation bằng Handlebars
 - **References** như `@task-42` và `@doc/patterns/auth` để AI follow và resolve
-- **Code intelligence** — AST-indexed symbols, dependency graphs, semantic code search
+- **Code intelligence** — LSP-backed real-time code queries: symbols, definitions, references, rename, và editing actions
 
 Tất cả nằm trong `.knowns/` của repo. Plain files. Commit vào Git được. Không cần cloud.
 
@@ -224,12 +224,11 @@ Full [Model Context Protocol](https://modelcontextprotocol.io/) server. Claude, 
 
 ### Code intelligence
 
-AST-based indexing cho Go, TypeScript, JavaScript, Python. Search symbols, trace dependencies, explore codebase structure — tất cả accessible cho AI.
+LSP-backed code intelligence cho Go, TypeScript, Python, Rust, C/C++, Java, C#, Ruby, PHP. Tự động phát hiện ngôn ngữ, hướng dẫn cài LSP server nếu thiếu. Truy cập qua MCP `code` tool với 11 actions.
 
 ```bash
-knowns code ingest
-knowns code search "oauth login" --neighbors 5
-knowns code deps --type calls
+knowns lsp list                    # Xem ngôn ngữ và trạng thái LSP
+knowns lsp install <language>      # Tải và cài LSP server
 ```
 
 ### Templates & code generation
@@ -270,7 +269,7 @@ knowns browser --open
 | **Memory System** | Project / session / global memory cho persistent AI recall |
 | **MCP Server** | AI assistant integration với full tool access |
 | **AI Workspaces** | Multi-phase agent orchestration với worktree isolation |
-| **Code Intelligence** | AST indexing, symbol search, dependency graphs |
+| **Code Intelligence** | LSP-backed: symbols, definitions, references, rename, replace, insert, delete |
 | **Web UI** | Kanban board, doc browser, knowledge graph, mermaid diagrams |
 
 ---
@@ -447,10 +446,9 @@ knowns search "query" --plain
 knowns validate
 
 # Code intelligence
-knowns code ingest
-knowns code search "oauth login" --neighbors 5
-knowns code deps --type calls
-knowns code symbols --kind function
+knowns lsp list
+knowns lsp install <language>
+knowns lsp cleanup
 
 # AI Guidelines
 knowns agents --sync

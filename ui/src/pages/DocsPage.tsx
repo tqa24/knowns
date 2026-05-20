@@ -25,6 +25,7 @@ import { Sheet, SheetContent, SheetTitle } from "../components/ui/sheet";
 import { DocsDocHeader } from "./docs/DocsDocHeader";
 import { DocsCreateView } from "./docs/DocsCreateView";
 import { DocsEmptyState } from "./docs/DocsEmptyState";
+import { DocMiniGraph } from "./docs/DocMiniGraph";
 import { MDRenderWithHighlight } from "../components/editor/MDRenderWithHighlight";
 
 import { AnnotationProvider, useAnnotationContext } from "../contexts/AnnotationContext";
@@ -439,8 +440,9 @@ function DocsPageInner() {
 										</div>
 									</article>
 									{!isEditing && (
-										<div className="w-52 shrink-0 hidden xl:block pt-12 pr-6">
+										<div className="w-56 shrink-0 hidden xl:block pt-12 pr-6">
 											<div className="sticky top-8">
+												<DocMiniGraph docPath={selectedDoc.path} />
 												<DocsTOC markdown={selectedDoc.content || ""} scrollContainerRef={scrollContainerRef} onHeadingSelect={navigateToHeading} />
 											</div>
 										</div>

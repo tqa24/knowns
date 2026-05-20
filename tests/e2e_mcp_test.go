@@ -782,14 +782,56 @@ func TestMCP_SemanticSearch(t *testing.T) {
 		}
 	})
 
-	t.Run("code graph tool responds", func(t *testing.T) {
+	t.Run("code graph action is unsupported", func(t *testing.T) {
 		raw := client.CallToolRaw("code", map[string]any{
 			"action": "graph",
 		})
-		if raw == "" {
-			t.Fatal("empty code_graph result")
+		if !strings.Contains(raw, "unsupported action: graph") {
+			t.Fatalf("expected unsupported graph action, got: %s", raw)
 		}
 	})
+}
+
+// TestMCP_InitialTool verifies the initial tool returns operating instructions.
+func TestMCP_InitialTool(t *testing.T) {
+	client := startMCPServer(t)
+	client.Initialize()
+
+	t.Run("returns non-empty instructions", func(t *testing.T) {
+		raw := client.CallToolRaw("initial", map[string]any{})
+		if raw == "" {
+			t.Fatal("initial tool returned empty result")
+		}
+		if !strings.Contains(raw, "Operating Instructions") {
+			t.Fatalf("initial tool result missing expected content, got: %s", raw[:min(len(raw), 200)])
+		}
+		if !strings.Contains(raw, "Critical Rules") {
+			t.Fatal("initial tool result missing Critical Rules section")
+		}
+		if !strings.Contains(raw, "Tool Selection") {
+			t.Fatal("initial tool result missing Tool Selection section")
+		}
+	})
+}
+
+// TestMCP_InitializeInstructions verifies the initialize response contains instructions.
+func TestMCP_InitializeInstructions(t *testing.T) {
+	client := startMCPServer(t)
+	resp := client.InitializeRaw()
+
+	result, ok := resp["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("no result in initialize response: %v", resp)
+	}
+
+	instructions, ok := result["instructions"].(string)
+	if !ok || instructions == "" {
+		t.Fatalf("no instructions in initialize result: %v", result)
+	}
+
+	if !strings.Contains(instructions, "initial") {
+		t.Fatalf("instructions should mention the initial tool, got: %s", instructions)
+	}
 }
 
 // mapKeys returns the keys of a map (for debugging).

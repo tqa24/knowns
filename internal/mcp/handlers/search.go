@@ -9,16 +9,20 @@ import (
 	"github.com/howznguyen/knowns/internal/search"
 	"github.com/howznguyen/knowns/internal/storage"
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
 )
 
 // RegisterSearchTool registers the consolidated search and retrieval MCP tool.
 // Note: reindex_search has been removed — reindexing is handled automatically
 // or via the CLI command.
-func RegisterSearchTool(s *server.MCPServer, getStore func() *storage.Store) {
+func RegisterSearchTool(s toolRegistrar, getStore func() *storage.Store) {
 	s.AddTool(
 		mcp.NewTool("search",
-			mcp.WithDescription("Search and retrieval operations. Use 'action' to specify: search, retrieve, resolve."),
+			mcp.WithDescription(`Search and retrieval operations. Use 'action' to specify: search, retrieve, resolve.
+
+- search: Search docs, tasks, and memories. Required: query. Optional: type (all, task, doc, memory), mode (hybrid, semantic, keyword), limit, status, priority, assignee, label, tag. Returns: ranked search results with entity type, path or ID, title, snippet, and score.
+- retrieve: Build a context pack from relevant docs, tasks, and memories. Required: query. Optional: sourceTypes, mode, limit, expandReferences, status, priority, assignee, label, tag. Returns: assembled context items with citations, metadata, and optional expanded references.
+- resolve: Traverse semantic references and graph relationships. Required: ref. Optional: direction (outbound, inbound, both), depth (1-3), relationTypes, entityTypes, limit. Returns: resolved root entity and related entities/relations matching traversal filters.
+`),
 			mcp.WithString("action",
 				mcp.Required(),
 				mcp.Description("Action to perform"),
@@ -98,6 +102,10 @@ func RegisterSearchTool(s *server.MCPServer, getStore func() *storage.Store) {
 			}
 		},
 	)
+
+	registerHelp(s, "search.search", HelpEntry{When: "Discover relevant docs, tasks, or memories by query before reading detailed context.", Params: map[string]string{"query": "required — search terms", "type": "all | task | doc | memory", "mode": "hybrid | semantic | keyword", "limit": "maximum result count", "status": "filter tasks by status", "priority": "filter tasks by priority", "assignee": "filter tasks by assignee", "label": "filter tasks by label", "tag": "filter docs or memories by tag"}, Why: "Use search for discovery. Use retrieve when you need assembled context with citations.", Examples: []string{`search({ action: "search", query: "auth patterns", type: "doc", limit: 5 })`}})
+	registerHelp(s, "search.retrieve", HelpEntry{When: "Build an assembled context pack from relevant docs, tasks, and memories for planning or synthesis.", Params: map[string]string{"query": "required — retrieval query", "sourceTypes": "optional list: doc, task, memory", "mode": "hybrid | semantic | keyword", "limit": "maximum item count", "expandReferences": "include linked docs/tasks/memories", "status": "filter tasks by status", "priority": "filter tasks by priority", "assignee": "filter tasks by assignee", "label": "filter tasks by label", "tag": "filter docs or memories by tag"}, Why: "Use retrieve after search when you need cited, expanded context rather than a ranked result list."})
+	registerHelp(s, "search.resolve", HelpEntry{When: "Traverse semantic refs and graph relationships from a @doc, @task, or @template reference.", Params: map[string]string{"ref": "required — semantic reference expression", "direction": "outbound | inbound | both", "depth": "max hops 1-3", "relationTypes": "comma-separated relation kinds", "entityTypes": "comma-separated entity kinds", "limit": "maximum result count"}, Examples: []string{`search({ action: "resolve", ref: "@doc/specs/auth{implements}", depth: 2 })`}})
 }
 
 func handleSearch(getStore func() *storage.Store, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

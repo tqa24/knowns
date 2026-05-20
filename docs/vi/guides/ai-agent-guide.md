@@ -17,11 +17,15 @@ Knowns cho AI truy cập có cấu trúc vào:
 
 ## Cách dùng
 
-### 1. Load guidance trước
+### 1. Gọi `initial` trước
 
-AI nên bắt đầu từ `KNOWNS.md` — file hướng dẫn canonical của repo.
+AI nên gọi tool `initial` khi bắt đầu session. Nó trả về project state, code intelligence rules, workflow guidance, và danh sách tools — đủ để bắt đầu làm việc.
 
-### 2. Dùng task làm mục tiêu
+### 2. Dùng `help` khi cần chi tiết
+
+Khi AI cần dùng tool/action chưa quen, gọi `help("tool.action")` hoặc `help("tool.*")` để xem hướng dẫn on-demand.
+
+### 3. Dùng task làm mục tiêu
 
 Thay vì prompt mơ hồ, trỏ AI vào task có acceptance criteria rõ ràng.
 
@@ -53,12 +57,13 @@ Validation nên là phần bình thường của workflow.
 
 ## Ví dụ workflow
 
-1. AI đọc `KNOWNS.md`
+1. AI gọi `initial` (nhận project state + rules + workflow guidance)
 2. AI đọc target task
 3. AI follow `@doc/...` hoặc `@task-...` references
-4. AI search/retrieve thêm context nếu cần
-5. AI implement
-6. AI chạy validation hoặc test
+4. AI gọi `help("tool.action")` nếu chưa rõ cách dùng tool
+5. AI dùng `code` tools cho code discovery và editing (không dùng Read/Grep/Edit)
+6. AI implement
+7. AI chạy validation hoặc test
 
 ## Xem thêm
 

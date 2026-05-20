@@ -12,7 +12,6 @@ import {
 	ArrowRightLeft,
 	Network,
 	Brain,
-	Code2,
 	Activity,
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
@@ -76,12 +75,6 @@ const topNavItems = [
 		label: "Graph",
 		icon: Network,
 		to: "/graph",
-	},
-	{
-		id: "code-graph",
-		label: "Code Graph",
-		icon: Code2,
-		to: "/graph/code",
 	},
 	{
 		id: "memory",

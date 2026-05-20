@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
-	"strconv"
 	"strings"
 )
 
@@ -272,7 +271,13 @@ func hookCommandPath(spec runtimeSpec, opts Options) string {
 }
 
 func hookCommandArgs(spec runtimeSpec, opts Options) []string {
-	return []string{opts.ExecutablePath, "runtime-memory", "hook", "--runtime", spec.Runtime, "--event", sessionStartEvent(spec.Runtime)}
+	exe := opts.ExecutablePath
+	if opts.LookPath != nil {
+		if _, err := opts.LookPath("knowns"); err == nil {
+			exe = "knowns"
+		}
+	}
+	return []string{exe, "runtime-memory", "hook", "--runtime", spec.Runtime, "--event", sessionStartEvent(spec.Runtime)}
 }
 
 func legacyPromptCommandPath(spec runtimeSpec, opts Options) string {
@@ -280,14 +285,14 @@ func legacyPromptCommandPath(spec runtimeSpec, opts Options) string {
 }
 
 func shellCommandString(args []string, goos string) string {
-	quoted := make([]string, 0, len(args))
+	parts := make([]string, 0, len(args))
 	for i, arg := range args {
 		if i == 0 {
 			arg = shellExecutablePath(arg, goos)
 		}
-		quoted = append(quoted, strconv.Quote(arg))
+		parts = append(parts, arg)
 	}
-	return strings.Join(quoted, " ")
+	return strings.Join(parts, " ")
 }
 
 func shellExecutablePath(path, goos string) string {
@@ -337,6 +342,8 @@ func installClaude(spec runtimeSpec, opts Options) error {
 	} else {
 		hooks["UserPromptSubmit"] = legacy
 	}
+	// Remove all stale/broken Knowns hook variants before writing the current one.
+	hooks["SessionStart"] = removeManagedHookGroups(hooks["SessionStart"], managedStatus)
 	hooks["SessionStart"] = ensureCommandHookGroup(hooks["SessionStart"], hookCommandPath(spec, opts), managedStatus)
 	config["hooks"] = hooks
 	return writeJSONMap(path, config)
@@ -414,6 +421,7 @@ func installCodex(spec runtimeSpec, opts Options) error {
 	} else {
 		hookRoot["UserPromptSubmit"] = legacy
 	}
+	hookRoot["SessionStart"] = removeManagedHookGroups(hookRoot["SessionStart"], managedStatus)
 	hookRoot["SessionStart"] = ensureCommandHookGroup(hookRoot["SessionStart"], hookCommandPath(spec, opts), managedStatus)
 	hooks["hooks"] = hookRoot
 	return writeJSONMap(hooksPath, hooks)
@@ -751,6 +759,39 @@ func removeCommandHookGroup(existing any, commandPath string) []any {
 		return nil
 	}
 	return filtered
+}
+
+// removeManagedHookGroups removes all hook groups whose statusMessage matches,
+// regardless of the command path. This cleans up stale hooks from older installs
+// that used different executable paths (e.g. temp test binaries, absolute paths).
+func removeManagedHookGroups(existing any, statusMessage string) []any {
+	groups, _ := existing.([]any)
+	if len(groups) == 0 {
+		return nil
+	}
+	filtered := make([]any, 0, len(groups))
+	for _, raw := range groups {
+		group, _ := raw.(map[string]any)
+		if hookGroupHasStatus(group, statusMessage) {
+			continue
+		}
+		filtered = append(filtered, raw)
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	return filtered
+}
+
+func hookGroupHasStatus(group map[string]any, statusMessage string) bool {
+	hooks, _ := group["hooks"].([]any)
+	for _, raw := range hooks {
+		hook, _ := raw.(map[string]any)
+		if strings.TrimSpace(stringValue(hook["statusMessage"])) == statusMessage {
+			return true
+		}
+	}
+	return false
 }
 
 func commandHookGroupMatches(group map[string]any, commandPath string) bool {

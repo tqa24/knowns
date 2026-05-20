@@ -46,9 +46,6 @@ func (s *Store) collectAllEdges() edgeIndex {
 	// 2. Inline ref edges.
 	all = append(all, s.collectInlineRefEdges()...)
 
-	// 3. Code-graph edges (lowest priority).
-	all = append(all, s.collectCodeGraphEdges()...)
-
 	// Deduplicate: keep highest-priority origin per (source, target, relation).
 	deduped := deduplicateRawEdges(all)
 
@@ -258,76 +255,7 @@ func (s *Store) refToEdge(srcKind, srcID, srcTitle string, ref models.SemanticRe
 	}
 }
 
-// collectCodeGraphEdges extracts edges from the code_edges table.
-func (s *Store) collectCodeGraphEdges() []rawEdge {
-	db := s.SemanticDB()
-	if db == nil {
-		return nil
-	}
-	defer db.Close()
 
-	rows, err := db.Query(`SELECT from_id, to_id, edge_type, from_path, to_path FROM code_edges`)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
-
-	var edges []rawEdge
-	for rows.Next() {
-		var fromID, toID, edgeType, fromPath, toPath string
-		if err := rows.Scan(&fromID, &toID, &edgeType, &fromPath, &toPath); err != nil {
-			continue
-		}
-
-		// Map code edge type to relation kind.
-		relation := mapCodeEdgeType(edgeType)
-
-		// Extract symbol names for titles.
-		fromName := extractSymbolFromChunkID(fromID)
-		toName := extractSymbolFromChunkID(toID)
-
-		edges = append(edges, rawEdge{
-			sourceKind:  "code",
-			sourceID:    fromID,
-			sourceTitle: fromName,
-			sourceKey:   "code:" + fromID,
-			targetKind:  "code",
-			targetID:    toID,
-			targetTitle: toName,
-			targetKey:   "code:" + toID,
-			relation:    relation,
-			origin:      models.OriginCodeGraph,
-			resolved:    true, // code edges are always "resolved" if they exist in the table
-		})
-	}
-
-	return edges
-}
-
-// mapCodeEdgeType maps code_edges edge_type to the structural relation kind.
-func mapCodeEdgeType(edgeType string) string {
-	switch edgeType {
-	case "imports":
-		return "imported-from"
-	case "calls", "contains", "has_method", "instantiates", "implements", "extends":
-		return edgeType
-	default:
-		return "references"
-	}
-}
-
-// extractSymbolFromChunkID extracts a human-readable symbol name from a code chunk ID.
-// Format: "code::<filepath>::<symbol>"
-func extractSymbolFromChunkID(chunkID string) string {
-	parts := strings.SplitN(chunkID, "::", 3)
-	if len(parts) == 3 {
-		if parts[2] == "__file__" {
-			return parts[1]
-		}
-		return parts[2]
-	}
-	return chunkID
-}
 
 // deduplicateRawEdges keeps the highest-priority origin per (source, target, relation).
 func deduplicateRawEdges(edges []rawEdge) []rawEdge {

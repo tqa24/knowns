@@ -16,10 +16,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/howznguyen/knowns/internal/lsp"
+	"github.com/howznguyen/knowns/internal/lsp/adapters"
 	"github.com/howznguyen/knowns/internal/mcp/handlers"
 	"github.com/howznguyen/knowns/internal/permissions"
 	"github.com/howznguyen/knowns/internal/runtimequeue"
 	"github.com/howznguyen/knowns/internal/storage"
+	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
 
@@ -189,10 +192,36 @@ func mcpLogMaxBackups() int {
 // MCPServer wraps the mcp-go server and holds a reference to the active Store.
 // The store is nil until set_project is called.
 type MCPServer struct {
-	srv   *server.MCPServer
-	mu    sync.RWMutex
-	store *storage.Store
-	root  string
+	srv          *server.MCPServer
+	mu           sync.RWMutex
+	store        *storage.Store
+	root         string
+	lspManager   *lsp.Manager
+	helpRegistry map[string]handlers.HelpEntry
+}
+
+func (s *MCPServer) AddTool(tool mcp.Tool, handler server.ToolHandlerFunc) {
+	s.srv.AddTool(tool, handler)
+}
+
+// RegisterHelp adds an in-memory help entry for a tool action key.
+func (s *MCPServer) RegisterHelp(key string, entry handlers.HelpEntry) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.helpRegistry == nil {
+		s.helpRegistry = map[string]handlers.HelpEntry{}
+	}
+	s.helpRegistry[key] = entry
+}
+
+func (s *MCPServer) getHelpRegistry() map[string]handlers.HelpEntry {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	entries := make(map[string]handlers.HelpEntry, len(s.helpRegistry))
+	for key, entry := range s.helpRegistry {
+		entries[key] = entry
+	}
+	return entries
 }
 
 // NewMCPServer creates and configures a new MCPServer with all registered tools.
@@ -203,7 +232,7 @@ type MCPServer struct {
 // If a project is found, it is automatically set so callers don't need to call
 // set_project first. set_project can still be used to switch projects at runtime.
 func NewMCPServer(projectHint string) *MCPServer {
-	s := &MCPServer{}
+	s := &MCPServer{helpRegistry: map[string]handlers.HelpEntry{}}
 
 	getStore := func() *storage.Store {
 		s.mu.RLock()
@@ -216,12 +245,28 @@ func NewMCPServer(projectHint string) *MCPServer {
 		defer s.mu.Unlock()
 		s.store = store
 		s.root = root
+		s.lspManager = nil
+		if store != nil {
+			if cfg, err := store.Config.Load(); err == nil {
+				manager := lsp.NewManager(store.Root, lsp.ConfigFromProject(cfg))
+				for _, adapter := range adapters.All() {
+					manager.RegisterAdapter(adapter)
+				}
+				s.lspManager = manager
+			}
+		}
 	}
 
 	getRoot := func() string {
 		s.mu.RLock()
 		defer s.mu.RUnlock()
 		return s.root
+	}
+
+	getLSPManager := func() *lsp.Manager {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		return s.lspManager
 	}
 
 	// Create global audit store at ~/.knowns/audit.jsonl.
@@ -246,19 +291,72 @@ func NewMCPServer(projectHint string) *MCPServer {
 		server.WithToolCapabilities(false),
 		server.WithRecovery(),
 		server.WithToolHandlerMiddleware(permissions.NewGuardMiddleware(permConfigLoader)),
-		server.WithHooks(newAuditHooks(auditStore, getRoot)),
+		server.WithHooks(newLifecycleHooks(auditStore, getRoot, getLSPManager)),
+		server.WithInstructions("CRITICAL: Call the `initial` tool at the start of every session before performing any work to receive operating instructions."),
 	)
 
+	// Register initial instructions tool (should be called first by agents).
+	handlers.RegisterInitialTool(s.srv, getStore, getLSPManager)
+	handlers.RegisterHelpTool(s.srv, s.getHelpRegistry)
+	s.RegisterHelp("help.query", handlers.HelpEntry{
+		When: "Use when you need detailed guidance for a tool action, a tool prefix, or a keyword.",
+		Params: map[string]string{
+			"queries": "Array of exact keys (code.find), prefix wildcards (code.*), or keywords (insert).",
+		},
+		Examples: []string{`{"queries":["code.find","code.*","insert"]}`},
+	})
+
 	// Register all tool groups.
-	handlers.RegisterProjectTool(s.srv, getStore, setStore, getRoot)
-	handlers.RegisterTaskTool(s.srv, getStore)
+	handlers.RegisterProjectTool(s, getStore, setStore, getRoot)
+	handlers.RegisterTaskTool(s, getStore)
 	handlers.RegisterDocTool(s.srv, getStore)
-	handlers.RegisterTimeTool(s.srv, getStore)
-	handlers.RegisterSearchTool(s.srv, getStore)
-	handlers.RegisterCodeTool(s.srv, getStore)
+	handlers.RegisterTimeTool(s, getStore)
+	handlers.RegisterSearchTool(s, getStore)
+	handlers.RegisterCodeTool(s.srv, getStore, getLSPManager)
+	s.RegisterHelp("code.find", handlers.HelpEntry{
+		When: "Search symbols by name pattern using LSP documentSymbol.",
+		Params: map[string]string{
+			"query":        "Required symbol name or partial pattern.",
+			"path":         "Optional file or directory path to limit search.",
+			"include_body": "Optional boolean; include source for matched symbols.",
+			"depth":        "Optional number; include children to this depth.",
+			"limit":        "Optional number; maximum results, default 20.",
+		},
+		Why:      "Use before reading code bodies or editing symbols.",
+		Examples: []string{`{"action":"find","query":"NewMCPServer","include_body":true}`},
+	})
+	s.RegisterHelp("code.insert", handlers.HelpEntry{
+		When: "Insert source before or after a symbol anchor using LSP documentSymbol.",
+		Params: map[string]string{
+			"path":     "Required file path.",
+			"anchor":   "Required symbol name; nested names use dots like Type.Method.",
+			"position": "Required insertion position: before or after.",
+			"body":     "Required source code to insert.",
+		},
+		Examples: []string{`{"action":"insert","path":"internal/mcp/server.go","anchor":"NewMCPServer","position":"after","body":"func helper() {}"}`},
+	})
+	s.RegisterHelp("code.delete", handlers.HelpEntry{
+		When: "Safely delete a symbol after checking LSP references.",
+		Params: map[string]string{
+			"path":   "Required file path.",
+			"symbol": "Required symbol name; nested names use dots like Type.Method.",
+			"force":  "Optional boolean; skip reference checks.",
+		},
+		Why:      "Prevents deleting symbols still used elsewhere.",
+		Examples: []string{`{"action":"delete","path":"internal/mcp/server.go","symbol":"NewMCPServer"}`},
+	})
+	s.RegisterHelp("code.replace_symbol", handlers.HelpEntry{
+		When: "Replace an entire symbol body by name using LSP documentSymbol range.",
+		Params: map[string]string{
+			"path":   "Required file path.",
+			"symbol": "Required symbol name; nested names use dots like Type.Method.",
+			"body":   "Required replacement source code.",
+		},
+		Examples: []string{`{"action":"replace_symbol","path":"internal/mcp/server.go","symbol":"NewMCPServer","body":"func NewMCPServer(projectHint string) *MCPServer { ... }"}`},
+	})
 	// Board view is now part of RegisterTaskTool (action: board).
-	handlers.RegisterTemplateTool(s.srv, getStore)
-	handlers.RegisterValidateTools(s.srv, getStore)
+	handlers.RegisterTemplateTool(s, getStore)
+	handlers.RegisterValidateTools(s, getStore)
 	handlers.RegisterMemoryTool(s.srv, getStore)
 
 	// Auto-detect project from hint or cwd.

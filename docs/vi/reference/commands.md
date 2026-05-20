@@ -95,15 +95,31 @@ knowns template create <name>
 
 ## Code intelligence
 
+### Quản lý LSP
+
 ```bash
-knowns code ingest
-knowns code search "oauth login" --neighbors 5
-knowns code deps --type calls
-knowns code symbols --kind function
-knowns code graph
+knowns lsp list                    # Hiển thị ngôn ngữ được hỗ trợ và trạng thái
+knowns lsp install <language>      # Tải và cài đặt LSP server
+knowns lsp cleanup                 # Xóa các phiên bản LSP server cũ
 ```
 
-Dùng code commands khi cần AST-based search và graph traversal, không chỉ text matching.
+Knowns tự động phát hiện ngôn ngữ trong project và kiểm tra LSP binaries. Nếu thiếu binary, `knowns lsp list` sẽ hiển thị hướng dẫn cài đặt.
+
+### Code operations (qua MCP)
+
+Code intelligence dựa trên LSP và được truy cập qua MCP `code` tool:
+
+- `symbols` — liệt kê symbols trong file
+- `find` — tìm symbols theo name pattern, có thể kèm body/depth
+- `definition` — đi tới definition
+- `references` — tìm tất cả references
+- `implementations` — tìm implementations của interface
+- `diagnostics` — lấy compile errors/warnings
+- `rename` — đổi tên symbol trong toàn workspace
+- `replace` — thay text bằng regex/literal
+- `replace_body` — thay toàn bộ body của symbol
+- `insert` — chèn code trước/sau một symbol
+- `delete` — xóa an toàn với kiểm tra references
 
 ## Validation
 
