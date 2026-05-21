@@ -27,14 +27,3 @@ ui/playwright-report/
 ui/test-results/
 playwright-report/
 test-results/
-
-# >>> KNOWNS >>>
-# Managed by Knowns CLI — do not edit manually.
-# Run 'knowns init' to regenerate this block.
-.knowns/*
-!.knowns/config.json
-!.knowns/docs/
-!.knowns/docs/**
-!.knowns/templates/
-!.knowns/templates/**
-# <<< KNOWNS <<<

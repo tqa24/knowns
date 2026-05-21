@@ -149,7 +149,9 @@ CREATE TABLE IF NOT EXISTS chunks (
 	    memory_store    TEXT,
 
 	    name            TEXT,
-	    signature       TEXT
+	    signature       TEXT,
+	    visibility      TEXT,
+	    detail          TEXT
 );
 
 CREATE TABLE IF NOT EXISTS content_hashes (
@@ -157,29 +159,9 @@ CREATE TABLE IF NOT EXISTS content_hashes (
     hash      TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS code_edges (
-    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
-    from_id               TEXT NOT NULL,
-    to_id                 TEXT NOT NULL,
-    edge_type             TEXT NOT NULL,
-    from_path             TEXT NOT NULL,
-    to_path               TEXT NOT NULL,
-    raw_target            TEXT NOT NULL DEFAULT '',
-    target_name           TEXT NOT NULL DEFAULT '',
-    target_qualifier      TEXT NOT NULL DEFAULT '',
-    target_module_hint    TEXT NOT NULL DEFAULT '',
-    receiver_type_hint    TEXT NOT NULL DEFAULT '',
-    resolution_status     TEXT NOT NULL DEFAULT '',
-    resolution_confidence TEXT NOT NULL DEFAULT '',
-    resolved_to           TEXT NOT NULL DEFAULT ''
-);
-
 CREATE INDEX IF NOT EXISTS idx_chunks_type ON chunks(type);
 CREATE INDEX IF NOT EXISTS idx_chunks_doc_path ON chunks(doc_path);
 CREATE INDEX IF NOT EXISTS idx_chunks_task_id ON chunks(task_id);
-CREATE INDEX IF NOT EXISTS idx_code_edges_from ON code_edges(from_id);
-CREATE INDEX IF NOT EXISTS idx_code_edges_to ON code_edges(to_id);
-
 CREATE TABLE IF NOT EXISTS code_file_hashes (
     file_path    TEXT PRIMARY KEY,
     file_hash    TEXT NOT NULL,
@@ -191,8 +173,12 @@ CREATE TABLE IF NOT EXISTS code_file_hashes (
 		return err
 	}
 
+	if _, err := s.db.Exec(`DROP TABLE IF EXISTS code_symbols; DROP TABLE IF EXISTS code_edges;`); err != nil {
+		return err
+	}
+
 	// Auto-migrate: add name and signature columns if missing.
-	for _, col := range []string{"name", "signature"} {
+	for _, col := range []string{"name", "signature", "visibility", "detail"} {
 		var hasCol int
 		row := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('chunks') WHERE name=?`, col)
 		if err := row.Scan(&hasCol); err == nil && hasCol == 0 {
@@ -200,26 +186,6 @@ CREATE TABLE IF NOT EXISTS code_file_hashes (
 		}
 	}
 
-	// Auto-migrate: add code_edges metadata columns if missing.
-	for _, col := range []struct {
-		name string
-		ddl  string
-	}{
-		{name: "raw_target", ddl: `ALTER TABLE code_edges ADD COLUMN raw_target TEXT NOT NULL DEFAULT ''`},
-		{name: "target_name", ddl: `ALTER TABLE code_edges ADD COLUMN target_name TEXT NOT NULL DEFAULT ''`},
-		{name: "target_qualifier", ddl: `ALTER TABLE code_edges ADD COLUMN target_qualifier TEXT NOT NULL DEFAULT ''`},
-		{name: "target_module_hint", ddl: `ALTER TABLE code_edges ADD COLUMN target_module_hint TEXT NOT NULL DEFAULT ''`},
-		{name: "receiver_type_hint", ddl: `ALTER TABLE code_edges ADD COLUMN receiver_type_hint TEXT NOT NULL DEFAULT ''`},
-		{name: "resolution_status", ddl: `ALTER TABLE code_edges ADD COLUMN resolution_status TEXT NOT NULL DEFAULT ''`},
-		{name: "resolution_confidence", ddl: `ALTER TABLE code_edges ADD COLUMN resolution_confidence TEXT NOT NULL DEFAULT ''`},
-		{name: "resolved_to", ddl: `ALTER TABLE code_edges ADD COLUMN resolved_to TEXT NOT NULL DEFAULT ''`},
-	} {
-		var hasCol int
-		row := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('code_edges') WHERE name=?`, col.name)
-		if err := row.Scan(&hasCol); err == nil && hasCol == 0 {
-			s.db.Exec(col.ddl)
-		}
-	}
 
 	return nil
 }
@@ -230,7 +196,7 @@ func (s *SQLiteVectorStore) loadIntoMemory() error {
 		       doc_path, section, heading_level, header_path, position,
 		       task_id, field, status, priority, labels,
 		       COALESCE(memory_layer, ''), COALESCE(memory_store, ''),
-		       COALESCE(name, ''), COALESCE(signature, '')
+		       COALESCE(name, ''), COALESCE(signature, ''), COALESCE(visibility, ''), COALESCE(detail, '')
 		FROM chunks
 	`)
 	if err != nil {
@@ -249,14 +215,14 @@ func (s *SQLiteVectorStore) loadIntoMemory() error {
 		var headingLevel, position sql.NullInt64
 		var taskID, field, status, priority, labels sql.NullString
 		var memoryLayer, memoryStore string
-		var name, signature string
+		var name, signature, visibility, detail string
 
 		if err := rows.Scan(
 			&entry.ID, &entry.Type, &content, &entry.TokenCount, &embBlob,
 			&docPath, &section, &headingLevel, &parentSection, &position,
 			&taskID, &field, &status, &priority, &labels,
 			&memoryLayer, &memoryStore,
-			&name, &signature,
+			&name, &signature, &visibility, &detail,
 		); err != nil {
 			return err
 		}
@@ -275,6 +241,8 @@ func (s *SQLiteVectorStore) loadIntoMemory() error {
 		entry.Content = content.String
 		entry.Name = name
 		entry.Signature = signature
+		entry.Visibility = visibility
+		entry.Detail = detail
 
 		if labels.Valid && labels.String != "" {
 			_ = json.Unmarshal([]byte(labels.String), &entry.Labels)
@@ -321,8 +289,8 @@ func (s *SQLiteVectorStore) Save() error {
 		    doc_path, section, heading_level, header_path, position,
 		    task_id, field, status, priority, labels,
 		    memory_layer, memory_store,
-		    name, signature)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		    name, signature, visibility, detail)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
 		return err
@@ -357,7 +325,7 @@ func (s *SQLiteVectorStore) Save() error {
 			nullStr(entry.Status), nullStr(entry.Priority),
 			labelsJSON,
 			nullStr(entry.MemoryLayer), nullStr(entry.MemoryStore),
-			nullStr(entry.Name), nullStr(entry.Signature),
+			nullStr(entry.Name), nullStr(entry.Signature), nullStr(entry.Visibility), nullStr(entry.Detail),
 		); err != nil {
 			return err
 		}
@@ -412,7 +380,9 @@ func (s *SQLiteVectorStore) AddChunks(chunks []Chunk) {
 
 	for _, c := range chunks {
 		if len(c.Embedding) != s.dimensions {
-			continue
+			if c.Type != ChunkTypeCode || len(c.Embedding) != 0 {
+				continue
+			}
 		}
 		// Skip duplicates (idempotent re-indexing).
 		if existing[c.ID] {
@@ -441,6 +411,8 @@ func (s *SQLiteVectorStore) AddChunks(chunks []Chunk) {
 			MemoryStore:  c.MemoryStore,
 			Name:         c.Name,
 			Signature:    c.Signature,
+			Visibility:   c.Visibility,
+			Detail:       c.Detail,
 			Content:      c.Content,
 		})
 	}
@@ -461,6 +433,9 @@ func (s *SQLiteVectorStore) RemoveByPrefix(prefix string) {
 		start := entry.Offset
 		end := start + s.dimensions
 		if end > len(s.vecs) {
+			if entry.Type == ChunkTypeCode {
+				newIndex = append(newIndex, entry)
+			}
 			continue
 		}
 
@@ -497,6 +472,9 @@ func (s *SQLiteVectorStore) RemoveByIDs(ids []string) {
 		start := entry.Offset
 		end := start + s.dimensions
 		if end > len(s.vecs) {
+			if entry.Type == ChunkTypeCode {
+				newIndex = append(newIndex, entry)
+			}
 			continue
 		}
 
@@ -765,7 +743,9 @@ CREATE TABLE IF NOT EXISTS chunks (
     token_count INTEGER DEFAULT 0, embedding BLOB,
     doc_path TEXT, section TEXT, heading_level INTEGER,
     header_path TEXT, position INTEGER,
-    task_id TEXT, field TEXT, status TEXT, priority TEXT, labels TEXT
+    task_id TEXT, field TEXT, status TEXT, priority TEXT, labels TEXT,
+	    memory_layer TEXT, memory_store TEXT,
+	    name TEXT, signature TEXT, visibility TEXT, detail TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_chunks_type ON chunks(type);
 CREATE INDEX IF NOT EXISTS idx_chunks_doc_path ON chunks(doc_path);
@@ -783,8 +763,9 @@ CREATE INDEX IF NOT EXISTS idx_chunks_task_id ON chunks(task_id);
 	stmt, err := tx.Prepare(`
 		INSERT INTO chunks (id, type, content, token_count, embedding,
 		    doc_path, section, heading_level, header_path, position,
-		    task_id, field, status, priority, labels)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		    task_id, field, status, priority, labels,
+			    memory_layer, memory_store, name, signature, visibility, detail)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
 		tx.Rollback()
@@ -819,6 +800,8 @@ CREATE INDEX IF NOT EXISTS idx_chunks_task_id ON chunks(task_id);
 			nullStr(entry.TaskID), nullStr(entry.Field),
 			nullStr(entry.Status), nullStr(entry.Priority),
 			labelsJSON,
+			nullStr(entry.MemoryLayer), nullStr(entry.MemoryStore),
+			nullStr(entry.Name), nullStr(entry.Signature), nullStr(entry.Visibility), nullStr(entry.Detail),
 		)
 	}
 	old.mu.RUnlock()

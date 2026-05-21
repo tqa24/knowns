@@ -2,10 +2,8 @@ package search
 
 import (
 	"errors"
-	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -189,216 +187,25 @@ func memoryIndexTarget(store *storage.Store, memoryID string) (*storage.Store, s
 	return store, store.Root
 }
 
-// BestEffortIndexAll runs a full code index of all files in projectRoot.
+// BestEffortIndexAll reindexes docs, tasks, and memories.
 // Safe to call from a goroutine; errors are logged, not returned.
 // No-op if semantic search is not configured.
 func BestEffortIndexAll(store *storage.Store, projectRoot string) {
-	if enqueueRuntimeJob(store, runtimequeue.JobIndexAll, projectRoot, func() {
-		scheduleBestEffortCode(store, "index-all-files", projectRoot, func(embedder EmbedderProvider, vecStore VectorStore) error {
-			syms, edges, err := IndexAllFiles(projectRoot, false)
-			if err != nil {
-				return err
-			}
-			if len(syms) == 0 {
-				return nil
-			}
-
-			vecStore.RemoveByPrefix("code::")
-
-			var chunks []Chunk
-			for _, sym := range syms {
-				chunk := sym.ToChunk()
-				vec, embedErr := embedder.EmbedDocument(chunk.Content)
-				if embedErr != nil {
-					continue
-				}
-				chunk.Embedding = vec
-				chunks = append(chunks, chunk)
-			}
-			vecStore.AddChunks(chunks)
-			if err := vecStore.Save(); err != nil {
-				return err
-			}
-
-			if len(edges) == 0 {
-				return nil
-			}
-			db := store.SemanticDBWritable()
-			if db == nil {
-				return nil
-			}
-			defer db.Close()
-
-			resolvedEdges := ResolveCodeEdges(syms, edges)
-			_ = SaveCodeEdges(db, resolvedEdges)
-			return nil
+	_ = enqueueRuntimeJob(store, runtimequeue.JobReindex, projectRoot, func() {
+		scheduleBestEffort(store, "reindex", "all", func(svc *IndexService) error {
+			return svc.Reindex(nil)
 		})
-	}) {
-		return
-	}
-	scheduleBestEffortCode(store, "index-all-files", projectRoot, func(embedder EmbedderProvider, vecStore VectorStore) error {
-		syms, edges, err := IndexAllFiles(projectRoot, false)
-		if err != nil {
-			return err
-		}
-		if len(syms) == 0 {
-			return nil
-		}
-
-		vecStore.RemoveByPrefix("code::")
-
-		var chunks []Chunk
-		for _, sym := range syms {
-			chunk := sym.ToChunk()
-			vec, embedErr := embedder.EmbedDocument(chunk.Content)
-			if embedErr != nil {
-				continue
-			}
-			chunk.Embedding = vec
-			chunks = append(chunks, chunk)
-		}
-		vecStore.AddChunks(chunks)
-		if err := vecStore.Save(); err != nil {
-			return err
-		}
-
-		if len(edges) == 0 {
-			return nil
-		}
-		db := store.SemanticDBWritable()
-		if db == nil {
-			return nil
-		}
-		defer db.Close()
-
-		resolvedEdges := ResolveCodeEdges(syms, edges)
-		_ = SaveCodeEdges(db, resolvedEdges)
-		return nil
 	})
 }
 
-// BestEffortIndexFile parses and indexes a single code file.
+// BestEffortIndexFile is a no-op because code indexing has been removed.
 func BestEffortIndexFile(store *storage.Store, docPath, absPath string) {
-	if enqueueRuntimeJob(store, runtimequeue.JobIndexFile, docPath, func() {
-		scheduleBestEffortCode(store, "index-file", docPath, func(embedder EmbedderProvider, vecStore VectorStore) error {
-			projectRoot := filepath.Dir(store.Root)
-			syms, _, err := IndexFile(docPath, absPath)
-			if err != nil || len(syms) == 0 {
-				return err
-			}
-			prefix := fmt.Sprintf("code::%s::", docPath)
-			vecStore.RemoveByPrefix(prefix)
-			var chunks []Chunk
-			for _, sym := range syms {
-				chunk := sym.ToChunk()
-				vec, err := embedder.EmbedDocument(chunk.Content)
-				if err != nil {
-					continue
-				}
-				chunk.Embedding = vec
-				chunks = append(chunks, chunk)
-			}
-			vecStore.AddChunks(chunks)
-			if err := vecStore.Save(); err != nil {
-				return err
-			}
-
-			allSyms, allEdges, err := IndexAllFiles(projectRoot, false)
-			if err != nil || len(allSyms) == 0 {
-				return err
-			}
-			db := store.SemanticDBWritable()
-			if db == nil {
-				return nil
-			}
-			defer db.Close()
-			return SaveCodeEdges(db, ResolveCodeEdges(allSyms, allEdges))
-		})
-	}) {
-		return
-	}
-	scheduleBestEffortCode(store, "index-file", docPath, func(embedder EmbedderProvider, vecStore VectorStore) error {
-		projectRoot := filepath.Dir(store.Root)
-		syms, _, err := IndexFile(docPath, absPath)
-		if err != nil || len(syms) == 0 {
-			return err
-		}
-		// Remove old chunks for this file
-		prefix := fmt.Sprintf("code::%s::", docPath)
-		vecStore.RemoveByPrefix(prefix)
-		// Convert and embed
-		var chunks []Chunk
-		for _, sym := range syms {
-			chunk := sym.ToChunk()
-			vec, err := embedder.EmbedDocument(chunk.Content)
-			if err != nil {
-				continue
-			}
-			chunk.Embedding = vec
-			chunks = append(chunks, chunk)
-		}
-		vecStore.AddChunks(chunks)
-		if err := vecStore.Save(); err != nil {
-			return err
-		}
-
-		allSyms, allEdges, err := IndexAllFiles(projectRoot, false)
-		if err != nil || len(allSyms) == 0 {
-			return err
-		}
-		db := store.SemanticDBWritable()
-		if db == nil {
-			return nil
-		}
-		defer db.Close()
-		return SaveCodeEdges(db, ResolveCodeEdges(allSyms, allEdges))
-	})
+	// Code files are not indexed in background sync. Real-time code intelligence uses LSP.
 }
 
 // BestEffortRemoveFile removes all code chunks for a file from the vector store.
 func BestEffortRemoveFile(store *storage.Store, docPath string) {
-	if enqueueRuntimeJob(store, runtimequeue.JobRemoveFile, docPath, func() {
-		scheduleBestEffortCode(store, "remove-file", docPath, func(embedder EmbedderProvider, vecStore VectorStore) error {
-			projectRoot := filepath.Dir(store.Root)
-			prefix := fmt.Sprintf("code::%s::", docPath)
-			vecStore.RemoveByPrefix(prefix)
-			if err := vecStore.Save(); err != nil {
-				return err
-			}
-
-			allSyms, allEdges, err := IndexAllFiles(projectRoot, false)
-			if err != nil {
-				return err
-			}
-			db := store.SemanticDBWritable()
-			if db == nil {
-				return nil
-			}
-			defer db.Close()
-			return SaveCodeEdges(db, ResolveCodeEdges(allSyms, allEdges))
-		})
-	}) {
-		return
-	}
-	scheduleBestEffortCode(store, "remove-file", docPath, func(embedder EmbedderProvider, vecStore VectorStore) error {
-		projectRoot := filepath.Dir(store.Root)
-		prefix := fmt.Sprintf("code::%s::", docPath)
-		vecStore.RemoveByPrefix(prefix)
-		if err := vecStore.Save(); err != nil {
-			return err
-		}
-
-		allSyms, allEdges, err := IndexAllFiles(projectRoot, false)
-		if err != nil {
-			return err
-		}
-		db := store.SemanticDBWritable()
-		if db == nil {
-			return nil
-		}
-		defer db.Close()
-		return SaveCodeEdges(db, ResolveCodeEdges(allSyms, allEdges))
-	})
+	// Code files are not indexed in background sync. Real-time code intelligence uses LSP.
 }
 
 func enqueueRuntimeJob(store *storage.Store, kind runtimequeue.JobKind, target string, fallback func()) bool {
@@ -424,33 +231,6 @@ func scheduleBestEffort(store *storage.Store, action, target string, fn func(*In
 	backgroundIndexer.SubmitAfter(indexJobKey{root: store.Root, action: action, target: target}, entityIndexDebounce(action), func() {
 		runBestEffort(store, action+" "+target, fn)
 	})
-}
-
-func scheduleBestEffortCode(store *storage.Store, action, target string, fn func(EmbedderProvider, VectorStore) error) {
-	if store == nil {
-		return
-	}
-	backgroundIndexer.SubmitAfter(indexJobKey{root: store.Root, action: action, target: target}, codeIndexDebounce(action), func() {
-		runBestEffortCode(store, action+" "+target, fn)
-	})
-}
-
-func runBestEffortCode(store *storage.Store, action string, fn func(EmbedderProvider, VectorStore) error) {
-	if store == nil {
-		return
-	}
-	embedder, vecStore, err := InitSemantic(store)
-	if err != nil {
-		if !errors.Is(err, ErrSemanticNotConfigured) {
-			log.Printf("[search] could not %s: %v", action, err)
-		}
-		return
-	}
-	defer embedder.Close()
-	defer vecStore.Close()
-	if err := fn(embedder, vecStore); err != nil {
-		log.Printf("[search] could not %s: %v", action, err)
-	}
 }
 
 func runBestEffort(store *storage.Store, action string, fn func(*IndexService) error) {

@@ -33,6 +33,7 @@ import (
 	serverreadiness "github.com/howznguyen/knowns/internal/readiness"
 	"github.com/howznguyen/knowns/internal/registry"
 	"github.com/howznguyen/knowns/internal/runtimememory"
+	"github.com/howznguyen/knowns/internal/runtimequeue"
 	"github.com/howznguyen/knowns/internal/server/routes"
 	"github.com/howznguyen/knowns/internal/storage"
 	ui "github.com/howznguyen/knowns/ui"
@@ -679,6 +680,50 @@ func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+type runtimeProjectSnapshot struct {
+	Root    string                   `json:"root"`
+	Running []runtimequeue.Job       `json:"running"`
+	Queued  []runtimequeue.Job       `json:"queued"`
+	Recent  []runtimequeue.JobResult `json:"recent"`
+}
+
+func collectRuntimeProjectJobs(status *runtimequeue.Status) []runtimeProjectSnapshot {
+	out := make([]runtimeProjectSnapshot, 0, len(status.Project))
+	for _, p := range status.Project {
+		queue, err := runtimequeue.LoadQueue(p.ProjectRoot)
+		if err != nil {
+			continue
+		}
+		snap := runtimeProjectSnapshot{Root: p.ProjectRoot}
+		for _, job := range queue.Jobs {
+			if job == nil {
+				continue
+			}
+			if job.StartedAt != nil {
+				snap.Running = append(snap.Running, *job)
+			} else {
+				snap.Queued = append(snap.Queued, *job)
+			}
+		}
+		snap.Recent = queue.Recent
+		out = append(out, snap)
+	}
+	return out
+}
+
+func (s *Server) handleRuntimePs(w http.ResponseWriter, r *http.Request) {
+	status, err := runtimequeue.LoadStatus()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":   status,
+		"projects": collectRuntimeProjectJobs(status),
+	})
+}
+
 // savePortToConfig persists the server port into config.json so the browser
 // and other tools can discover the running server.
 func (s *Server) savePortToConfig() error {
@@ -727,6 +772,7 @@ func (s *Server) buildRouter() chi.Router {
 
 	// --- Status endpoint (project active/inactive) ---
 	r.Get("/api/status", s.handleStatus)
+	r.Get("/api/runtime/ps", s.handleRuntimePs)
 
 	// --- API routes ---
 	r.Route("/api", func(r chi.Router) {

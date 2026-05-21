@@ -192,15 +192,31 @@ Use templates for repeatable scaffolding and standardized output.
 
 ## Code intelligence
 
+### LSP management
+
 ```bash
-knowns code ingest
-knowns code search "oauth login" --neighbors 5
-knowns code deps --type calls
-knowns code symbols --kind function
-knowns code graph
+knowns lsp list                    # Show supported languages and their status
+knowns lsp install <language>      # Download and install an LSP server
+knowns lsp cleanup                 # Remove old LSP server versions
 ```
 
-Use code commands when you need AST-based search and graph-style traversal, not just text matching.
+Knowns auto-detects project languages and checks for LSP binaries. If a binary is missing, `knowns lsp list` shows install guidance.
+
+### Code operations (via MCP)
+
+Code intelligence is LSP-based and accessed through the MCP `code` tool:
+
+- `symbols` — list symbols in a file
+- `find` — search symbols by name pattern with optional body/depth
+- `definition` — go to definition
+- `references` — find all references
+- `implementations` — find implementations of interface
+- `diagnostics` — get compile errors/warnings
+- `rename` — rename symbol across workspace
+- `replace` — regex/literal text replacement
+- `replace_body` — replace entire symbol body
+- `insert` — insert code before/after a symbol
+- `delete` — safe delete with reference check
 
 ## Validation
 

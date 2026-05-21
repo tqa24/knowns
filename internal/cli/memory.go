@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -126,6 +127,126 @@ func runMemoryList(cmd *cobra.Command, args []string) error {
 		}
 	}
 	return nil
+}
+
+// --- memory cleanup ---
+
+var memoryCleanupCmd = &cobra.Command{
+	Use:   "cleanup",
+	Short: "List stale memory cleanup candidates",
+	RunE:  runMemoryCleanup,
+}
+
+type memoryCleanupCandidate struct {
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	Layer     string    `json:"layer"`
+	Category  string    `json:"category,omitempty"`
+	Tags      []string  `json:"tags,omitempty"`
+	Content   string    `json:"content"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+	AgeDays   int       `json:"ageDays"`
+}
+
+func runMemoryCleanup(cmd *cobra.Command, args []string) error {
+	store := getStore()
+	olderThanDays, _ := cmd.Flags().GetInt("older-than")
+	layer, _ := cmd.Flags().GetString("layer")
+	limit, _ := cmd.Flags().GetInt("limit")
+	if layer == "" {
+		layer = models.MemoryLayerProject
+	}
+	if !models.ValidPersistentMemoryLayer(layer) {
+		return fmt.Errorf("layer must be 'project' or 'global'")
+	}
+	if olderThanDays <= 0 {
+		olderThanDays = 7
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+
+	entries, err := store.Memory.ListPersistent(layer)
+	if err != nil {
+		return fmt.Errorf("list memory cleanup candidates: %w", err)
+	}
+	candidates := cleanupMemoryCandidates(entries, olderThanDays, limit, time.Now().UTC())
+
+	if isJSON(cmd) {
+		printJSON(candidates)
+		return nil
+	}
+	if isPlain(cmd) {
+		printMemoryCleanupPlain(cmd, candidates)
+		return nil
+	}
+	if len(candidates) == 0 {
+		fmt.Fprintln(cmd.OutOrStdout(), StyleDim.Render("No stale memories found."))
+		return nil
+	}
+	printMemoryCleanupPlain(cmd, candidates)
+	return nil
+}
+
+func cleanupMemoryCandidates(entries []*models.MemoryEntry, olderThanDays, limit int, now time.Time) []memoryCleanupCandidate {
+	threshold := now.Add(-time.Duration(olderThanDays) * 24 * time.Hour)
+	candidates := make([]memoryCleanupCandidate, 0)
+	for _, entry := range entries {
+		effective := entry.UpdatedAt
+		if effective.IsZero() {
+			effective = entry.CreatedAt
+		}
+		if effective.IsZero() || !effective.Before(threshold) {
+			continue
+		}
+		candidates = append(candidates, memoryCleanupCandidate{
+			ID:        entry.ID,
+			Title:     entry.Title,
+			Layer:     entry.Layer,
+			Category:  entry.Category,
+			Tags:      entry.Tags,
+			Content:   entry.Content,
+			CreatedAt: entry.CreatedAt,
+			UpdatedAt: entry.UpdatedAt,
+			AgeDays:   int(now.Sub(effective).Hours() / 24),
+		})
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].AgeDays > candidates[j].AgeDays
+	})
+	if len(candidates) > limit {
+		candidates = candidates[:limit]
+	}
+	return candidates
+}
+
+func printMemoryCleanupPlain(cmd *cobra.Command, candidates []memoryCleanupCandidate) {
+	var pb strings.Builder
+	if len(candidates) == 0 {
+		fmt.Fprintln(&pb, "No stale memories found")
+		printPaged(cmd, pb.String())
+		return
+	}
+	for _, c := range candidates {
+		fmt.Fprintf(&pb, "MEMORY: %s\n", c.ID)
+		fmt.Fprintf(&pb, "  TITLE: %s\n", c.Title)
+		fmt.Fprintf(&pb, "  LAYER: %s\n", c.Layer)
+		if c.Category != "" {
+			fmt.Fprintf(&pb, "  CATEGORY: %s\n", c.Category)
+		}
+		if len(c.Tags) > 0 {
+			fmt.Fprintf(&pb, "  TAGS: %s\n", strings.Join(c.Tags, ", "))
+		}
+		fmt.Fprintf(&pb, "  AGE_DAYS: %d\n", c.AgeDays)
+		fmt.Fprintf(&pb, "  CREATED_AT: %s\n", c.CreatedAt.Format(time.RFC3339))
+		fmt.Fprintf(&pb, "  UPDATED_AT: %s\n", c.UpdatedAt.Format(time.RFC3339))
+		if c.Content != "" {
+			fmt.Fprintf(&pb, "  CONTENT:\n%s\n", c.Content)
+		}
+		fmt.Fprintln(&pb)
+	}
+	printPaged(cmd, pb.String())
 }
 
 // --- memory view ---
@@ -427,6 +548,11 @@ func init() {
 	memoryListCmd.Flags().String("category", "", "Filter by category")
 	memoryListCmd.Flags().String("tag", "", "Filter by tag")
 
+	// memory cleanup flags
+	memoryCleanupCmd.Flags().Int("older-than", 7, "Minimum stale age in days")
+	memoryCleanupCmd.Flags().String("layer", models.MemoryLayerProject, "Memory layer (project, global; default: project)")
+	memoryCleanupCmd.Flags().Int("limit", 20, "Maximum cleanup candidates to return")
+
 	// memory create flags
 	memoryCreateCmd.Flags().String("layer", "", "Memory layer (working, project, global; default: project)")
 	memoryCreateCmd.Flags().String("category", "", "Memory category (pattern, decision, convention, preference)")
@@ -445,6 +571,7 @@ func init() {
 	memoryDeleteCmd.Flags().Bool("force", false, "Skip confirmation prompt")
 
 	memoryCmd.AddCommand(memoryListCmd)
+	memoryCmd.AddCommand(memoryCleanupCmd)
 	memoryCmd.AddCommand(memoryViewCmd)
 	memoryCmd.AddCommand(memoryCreateCmd)
 	memoryCmd.AddCommand(memoryEditCmd)

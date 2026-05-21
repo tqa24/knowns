@@ -29,7 +29,6 @@ func (gr *GraphRoutes) getStore() *storage.Store {
 // Register wires the graph routes onto r.
 func (gr *GraphRoutes) Register(r chi.Router) {
 	r.Get("/graph", gr.graph)
-	r.Get("/graph/code", gr.codeGraph)
 }
 
 // GraphNode represents a single entity in the knowledge graph.
@@ -171,25 +170,6 @@ func (gr *GraphRoutes) graph(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// codeGraph returns code nodes and code edges only.
-//
-// GET /api/graph/code
-func (gr *GraphRoutes) codeGraph(w http.ResponseWriter, r *http.Request) {
-	codeNodes, codeEdges := gr.buildCodeGraph()
-
-	if codeNodes == nil {
-		codeNodes = []GraphNode{}
-	}
-	if codeEdges == nil {
-		codeEdges = []GraphEdge{}
-	}
-
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"nodes": codeNodes,
-		"edges": codeEdges,
-	})
-}
-
 // extractMentions scans content for semantic refs and returns edges from src to each resolved target.
 func (gr *GraphRoutes) extractMentions(src, content string) []GraphEdge {
 	var edges []GraphEdge
@@ -244,11 +224,6 @@ func deduplicateEdges(edges []GraphEdge) []GraphEdge {
 		}
 	}
 	return out
-}
-
-// buildCodeGraph returns code nodes and edges when includeCode=true.
-func (gr *GraphRoutes) buildCodeGraph() ([]GraphNode, []GraphEdge) {
-	return BuildCodeGraph(gr.getStore())
 }
 
 func BuildCodeGraph(store *storage.Store) ([]GraphNode, []GraphEdge) {

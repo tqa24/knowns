@@ -1,10 +1,11 @@
 import { createContext, useContext, useEffect, useState, lazy, Suspense } from "react";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import type { Task } from "../models/task";
+import type { Task } from "./models/task";
 import { api, getProjectStatus } from "./api/client";
 import { useSSEEvent } from "./contexts/SSEContext";
 import { AppSidebar, TaskCreateForm, SearchCommandDialog, NotificationBell, TaskDetailSheet } from "./components/organisms";
 import { WorkspacePicker } from "./components/organisms/WorkspacePicker";
+import { RuntimeMonitorPanel } from "./components/organisms/RuntimeMonitorPanel";
 import { WelcomePage } from "./pages/WelcomePage";
 import { ConnectionStatus, ThemeToggle, ErrorBoundary } from "./components/atoms";
 import { HeaderTimeTracker } from "./components/molecules";
@@ -43,7 +44,6 @@ const KanbanPage = lazyWithRetry(() => import("./pages/KanbanPage"));
 const TasksPage = lazyWithRetry(() => import("./pages/TasksPage"));
 const ChatPage = lazyWithRetry(() => import("./pages/ChatPage"));
 const GraphPage = lazyWithRetry(() => import("./pages/GraphPage"));
-const CodeGraphPage = lazyWithRetry(() => import("./pages/CodeGraphPage"));
 const MemoryPage = lazyWithRetry(() => import("./pages/MemoryPage"));
 const AuditPage = lazyWithRetry(() => import("./pages/AuditPage"));
 
@@ -63,7 +63,6 @@ function getCurrentPage(pathname: string) {
 	if (pathname.startsWith("/tasks")) return "tasks";
 	if (pathname.startsWith("/docs")) return "docs";
 	if (pathname.startsWith("/imports")) return "imports";
-	if (pathname.startsWith("/graph/code")) return "code-graph";
 	if (pathname.startsWith("/graph")) return "graph";
 	if (pathname.startsWith("/memory")) return "memory";
 	if (pathname.startsWith("/audit")) return "audit";
@@ -115,7 +114,6 @@ export default function AppShell() {
 			tasks: "Tasks",
 			docs: "Docs",
 			graph: "Graph",
-			"code-graph": "Code Graph",
 			memory: "Memories",
 			audit: "Audit Trail",
 			imports: "Imports",
@@ -293,8 +291,6 @@ export default function AppShell() {
 				return <DocsPage />;
 			case "graph":
 				return <GraphPage />;
-			case "code-graph":
-				return <CodeGraphPage />;
 			case "memory":
 				return <MemoryPage />;
 			case "audit":
@@ -377,9 +373,10 @@ export default function AppShell() {
 							</Suspense>
 						</ErrorBoundary>
 					</div>
-				</main>
+						<RuntimeMonitorPanel />
+					</main>
 
-				<TaskCreateForm
+					<TaskCreateForm
 					isOpen={showCreateForm}
 					allTasks={tasks}
 					onClose={() => setShowCreateForm(false)}

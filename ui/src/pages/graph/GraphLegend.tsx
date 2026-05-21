@@ -2,22 +2,11 @@ import { cn } from "@/ui/lib/utils";
 import type { FilterState } from "./constants";
 
 import {
-	CODE_EDGE_ORDER,
-	CODE_KIND_ORDER,
-	codeEdgeColors,
-	codeEdgeFilterKey,
-	codeEdgeLabels,
-	codeKindFilterKey,
-	countCodeEdges,
-	countCodeKinds,
-	getCodeKindColor,
-	getCodeKindLabel,
 	isKnowledgeSemanticEdge,
 	KNOWLEDGE_SEMANTIC_EDGE_ORDER,
 	knowledgeSemanticEdgeFilterKey,
 	knowledgeSemanticEdgeColors,
 	knowledgeSemanticEdgeLabels,
-	type CodeFilterState,
 } from "./constants";
 import type { GraphData } from "@/ui/api/client";
 
@@ -144,67 +133,3 @@ export function GraphLegend({ data, filters, onToggleFilter }: GraphLegendProps)
 	);
 }
 
-interface CodeGraphLegendProps {
-	data: GraphData | null;
-	filters: CodeFilterState;
-	onToggleKind: (key: keyof CodeFilterState) => void;
-}
-
-export function CodeGraphLegend({ data, filters, onToggleKind }: CodeGraphLegendProps) {
-	const counts = countCodeKinds(data);
-	const edgeCounts = countCodeEdges(data);
-
-	return (
-		<div className="absolute bottom-3 left-3 z-10 flex flex-col gap-1.5 rounded-lg border bg-background/90 backdrop-blur-sm p-2.5 text-xs shadow-sm">
-			<div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Node types</div>
-			<div className="flex flex-col gap-1">
-				{CODE_KIND_ORDER.map((kind) => {
-					const filterKey = codeKindFilterKey(kind);
-					const active = filters[filterKey];
-					return (
-						<button
-							key={kind}
-							type="button"
-							onClick={() => onToggleKind(filterKey)}
-							className={cn(
-								"flex items-center justify-between gap-3 rounded-md border px-2 py-1 text-left transition-colors",
-								active ? "border-border bg-background/80" : "border-transparent opacity-45 hover:opacity-80",
-							)}
-						>
-							<span className="flex items-center gap-1.5">
-								<span className="h-3 w-3 rounded-full" style={{ backgroundColor: getCodeKindColor(kind) }} />
-								<span className="text-muted-foreground">{getCodeKindLabel(kind)}</span>
-							</span>
-							<span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{counts[kind]}</span>
-						</button>
-					);
-				})}
-			</div>
-			<div className="h-px bg-border my-0.5" />
-			<div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Edges</div>
-			<div className="flex flex-col gap-1">
-				{CODE_EDGE_ORDER.map((kind) => {
-					const filterKey = codeEdgeFilterKey(kind);
-					const active = filters[filterKey];
-					return (
-						<button
-							key={kind}
-							type="button"
-							onClick={() => onToggleKind(filterKey)}
-							className={cn(
-								"flex items-center justify-between gap-3 rounded-md border px-2 py-1 text-left transition-colors",
-								active ? "border-border bg-background/80" : "border-transparent opacity-45 hover:opacity-80",
-							)}
-						>
-							<span className="flex items-center gap-1.5">
-								<span className="w-4 border-t-2" style={{ borderColor: codeEdgeColors[kind] }} />
-								<span className="text-muted-foreground">{codeEdgeLabels[kind]}</span>
-							</span>
-							<span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{edgeCounts[kind]}</span>
-						</button>
-					);
-				})}
-			</div>
-		</div>
-	);
-}

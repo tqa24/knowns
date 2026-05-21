@@ -1,8 +1,6 @@
 name: CI
 
 on:
-  push:
-    branches: [main, develop]
   pull_request:
     branches: [main, develop]
     types: [opened, synchronize, reopened]
@@ -112,9 +110,13 @@ jobs:
         run: go test -v -race -count=1 ./...
 
   build-and-e2e:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     needs: [test]
-    name: Build & E2E
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    name: Build & E2E (${{ matrix.os }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -125,13 +127,39 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Install llvm-mingw toolchain
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          curl -L --retry 5 --retry-delay 5 \
+            -o llvm-mingw.zip \
+            "https://github.com/mstorsjo/llvm-mingw/releases/download/20260407/llvm-mingw-20260407-ucrt-x86_64.zip"
+          unzip -q llvm-mingw.zip -d "$RUNNER_TEMP/llvm-mingw"
+          TOOLCHAIN_DIR=$(find "$RUNNER_TEMP/llvm-mingw" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+          if [ -z "$TOOLCHAIN_DIR" ]; then
+            echo "Failed to extract llvm-mingw toolchain"
+            exit 1
+          fi
+          echo "$TOOLCHAIN_DIR/bin" >> "$GITHUB_PATH"
+          echo "CC=x86_64-w64-mingw32-clang" >> "$GITHUB_ENV"
+          echo "CXX=x86_64-w64-mingw32-clang++" >> "$GITHUB_ENV"
+          echo "AR=x86_64-w64-mingw32-ar" >> "$GITHUB_ENV"
+
       - name: Build UI
         run: cd ui && bun install --frozen-lockfile && bun run build
 
-      - name: Build Go binary (with embedded UI)
+      - name: Build Go binary (Unix)
+        if: runner.os != 'Windows'
         run: make build
 
-      - name: Download ONNX Runtime for semantic tests
+      - name: Build Go binary (Windows)
+        if: runner.os == 'Windows'
+        env:
+          CGO_ENABLED: '1'
+        run: go build -ldflags "-s -w -X github.com/howznguyen/knowns/internal/util.Version=${env:GITHUB_SHA}" -o bin/knowns.exe ./cmd/knowns
+
+      - name: Download ONNX Runtime (Unix)
+        if: runner.os != 'Windows'
         env:
           ORT_VERSION: "1.25.0"
         run: |
@@ -139,28 +167,86 @@ jobs:
           ARCHIVE="onnxruntime-linux-x64-${ORT_VERSION}.tgz"
           curl -L --retry 5 --retry-delay 5 -o "/tmp/${ARCHIVE}" "${BASE_URL}/${ARCHIVE}"
           tar -xzf "/tmp/${ARCHIVE}" -C /tmp
+          mkdir -p ./bin
           cp "/tmp/onnxruntime-linux-x64-${ORT_VERSION}/lib/libonnxruntime.so.${ORT_VERSION}" ./bin/libonnxruntime.so
-          echo "✓ ONNX Runtime ${ORT_VERSION} installed next to binary"
-          ls -la ./bin/
+          echo "KNOWNS_ORT_LIB=$(pwd)/bin/libonnxruntime.so" >> "$GITHUB_ENV"
 
-      - name: Install Playwright browsers
+      - name: Download ONNX Runtime (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          BASE_URL="https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}"
+          ARCHIVE="onnxruntime-win-x64-${ORT_VERSION}.zip"
+          curl -L --retry 5 --retry-delay 5 -o "/tmp/${ARCHIVE}" "${BASE_URL}/${ARCHIVE}"
+          unzip -q "/tmp/${ARCHIVE}" -d /tmp
+          mkdir -p ./bin
+          cp "/tmp/onnxruntime-win-x64-${ORT_VERSION}/lib/onnxruntime.dll" ./bin/onnxruntime.dll
+          echo "KNOWNS_ORT_LIB=$(pwd)/bin/onnxruntime.dll" >> "$GITHUB_ENV"
+        env:
+          ORT_VERSION: "1.25.0"
+
+      - name: Install Playwright browsers (Unix)
+        if: runner.os != 'Windows'
         run: cd ui && bunx playwright install --with-deps chromium
 
-      - name: Verify binary
+      - name: Install Playwright browsers (Windows)
+        if: runner.os == 'Windows'
+        run: cd ui && bunx playwright install --with-deps chromium
+
+      - name: Verify binary (Unix)
+        if: runner.os != 'Windows'
         run: |
           ./bin/knowns --version
           echo "Build verification passed"
 
-      - name: Run E2E tests
+      - name: Verify binary (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          ./bin/knowns.exe --version
+          echo "Build verification passed"
+
+      - name: Run E2E tests (Unix)
+        if: runner.os != 'Windows'
         run: |
           (cd tests && go test -v -timeout 300s -count=1 -run TestCLI ./...)
           (cd tests && go test -v -timeout 300s -count=1 -run TestMCP ./...)
 
-      - name: Run semantic CLI subset
+      - name: Run E2E tests (Windows)
+        if: runner.os == 'Windows'
+        env:
+          CGO_ENABLED: '1'
+        shell: bash
+        run: |
+          (cd tests && go test -v -timeout 300s -count=1 -run TestCLI ./...)
+          (cd tests && go test -v -timeout 300s -count=1 -run TestMCP ./...)
+
+      - name: Run semantic CLI subset (Unix)
+        if: runner.os != 'Windows'
         run: cd tests && TEST_SEMANTIC=1 TEST_BINARY=../bin/knowns go test -v -timeout 300s -count=1 -run TestCLI_SemanticSearch ./...
 
-      - name: Run semantic MCP subset
+      - name: Run semantic MCP subset (Unix)
+        if: runner.os != 'Windows'
         run: cd tests && TEST_SEMANTIC=1 TEST_BINARY=../bin/knowns go test -v -timeout 300s -count=1 -run 'TestMCP_SemanticSearch/(reindex|keyword_search|hybrid_search|search_docs_only|search_tasks_only)$' ./...
 
-      - name: Run UI Playwright tests
+      - name: Run semantic CLI subset (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          CGO_ENABLED: '1'
+        run: cd tests && TEST_SEMANTIC=1 TEST_BINARY=../bin/knowns.exe go test -v -timeout 300s -count=1 -run TestCLI_SemanticSearch ./...
+
+      - name: Run semantic MCP subset (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          CGO_ENABLED: '1'
+        run: cd tests && TEST_SEMANTIC=1 TEST_BINARY=../bin/knowns.exe go test -v -timeout 300s -count=1 -run 'TestMCP_SemanticSearch/(reindex|keyword_search|hybrid_search|search_docs_only|search_tasks_only)$' ./...
+
+      - name: Run UI Playwright tests (Unix)
+        if: runner.os != 'Windows'
         run: cd ui && TEST_BINARY=../bin/knowns bun test:e2e
+
+      - name: Run UI Playwright tests (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: cd ui && TEST_BINARY=../bin/knowns.exe bun test:e2e

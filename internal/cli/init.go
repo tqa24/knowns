@@ -1615,7 +1615,7 @@ func renderCanonicalInstructionContent() string {
 	sb.WriteString("- If a shim file and `KNOWNS.md` differ, treat `KNOWNS.md` as correct.\n\n")
 	sb.WriteString("## TL;DR\n\n")
 	sb.WriteString("- Read `KNOWNS.md` first.\n")
-	sb.WriteString("- Call MCP `status` (or `knowns status --json`) at session start to check project readiness, available capabilities, and knowledge counts.\n")
+	sb.WriteString("- Call `initial` at session start — it returns project readiness, knowledge counts, code intelligence rules, workflow guidance, and available tools.\n")
 	sb.WriteString("- Use Knowns as the memory layer for humans and the AI-friendly working layer for agents.\n")
 	sb.WriteString("- Search before reading; read only the sections and docs relevant to the current task.\n")
 	sb.WriteString("- Never manually edit Knowns-managed task or doc markdown.\n")
@@ -1638,9 +1638,10 @@ func renderCanonicalInstructionContent() string {
 	sb.WriteString("- For ambiguous requests, search the repo and related docs before asking the user.\n")
 	sb.WriteString("- Do not assume the entire file is present in context; retrieve the needed sections when required.\n\n")
 	sb.WriteString("## Tool Selection\n\n")
-	sb.WriteString("- Use MCP `status` at session start to check project readiness and available capabilities before acting.\n")
+	sb.WriteString("- Call `initial` at session start — it includes project readiness, capabilities, and code intelligence rules.\n")
+	sb.WriteString("- Use `help(\"tool.action\")` or `help(\"tool.*\")` for detailed per-action documentation on demand.\n")
 	sb.WriteString("- Use Knowns MCP tools first for tasks, docs, templates, validation, and time tracking.\n")
-	sb.WriteString("- Use file reading and search tools for local code and text inspection.\n")
+	sb.WriteString("- Use Knowns `code` tools for code discovery, structure, and editing — not built-in Read/Grep/Edit.\n")
 	sb.WriteString("- Use shell commands for git, tests, builds, generators, and other terminal operations.\n")
 	sb.WriteString("- Prefer targeted retrieval over loading large files in full.\n")
 	sb.WriteString("- Use `knowns search` for discovery and quick relevance checks.\n")
@@ -1760,7 +1761,7 @@ func renderCompatibilityInstructionContent(relativePath, platform, projectRoot s
 	sb.WriteString("- Never manually edit Knowns-managed task or doc markdown.\n")
 	sb.WriteString("- Search first, then read only relevant docs and code.\n")
 	sb.WriteString("- Use `search` for discovery; use MCP `retrieve` tool when a workflow needs structured context with citations. Fall back to CLI `knowns retrieve` if MCP is unavailable.\n")
-	sb.WriteString("- For code context retrieval, prefer MCP tools over CLI: use `code({ action: \"search\" })` first, then `code({ action: \"symbols\" })`, then `code({ action: \"deps\" })`. Treat CLI `knowns code ...` as fallback for manual inspection or debugging.\n")
+	sb.WriteString("- For code operations, use `code` tool: `symbols` for structure, `find` for search, `references`/`definition` for navigation, `rename`/`replace`/`insert`/`delete` for editing. Use `help(\"code.*\")` for details.\n")
 	sb.WriteString("- Plan before implementation unless the user explicitly overrides that workflow.\n")
 	sb.WriteString("- Validate before considering work complete.\n")
 	sb.WriteString("- Use memory tools: `memory({ action: \"list\" })` at session start, `memory({ action: \"add\" })` after tasks for reusable knowledge.\n")
@@ -1816,20 +1817,77 @@ const (
 	knownsGitignoreEnd   = "# <<< KNOWNS <<<"
 )
 
-// writeKnownsGitignore replaces the marker-delimited Knowns block in
-// .gitignore with the correct rules for the given git tracking mode.
-// If no marker block exists yet, it appends one.
-// This cleanly handles mode switching on re-init.
+// writeKnownsGitignore creates .knowns/.gitignore with ignore rules based on
+// the git tracking mode. Also removes any legacy marker block from root .gitignore.
 func writeKnownsGitignore(dir, mode string) error {
-	gitignorePath := filepath.Join(dir, ".gitignore")
+	// Remove legacy marker block from root .gitignore if present.
+	removeLegacyGitignoreBlock(dir)
 
-	existing := ""
-	data, err := os.ReadFile(gitignorePath)
-	if err == nil {
-		existing = string(data)
+	knownsDir := filepath.Join(dir, ".knowns")
+	gitignorePath := filepath.Join(knownsDir, ".gitignore")
+
+	switch mode {
+	case "git-tracked", "git-ignored":
+		if err := os.MkdirAll(knownsDir, 0755); err != nil {
+			return err
+		}
 	}
 
-	// Strip the old marker block (everything between BEGIN and END inclusive).
+	switch mode {
+	case "git-tracked":
+		// Track all .knowns/ content; only ignore runtime/cache files.
+		content := "# Managed by Knowns CLI — do not edit manually.\n" +
+			"# Run 'knowns init' to regenerate.\n\n" +
+			"# Runtime & cache\n" +
+			".search/\n" +
+			".working-memory/\n" +
+			"runtime/\n" +
+			"worktrees/\n" +
+			".server-port\n" +
+			".DS_Store\n"
+		return os.WriteFile(gitignorePath, []byte(content), 0644)
+
+	case "git-ignored":
+		// Only track config, docs, templates, tasks; ignore everything else.
+		content := "# Managed by Knowns CLI — do not edit manually.\n" +
+			"# Run 'knowns init' to regenerate.\n\n" +
+			"# Ignore everything by default\n" +
+			"*\n\n" +
+			"# Track these\n" +
+			"!.gitignore\n" +
+			"!config.json\n" +
+			"!docs/\n" +
+			"!docs/**\n" +
+			"!templates/\n" +
+			"!templates/**\n" +
+			"!tasks/\n" +
+			"!tasks/**\n"
+		return os.WriteFile(gitignorePath, []byte(content), 0644)
+
+	case "none":
+		// Remove .knowns/.gitignore if it exists.
+		_ = os.Remove(gitignorePath)
+		return nil
+	}
+
+	return nil
+}
+
+// removeLegacyGitignoreBlock removes the old marker-delimited Knowns block
+// from root .gitignore (migration from older versions).
+func removeLegacyGitignoreBlock(dir string) {
+	gitignorePath := filepath.Join(dir, ".gitignore")
+
+	data, err := os.ReadFile(gitignorePath)
+	if err != nil {
+		return
+	}
+
+	existing := string(data)
+	if !strings.Contains(existing, knownsGitignoreBegin) {
+		return
+	}
+
 	var cleaned []string
 	inside := false
 	for _, line := range strings.Split(existing, "\n") {
@@ -1851,73 +1909,11 @@ func writeKnownsGitignore(dir, mode string) error {
 		cleaned = cleaned[:len(cleaned)-1]
 	}
 
-	// Build new marker block when this mode manages .gitignore.
-	var block []string
-	switch mode {
-	case "git-tracked":
-		// Track all .knowns/ content; remove any managed block.
-	case "git-ignored":
-		block = append(block,
-			knownsGitignoreBegin,
-			"# Managed by Knowns CLI — do not edit manually.",
-			"# Run 'knowns init' to regenerate this block.",
-		)
-		block = append(block,
-			".knowns/*",
-			"!.knowns/config.json",
-			"!.knowns/docs/",
-			"!.knowns/docs/**",
-			"!.knowns/templates/",
-			"!.knowns/templates/**",
-		)
-		block = append(block, knownsGitignoreEnd)
-	case "none":
-		// Leave .gitignore unmanaged; remove any managed block.
-	}
-
-	// Assemble final content.
-	var parts []string
-	if len(cleaned) > 0 {
-		parts = append(parts, strings.Join(cleaned, "\n"))
-	}
-	if len(block) > 0 {
-		parts = append(parts, strings.Join(block, "\n"))
-	}
-
 	content := ""
-	if len(parts) > 0 {
-		content = strings.Join(parts, "\n\n") + "\n"
+	if len(cleaned) > 0 {
+		content = strings.Join(cleaned, "\n") + "\n"
 	}
-	return os.WriteFile(gitignorePath, []byte(content), 0644)
-}
-
-// addToGitignore appends an entry to .gitignore if not already present.
-func addToGitignore(dir, entry string) error {
-	gitignorePath := filepath.Join(dir, ".gitignore")
-
-	existing := ""
-	data, err := os.ReadFile(gitignorePath)
-	if err == nil {
-		existing = string(data)
-	}
-
-	for _, line := range strings.Split(existing, "\n") {
-		if strings.TrimSpace(line) == strings.TrimSpace(entry) {
-			return nil
-		}
-	}
-
-	f, err := os.OpenFile(gitignorePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	if existing != "" && !strings.HasSuffix(existing, "\n") {
-		_, _ = f.WriteString("\n")
-	}
-	_, err = f.WriteString(entry + "\n")
-	return err
+	_ = os.WriteFile(gitignorePath, []byte(content), 0644)
 }
 
 // maybeOpenBrowser optionally launches the Chat UI after init.

@@ -98,6 +98,18 @@ func renderStatusPlain(p readiness.Payload) {
 		fmt.Println("Runtime: not running")
 	}
 
+	if len(p.LSP) > 0 {
+		parts := make([]string, 0, len(p.LSP))
+		for _, item := range p.LSP {
+			if item.Status == "not-installed" && item.InstallCmd != "" {
+				parts = append(parts, fmt.Sprintf("%s=%s (run: %s)", item.ID, item.Status, item.InstallCmd))
+			} else {
+				parts = append(parts, fmt.Sprintf("%s=%s", item.ID, item.Status))
+			}
+		}
+		fmt.Printf("LSP: %s\n", strings.Join(parts, ", "))
+	}
+
 	if len(p.Capabilities) > 0 {
 		fmt.Printf("Capabilities: %s\n", strings.Join(p.Capabilities, ", "))
 	}
@@ -171,6 +183,28 @@ func renderStatusStyled(p readiness.Payload) {
 	} else {
 		fmt.Println(StyleBold.Render("Runtime"))
 		fmt.Printf("  %s not running\n", StyleDim.Render("○"))
+		fmt.Println()
+	}
+
+	// LSP
+	if len(p.LSP) > 0 {
+		fmt.Println(StyleBold.Render("LSP"))
+		for _, item := range p.LSP {
+			marker := StyleDim.Render("○")
+			if item.Status == "running" || item.Status == "installed" {
+				marker = StyleSuccess.Render("✓")
+			} else if item.Status == "not-installed" && item.InstallCmd != "" {
+				marker = StyleWarning.Render("⚠")
+			}
+			line := fmt.Sprintf("  %s %s: %s", marker, item.ID, item.Status)
+			if item.Binary != "" {
+				line += fmt.Sprintf(" (%s via %s)", item.Binary, item.Source)
+			}
+			fmt.Println(line)
+			if item.Status == "not-installed" && item.InstallCmd != "" {
+				fmt.Printf("    Run: %s\n", item.InstallCmd)
+			}
+		}
 		fmt.Println()
 	}
 

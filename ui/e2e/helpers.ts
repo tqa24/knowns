@@ -2,7 +2,7 @@
  * E2E test helpers — start/stop knowns server with isolated project
  */
 
-import { execSync, spawn, type ChildProcess } from "node:child_process";
+import { execSync, execFileSync, spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -93,10 +93,17 @@ export async function startServer(): Promise<TestServer> {
 		cwd: projectDir,
 		stdio: "ignore",
 	});
-	execSync(`${BINARY} init "E2E Test Project" --no-wizard --no-open`, {
-		cwd: projectDir,
-		stdio: "ignore",
-	});
+	if (isWindows) {
+		execFileSync(BINARY, ["init", "E2E Test Project", "--no-wizard", "--no-open"], {
+			cwd: projectDir,
+			stdio: "ignore",
+		});
+	} else {
+		execSync(`${BINARY} init "E2E Test Project" --no-wizard --no-open`, {
+			cwd: projectDir,
+			stdio: "ignore",
+		});
+	}
 
 	// Find available port and start server
 	const port = await findPort();
@@ -131,6 +138,17 @@ export async function startServer(): Promise<TestServer> {
 	}
 
 	const cli = (args: string): string => {
+		if (isWindows) {
+			// On Windows, avoid shell to prevent cmd.exe quote mangling.
+			// Parse the args string into an array respecting quoted strings.
+			const parsed = parseCliArgs(args);
+			return execFileSync(BINARY, parsed, {
+				cwd: projectDir,
+				encoding: "utf-8",
+				timeout: 10000,
+				env: { ...process.env, NO_COLOR: "1" },
+			}).trim();
+		}
 		return execSync(`${BINARY} ${args}`, {
 			cwd: projectDir,
 			encoding: "utf-8",
@@ -141,16 +159,51 @@ export async function startServer(): Promise<TestServer> {
 
 	const cleanup = () => {
 		serverProcess.kill("SIGTERM");
-		// Give process time to exit, then force kill
-		setTimeout(() => {
-			try {
-				serverProcess.kill("SIGKILL");
-			} catch {
-				// already dead
-			}
-		}, 2000);
-		rmSync(projectDir, { recursive: true, force: true });
+		// Wait for process to fully exit before removing files
+		if (isWindows) {
+			spawnSync("powershell", ["-Command", "Start-Sleep -Seconds 3"], { stdio: "ignore" });
+		} else {
+			spawnSync("sleep", ["1"], { stdio: "ignore" });
+		}
+		try {
+			serverProcess.kill("SIGKILL");
+		} catch {
+			// already dead
+		}
+		try {
+			rmSync(projectDir, { recursive: true, force: true });
+		} catch {
+			// EBUSY on Windows — best effort cleanup
+		}
 	};
 
 	return { baseURL, port, projectDir, cli, cleanup };
+}
+
+/**
+ * Parse a CLI args string into an array, respecting double-quoted segments.
+ * e.g. 'doc edit "my doc" -c "hello world"' → ["doc", "edit", "my doc", "-c", "hello world"]
+ */
+function parseCliArgs(input: string): string[] {
+	const args: string[] = [];
+	let current = "";
+	let inQuotes = false;
+
+	for (let i = 0; i < input.length; i++) {
+		const ch = input[i];
+		if (ch === '"') {
+			inQuotes = !inQuotes;
+		} else if (ch === " " && !inQuotes) {
+			if (current.length > 0) {
+				args.push(current);
+				current = "";
+			}
+		} else {
+			current += ch;
+		}
+	}
+	if (current.length > 0) {
+		args.push(current);
+	}
+	return args;
 }

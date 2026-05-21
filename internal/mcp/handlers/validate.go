@@ -8,14 +8,16 @@ import (
 	"github.com/howznguyen/knowns/internal/storage"
 	"github.com/howznguyen/knowns/internal/validate"
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
 )
 
 // RegisterValidateTools registers the validate MCP tool.
-func RegisterValidateTools(s *server.MCPServer, getStore func() *storage.Store) {
+func RegisterValidateTools(s toolRegistrar, getStore func() *storage.Store) {
 	s.AddTool(
 		mcp.NewTool("validate",
-			mcp.WithDescription("Validate tasks, docs, and templates for reference integrity and quality. Returns errors, warnings, and info about broken refs, missing AC, orphan docs, etc. Use scope='sdd' for SDD (Spec-Driven Development) validation. Use 'entity' to validate a specific task or doc only."),
+			mcp.WithDescription(`Validate tasks, docs, templates, and spec-driven development state for reference integrity and quality.
+
+- validate: Run validation checks. Required: none. Optional: scope (all default, tasks, docs, templates, sdd), entity (specific task ID or doc path), strict (treat warnings as errors), fix (auto-fix supported issues). Returns: JSON with valid flag, strict flag, scope, issues, errorCount, warningCount, infoCount, and summary.
+`),
 			mcp.WithString("scope",
 				mcp.Description("Validation scope: 'all' (default), 'tasks', 'docs', 'templates', or 'sdd' for spec-driven checks"),
 				mcp.Enum("all", "tasks", "docs", "templates", "sdd"),
@@ -68,4 +70,6 @@ func RegisterValidateTools(s *server.MCPServer, getStore func() *storage.Store) 
 			return mcp.NewToolResultText(string(out)), nil
 		},
 	)
+
+	registerHelp(s, "validate.validate", HelpEntry{When: "Validate tasks, docs, templates, refs, or SDD coverage before marking work complete.", Params: map[string]string{"scope": "all | tasks | docs | templates | sdd", "entity": "specific task ID or doc path", "strict": "treat warnings as errors", "fix": "auto-fix supported issues"}, Flow: "Run targeted validation after tests and before task completion."})
 }

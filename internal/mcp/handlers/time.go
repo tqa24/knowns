@@ -9,14 +9,19 @@ import (
 	"github.com/howznguyen/knowns/internal/models"
 	"github.com/howznguyen/knowns/internal/storage"
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
 )
 
 // RegisterTimeTool registers the consolidated time tracking MCP tool.
-func RegisterTimeTool(s *server.MCPServer, getStore func() *storage.Store) {
+func RegisterTimeTool(s toolRegistrar, getStore func() *storage.Store) {
 	s.AddTool(
 		mcp.NewTool("time",
-			mcp.WithDescription("Time tracking operations. Use 'action' to specify: start, stop, add, report."),
+			mcp.WithDescription(`Time tracking operations. Use 'action' to specify: start, stop, add, report.
+
+- start: Start an active timer for a task. Required: taskId. Optional: none. Returns: timer start confirmation and task ID; errors if another timer is active.
+- stop: Stop an active timer. Required: taskId. Optional: none. Returns: stopped timer entry with elapsed duration and task update confirmation.
+- add: Add a manual time entry. Required: taskId, duration. Optional: note, date (YYYY-MM-DD; defaults to today). Returns: created time entry and updated task time total.
+- report: Summarize time entries. Required: none. Optional: from, to, groupBy (task, label, status). Returns: time totals and grouped report rows for the requested date range.
+`),
 			mcp.WithString("action",
 				mcp.Required(),
 				mcp.Description("Action to perform"),
@@ -64,6 +69,11 @@ func RegisterTimeTool(s *server.MCPServer, getStore func() *storage.Store) {
 			}
 		},
 	)
+
+	registerHelp(s, "time.start", HelpEntry{When: "Start mandatory task time tracking when beginning task work.", Params: map[string]string{"taskId": "required — task ID to track time for"}, Why: "Task workflow requires active time tracking for implementation work.", Flow: "Set task in-progress, start timer, implement, then stop timer before marking done."})
+	registerHelp(s, "time.stop", HelpEntry{When: "Stop active task timer after finishing or pausing tracked work.", Params: map[string]string{"taskId": "required — task ID for active timer"}, Why: "Stopping timer records elapsed time on task; required before completion.", Flow: "Stop timer before setting task status to done."})
+	registerHelp(s, "time.add", HelpEntry{When: "Add manual time for past work or to repair forgotten timer usage.", Params: map[string]string{"taskId": "required — task ID", "duration": "required — duration like 2h, 30m, 1h30m", "note": "optional entry note", "date": "YYYY-MM-DD; defaults to today"}, Examples: []string{`time({ action: "add", taskId: "abc123", duration: "30m", note: "Forgot timer" })`}})
+	registerHelp(s, "time.report", HelpEntry{When: "Summarize tracked time over a date range for planning, review, or reporting.", Params: map[string]string{"from": "start date YYYY-MM-DD", "to": "end date YYYY-MM-DD", "groupBy": "task | label | status"}})
 }
 
 func handleTimeStart(getStore func() *storage.Store, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

@@ -9,19 +9,24 @@ import (
 	"github.com/howznguyen/knowns/internal/readiness"
 	"github.com/howznguyen/knowns/internal/storage"
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
 )
 
 // RegisterProjectTool registers the consolidated project management MCP tool.
 func RegisterProjectTool(
-	s *server.MCPServer,
+	s toolRegistrar,
 	getStore func() *storage.Store,
 	setStore func(*storage.Store, string),
 	getRoot func() string,
 ) {
 	s.AddTool(
 		mcp.NewTool("project",
-			mcp.WithDescription("Project management operations. Use 'action' to specify: detect, current, set, status."),
+			mcp.WithDescription(`Project management operations. Use 'action' to specify: detect, current, set, status.
+
+- detect: Find Knowns projects in common or supplied directories. Required: none. Optional: additionalPaths. Returns: discovered project roots with names and status metadata.
+- current: Show the currently active project. Required: none. Optional: none. Returns: active project name, root path, and store status.
+- set: Switch the active project. Required: projectRoot. Optional: none. Returns: selected project metadata and readiness status.
+- status: Inspect active project readiness. Required: none. Optional: none. Returns: project metadata, knowledge counts, search/model/index readiness, permissions, and capabilities.
+`),
 			mcp.WithString("action",
 				mcp.Required(),
 				mcp.Description("Action to perform"),
@@ -54,6 +59,11 @@ func RegisterProjectTool(
 			}
 		},
 	)
+
+	registerHelp(s, "project.detect", HelpEntry{When: "Find Knowns projects in common locations or additional directories before switching context.", Params: map[string]string{"additionalPaths": "extra directory paths to scan"}})
+	registerHelp(s, "project.current", HelpEntry{When: "Show active project root, name, and store state.", Params: map[string]string{}})
+	registerHelp(s, "project.set", HelpEntry{When: "Switch active Knowns project for subsequent MCP operations.", Params: map[string]string{"projectRoot": "required — absolute project root path"}, Flow: "Detect projects first when unsure of path, then set target project."})
+	registerHelp(s, "project.status", HelpEntry{When: "Inspect active project readiness, knowledge counts, permissions, capabilities, and search/index health.", Params: map[string]string{}, Flow: "Use at session start or when diagnosing project/index readiness."})
 }
 
 func handleProjectDetect(req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

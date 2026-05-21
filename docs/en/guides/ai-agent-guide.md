@@ -17,11 +17,15 @@ Knowns gives AI a structured way to access:
 
 ## Recommended usage pattern
 
-### 1. Load guidance first
+### 1. Call `initial` first
 
-The AI should start with the canonical repository guidance in `KNOWNS.md`.
+The AI should call the `initial` MCP tool at session start. It returns project state, code intelligence rules, workflow guidance, and available tools — everything needed to begin work.
 
-### 2. Use tasks as execution targets
+### 2. Use `help` for tool details
+
+When the AI needs to use an unfamiliar tool or action, call `help("tool.action")` or `help("tool.*")` for on-demand documentation.
+
+### 3. Use tasks as execution targets
 
 Instead of giving a vague prompt, point the AI at a task with acceptance criteria.
 
@@ -53,12 +57,13 @@ Validation should be part of the normal workflow.
 
 ## Example workflow
 
-1. AI reads `KNOWNS.md`
+1. AI calls `initial` (gets project state + rules + workflow guidance)
 2. AI reads the target task
 3. AI follows any `@doc/...` or `@task-...` references
-4. AI searches or retrieves additional context if needed
-5. AI implements changes
-6. AI runs validation or tests
+4. AI calls `help("tool.action")` if unsure how to use a tool
+5. AI uses `code` tools for code discovery and editing (not Read/Grep/Edit)
+6. AI implements changes
+7. AI runs validation or tests
 
 ## Related
 

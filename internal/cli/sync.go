@@ -10,6 +10,7 @@ import (
 
 	"github.com/howznguyen/knowns/internal/codegen"
 	"github.com/howznguyen/knowns/internal/models"
+	"github.com/howznguyen/knowns/internal/runtimeinstall"
 	"github.com/howznguyen/knowns/internal/storage"
 	"github.com/spf13/cobra"
 )
@@ -130,6 +131,13 @@ func runSync(cmd *cobra.Command, args []string) error {
 	if !specificFlag {
 		if err := syncMCPConfigs(); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: MCP config sync failed: %v\n", err)
+		}
+	}
+
+	// 8. Sync runtime hooks (remove stale hooks, install current ones)
+	if !specificFlag {
+		if err := runSyncRuntimeHooks(configPlatforms); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: runtime hooks sync failed: %v\n", err)
 		}
 	}
 
@@ -531,4 +539,37 @@ func init() {
 	syncCmd.Flags().String("platform", "", "Sync specific platform (claude, gemini, copilot, agents)")
 
 	rootCmd.AddCommand(syncCmd)
+}
+
+// runSyncRuntimeHooks re-installs runtime hooks for configured platforms,
+// removing stale hook formats and writing the current one.
+func runSyncRuntimeHooks(configPlatforms []string) error {
+	opts := runtimeinstall.DefaultOptions()
+	runtimeNames := runtimeinstall.RuntimeNames()
+
+	targets := runtimeNames
+	if len(configPlatforms) > 0 {
+		configSet := make(map[string]bool, len(configPlatforms))
+		for _, id := range configPlatforms {
+			configSet[id] = true
+		}
+		targets = nil
+		for _, name := range runtimeNames {
+			if configSet[name] {
+				targets = append(targets, name)
+			}
+		}
+	}
+
+	var synced int
+	for _, name := range targets {
+		if err := runtimeinstall.Install(name, opts); err != nil {
+			continue
+		}
+		synced++
+	}
+	if synced > 0 {
+		fmt.Printf("%s Runtime hooks synced for %d platform(s).\n", StyleSuccess.Render("✓"), synced)
+	}
+	return nil
 }

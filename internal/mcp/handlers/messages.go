@@ -21,12 +21,12 @@ const (
 
 // Success / info messages.
 const (
-	MsgTimerStarted   = "Timer started for task '%s'"
-	MsgDeletedTask    = "Deleted task %s: %s"
+	MsgTimerStarted    = "Timer started for task '%s'"
+	MsgDeletedTask     = "Deleted task %s: %s"
 	MsgWouldDeleteTask = "Would delete task %s: %s"
-	MsgDeletedDoc     = "Deleted doc: %s (%s)"
-	MsgWouldDeleteDoc = "Would delete doc: %s (%s)"
-	MsgDryRunTemplate = "Dry run: no files were written. Set dryRun: false to generate files."
+	MsgDeletedDoc      = "Deleted doc: %s (%s)"
+	MsgWouldDeleteDoc  = "Would delete doc: %s (%s)"
+	MsgDryRunTemplate  = "Dry run: no files were written. Set dryRun: false to generate files."
 	MsgTemplateNotImpl = "Template execution (non-dry-run) is not yet implemented in the Go MCP server. Use the TypeScript CLI for template generation."
 )
 

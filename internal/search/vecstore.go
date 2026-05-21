@@ -75,9 +75,11 @@ type indexEntry struct {
 	MemoryStore string `json:"memoryStore,omitempty"`
 
 	// Code fields (populated when Type == ChunkTypeCode).
-	Name      string `json:"name,omitempty"`
-	Signature string `json:"signature,omitempty"`
-	Content   string `json:"content,omitempty"`
+	Name       string `json:"name,omitempty"`
+	Signature  string `json:"signature,omitempty"`
+	Visibility string `json:"visibility,omitempty"`
+	Detail     string `json:"detail,omitempty"`
+	Content    string `json:"content,omitempty"`
 }
 
 type versionInfo struct {

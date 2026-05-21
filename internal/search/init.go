@@ -17,6 +17,23 @@ var ErrSemanticNotConfigured = fmt.Errorf("semantic search not configured or dis
 // If the index is outdated (model or chunk version changed), it auto-reindexes.
 // On success, the caller is responsible for calling vecStore.Close() and
 // embedder.Close() when done.
+func InitCodeStore(store *storage.Store) (VectorStore, error) {
+	cfg, err := store.Config.Load()
+	if err != nil {
+		return nil, fmt.Errorf("load config: %w", err)
+	}
+	model := "code-keyword"
+	if cfg != nil && cfg.Settings.SemanticSearch != nil && cfg.Settings.SemanticSearch.Model != "" {
+		model = cfg.Settings.SemanticSearch.Model
+	}
+
+	vecStore := NewSQLiteVectorStore(store.Root, model, 1)
+	if err := vecStore.Load(); err != nil {
+		return nil, err
+	}
+	return vecStore, nil
+}
+
 func InitSemantic(store *storage.Store) (EmbedderProvider, VectorStore, error) {
 	cfg, err := store.Config.Load()
 	if err != nil {

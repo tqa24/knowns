@@ -97,45 +97,15 @@ func (s *Store) SemanticDBWritable() *sql.DB {
 	return db
 }
 
-// CodeRefIndexExists returns true if the code_edges table has any rows.
+// CodeRefIndexExists is retained as a compatibility stub after code edge storage removal.
 func (s *Store) CodeRefIndexExists() bool {
-	db := s.SemanticDB()
-	if db == nil {
-		return false
-	}
-	defer db.Close()
-	var count int
-	err := db.QueryRow("SELECT COUNT(*) FROM code_edges").Scan(&count)
-	return err == nil && count > 0
+	return false
 }
 
-// CodeRefExists returns true if a @code/ ref exists in the AST index.
+// CodeRefExists is retained as a compatibility stub after code edge storage removal.
 // docPath is the file path, symbol is the symbol name (empty for file refs).
 func (s *Store) CodeRefExists(docPath, symbol string) bool {
-	db := s.SemanticDB()
-	if db == nil {
-		return false
-	}
-	defer db.Close()
-
-	var idPattern string
-	if symbol == "" {
-		// File-level ref: check if any chunk exists for this file
-		idPattern = "code::" + docPath + "::%"
-	} else {
-		// Symbol-level ref
-		idPattern = "code::" + docPath + "::" + symbol
-	}
-
-	if symbol == "" {
-		var count int
-		err := db.QueryRow("SELECT COUNT(*) FROM chunks WHERE id LIKE ?", idPattern).Scan(&count)
-		return err == nil && count > 0
-	} else {
-		var count int
-		err := db.QueryRow("SELECT COUNT(*) FROM chunks WHERE id = ?", idPattern).Scan(&count)
-		return err == nil && count > 0
-	}
+	return false
 }
 
 // FindProjectRoot walks up from startDir looking for a .knowns/ directory

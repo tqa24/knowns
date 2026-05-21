@@ -10,15 +10,23 @@ import (
 	"github.com/howznguyen/knowns/internal/search"
 	"github.com/howznguyen/knowns/internal/storage"
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
 )
 
 // RegisterTaskTool registers the consolidated task management MCP tool.
 // This includes the board view (previously in board.go).
-func RegisterTaskTool(s *server.MCPServer, getStore func() *storage.Store) {
+func RegisterTaskTool(s toolRegistrar, getStore func() *storage.Store) {
 	s.AddTool(
 		mcp.NewTool("tasks",
-			mcp.WithDescription("Task management operations. Use 'action' to specify: create, get, update, delete, list, history, board."),
+			mcp.WithDescription(`Task management operations. Use 'action' to specify: create, get, update, delete, list, history, board.
+
+- create: Create a task or subtask. Required: title. Optional: description, status, priority, assignee, labels, parent, spec, fulfills, order. Returns: created task with ID and metadata.
+- get: Read task details. Required: taskId. Optional: none. Returns: task metadata, acceptance criteria, plan, notes, spec links, and time spent.
+- update: Modify task fields, ACs, plan, or notes. Required: taskId. Optional: title, description, status, priority, assignee, labels, spec, fulfills, order, addAc, checkAc, uncheckAc, removeAc, plan, notes, appendNotes, clear. Returns: updated task.
+- delete: Remove a task or preview removal. Required: taskId. Optional: dryRun (default true). Returns: deletion preview or confirmation.
+- list: List tasks with filters. Required: none. Optional: status, priority, assignee, label, spec. Returns: matching task summaries with IDs, titles, statuses, priorities, assignees, labels, and spec links.
+- history: View task change history. Required: taskId. Optional: none. Returns: chronological change entries with timestamps and metadata.
+- board: Show tasks grouped by status. Required: none. Optional: none. Returns: board columns containing task summaries by status.
+`),
 			mcp.WithString("action",
 				mcp.Required(),
 				mcp.Description("Action to perform"),
@@ -122,6 +130,14 @@ func RegisterTaskTool(s *server.MCPServer, getStore func() *storage.Store) {
 			}
 		},
 	)
+
+	registerHelp(s, "tasks.create", HelpEntry{When: "Create a new task or subtask with title, context, ownership, labels, and optional spec links.", Params: map[string]string{"title": "required — task title", "description": "task context and goal", "status": "todo | in-progress | in-review | done | blocked | on-hold | urgent", "priority": "low | medium | high", "assignee": "person responsible for task", "labels": "task labels", "parent": "parent task ID for subtasks", "spec": "spec doc path this task implements", "fulfills": "spec AC IDs this task satisfies", "order": "display order"}, Examples: []string{`tasks({ action: "create", title: "Add auth", description: "...", priority: "high" })`}, Flow: "Create task, then update to in-progress and start time before implementation."})
+	registerHelp(s, "tasks.get", HelpEntry{When: "Read full task details before planning, implementation, review, or status updates.", Params: map[string]string{"taskId": "required — task ID"}, Flow: "Use before update/history when you need current ACs, plan, notes, or spec links."})
+	registerHelp(s, "tasks.update", HelpEntry{When: "Modify task metadata, status, acceptance criteria, plan, or implementation notes.", Params: map[string]string{"taskId": "required — task ID", "title": "new task title", "description": "new task description", "status": "new task status", "priority": "low | medium | high", "assignee": "new assignee", "labels": "replacement label list", "spec": "spec doc path", "fulfills": "spec AC IDs this task satisfies", "order": "display order", "addAc": "new acceptance criteria", "checkAc": "1-based AC indexes to mark complete", "uncheckAc": "1-based AC indexes to mark incomplete", "removeAc": "1-based AC indexes to remove", "plan": "implementation plan", "notes": "replace all implementation notes", "appendNotes": "append to existing implementation notes", "clear": "string fields to clear"}, Why: "Use appendNotes for progress. notes replaces existing notes and can wipe history.", Examples: []string{`tasks({ action: "update", taskId: "abc123", appendNotes: "Done: added tests" })`, `tasks({ action: "update", taskId: "abc123", checkAc: [1, 2] })`}, Flow: "Only check AC after work is complete; stop time and set status done at finish."})
+	registerHelp(s, "tasks.delete", HelpEntry{When: "Preview or remove a task when it is obsolete or was created by mistake.", Params: map[string]string{"taskId": "required — task ID", "dryRun": "preview only without deleting; default true"}, Why: "Default dryRun protects against accidental deletion."})
+	registerHelp(s, "tasks.list", HelpEntry{When: "Find tasks by status, owner, priority, label, or spec before choosing work or checking remaining scope.", Params: map[string]string{"status": "filter by task status", "priority": "filter by low | medium | high", "assignee": "filter by assignee", "label": "filter by one label", "spec": "filter by linked spec doc path"}})
+	registerHelp(s, "tasks.history", HelpEntry{When: "Inspect chronological changes for audit, debugging, or understanding how a task evolved.", Params: map[string]string{"taskId": "required — task ID"}})
+	registerHelp(s, "tasks.board", HelpEntry{When: "Show task board grouped by status for planning or handoff overview.", Params: map[string]string{}})
 }
 
 func handleTaskCreate(getStore func() *storage.Store, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
