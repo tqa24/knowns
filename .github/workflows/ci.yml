@@ -230,6 +230,20 @@ jobs:
         if: runner.os != 'Windows'
         run: cd tests && TEST_SEMANTIC=1 TEST_BINARY=../bin/knowns go test -v -timeout 300s -count=1 -run 'TestMCP_SemanticSearch/(reindex|keyword_search|hybrid_search|search_docs_only|search_tasks_only)$' ./...
 
+      - name: Run semantic CLI subset (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          CGO_ENABLED: '1'
+        run: cd tests && TEST_SEMANTIC=1 TEST_BINARY=../bin/knowns.exe go test -v -timeout 300s -count=1 -run TestCLI_SemanticSearch ./...
+
+      - name: Run semantic MCP subset (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          CGO_ENABLED: '1'
+        run: cd tests && TEST_SEMANTIC=1 TEST_BINARY=../bin/knowns.exe go test -v -timeout 300s -count=1 -run 'TestMCP_SemanticSearch/(reindex|keyword_search|hybrid_search|search_docs_only|search_tasks_only)$' ./...
+
       - name: Run UI Playwright tests (Unix)
         if: runner.os != 'Windows'
         run: cd ui && TEST_BINARY=../bin/knowns bun test:e2e
