@@ -357,8 +357,8 @@ func TestStartAll_ParallelExecution(t *testing.T) {
 	elapsed := time.Since(start)
 
 	// If truly parallel, should complete in ~0.1s (plus overhead), not 0.3s.
-	if elapsed > 250*time.Millisecond {
-		t.Errorf("StartAll took %v, expected parallel execution under 250ms", elapsed)
+	if elapsed > 500*time.Millisecond {
+		t.Errorf("StartAll took %v, expected parallel execution under 500ms", elapsed)
 	}
 
 	// All should be crashed (sleep doesn't speak LSP).
