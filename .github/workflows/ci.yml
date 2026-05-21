@@ -213,9 +213,10 @@ jobs:
         if: runner.os == 'Windows'
         env:
           CGO_ENABLED: '1'
+        shell: bash
         run: |
-          cd tests && go test -v -timeout 300s -count=1 -run TestCLI ./...
-          cd tests && go test -v -timeout 300s -count=1 -run TestMCP ./...
+          (cd tests && go test -v -timeout 300s -count=1 -run TestCLI ./...)
+          (cd tests && go test -v -timeout 300s -count=1 -run TestMCP ./...)
 
       - name: Run semantic CLI subset (Unix)
         if: runner.os != 'Windows'
