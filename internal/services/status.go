@@ -436,8 +436,11 @@ func detectEmbedding(store *storage.Store) []ServiceStatus {
 
 	// Check project-level semantic search config.
 	proj, err := store.Config.Load()
-	if err != nil {
-		proj = nil
+	if err != nil || proj == nil {
+		ss.Status = "disabled"
+		ss.EnabledInConfig = false
+		ss.Details["reason"] = "could not load project config"
+		return []ServiceStatus{ss}
 	}
 
 	semCfg := proj.Settings.SemanticSearch
