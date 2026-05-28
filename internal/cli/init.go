@@ -483,7 +483,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 	steps = append(steps, initStep{
 		label: "Installing language servers",
 		run: func() error {
-			return autoInstallLSPServers(cwd)
+			s := storage.NewStore(root)
+			return autoInstallLSPServers(cwd, s)
 		},
 	})
 
@@ -1615,7 +1616,7 @@ func maybeOpenBrowser(cwd string, openFlag, noOpen bool) error {
 
 // autoInstallLSPServers detects languages in cwd and installs LSP servers
 // for any that are not already on PATH. Non-blocking: always returns nil.
-func autoInstallLSPServers(cwd string) error {
+func autoInstallLSPServers(cwd string, store *storage.Store) error {
 	if cwd == "" {
 		return nil
 	}
@@ -1638,6 +1639,31 @@ func autoInstallLSPServers(cwd string) error {
 	}
 	if len(detected) == 0 {
 		return nil
+	}
+
+	// Persist detected languages to config
+	if store != nil {
+		if project, err := store.Config.Load(); err == nil {
+			if project.Settings.LSP == nil {
+				enabled := true
+				project.Settings.LSP = &models.LSPSettings{Enabled: &enabled, Languages: map[string]models.LSPLanguageSettings{}}
+			}
+			if project.Settings.LSP.Languages == nil {
+				project.Settings.LSP.Languages = map[string]models.LSPLanguageSettings{}
+			}
+			changed := false
+			enabled := true
+			for _, lang := range detected {
+				if _, exists := project.Settings.LSP.Languages[lang.ID]; !exists {
+					project.Settings.LSP.Languages[lang.ID] = models.LSPLanguageSettings{Enabled: &enabled}
+					changed = true
+				}
+			}
+			if changed {
+				project.Settings.LSP.Enabled = &enabled
+				_ = store.Config.Save(project)
+			}
+		}
 	}
 
 	ctx := context.Background()

@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 
 	"github.com/howznguyen/knowns/internal/codegen"
 	"github.com/howznguyen/knowns/internal/runtimeinstall"
@@ -161,7 +160,7 @@ func buildGlobalSetupSteps(force bool, platforms []string) []initStep {
 		steps = append(steps, initStep{
 			label: "Creating global Claude instruction file",
 			run: func() error {
-				return writeGlobalInstructionFile(home, "claude-code", force)
+				return writeGlobalInstructionFile(home, "claude-code")
 			},
 		})
 	}
@@ -169,7 +168,7 @@ func buildGlobalSetupSteps(force bool, platforms []string) []initStep {
 		steps = append(steps, initStep{
 			label: "Creating global Kiro steering file",
 			run: func() error {
-				return writeGlobalInstructionFile(home, "kiro", force)
+				return writeGlobalInstructionFile(home, "kiro")
 			},
 		})
 	}
@@ -333,7 +332,6 @@ func setupGlobalCodexMCP(home string) error {
 	}
 
 	cmd, args := mcpCommand()
-	fullArgs := strings.Join(args, " ")
 
 	// Read existing TOML or create new
 	content := ""
@@ -341,18 +339,10 @@ func setupGlobalCodexMCP(home string) error {
 		content = string(data)
 	}
 
-	// Check if [mcp_servers.knowns] already exists
-	if strings.Contains(content, "[mcp_servers.knowns]") {
-		return nil
-	}
-
-	// Append MCP server config
-	entry := fmt.Sprintf("\n[mcp_servers.knowns]\ncommand = %q\nargs = %q\n", cmd, fullArgs)
-	content += entry
+	content = runtimeinstall.SetCodexMCPServer(content, cmd, args)
 
 	return os.WriteFile(configPath, []byte(content), 0644)
 }
-
 // --- Global skills ---
 
 func syncGlobalSkills(home string, platforms []string) error {
@@ -375,7 +365,7 @@ func syncGlobalSkills(home string, platforms []string) error {
 
 // --- Global instruction files ---
 
-func writeGlobalInstructionFile(home, platform string, force bool) error {
+func writeGlobalInstructionFile(home, platform string) error {
 	var filePath string
 	switch platform {
 	case "claude-code":
@@ -383,10 +373,6 @@ func writeGlobalInstructionFile(home, platform string, force bool) error {
 	case "kiro":
 		filePath = filepath.Join(home, ".kiro", "steering", "knowns.md")
 	default:
-		return nil
-	}
-
-	if _, err := os.Stat(filePath); err == nil && !force {
 		return nil
 	}
 
