@@ -40,6 +40,9 @@ func (am *AuthManager) RemovePassword() {
 }
 
 func (am *AuthManager) HasPassword() bool {
+	if am == nil {
+		return false
+	}
 	am.mu.RLock()
 	defer am.mu.RUnlock()
 	return am.password != ""
@@ -76,7 +79,7 @@ func (am *AuthManager) ValidateSession(token string) bool {
 
 func (am *AuthManager) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !am.HasPassword() {
+		if am == nil || !am.HasPassword() {
 			next.ServeHTTP(w, r)
 			return
 		}
