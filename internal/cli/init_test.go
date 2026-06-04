@@ -129,10 +129,17 @@ func TestRunInitNoWizardUsesGlobalDefaults(t *testing.T) {
 		t.Fatalf("chdir: %v", err)
 	}
 	oldHome := os.Getenv("HOME")
+	oldUserProfile := os.Getenv("USERPROFILE")
 	if err := os.Setenv("HOME", home); err != nil {
 		t.Fatalf("set HOME: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Setenv("HOME", oldHome) })
+	if err := os.Setenv("USERPROFILE", home); err != nil {
+		t.Fatalf("set USERPROFILE: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Setenv("HOME", oldHome)
+		_ = os.Setenv("USERPROFILE", oldUserProfile)
+	})
 
 	settingsPath := filepath.Join(home, ".knowns", "settings.json")
 	if err := os.MkdirAll(filepath.Dir(settingsPath), 0755); err != nil {
