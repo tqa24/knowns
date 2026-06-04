@@ -140,7 +140,9 @@ Controls whether generated artifacts should be refreshed after upgrading the CLI
 You can edit `.knowns/config.json` directly if you know what you are doing, but the normal path is:
 
 - `knowns init` for first-time setup (project structure + git tracking)
-- `knowns setup` for AI platform integrations
+- `knowns init` also creates selected project instruction shims (`KNOWNS.md`, default `CLAUDE.md` + `AGENTS.md`)
+- `knowns setup` for AI platform integrations such as MCP/config files, skills, and runtime hooks
+- `knowns setup agents` when you only need `KNOWNS.md` + `AGENTS.md`
 - `knowns settings` for the interactive project settings center
 - `knowns settings --global` for defaults reused by future `knowns init` runs
 - `knowns config get/set/list/reset` for scriptable config access

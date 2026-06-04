@@ -31,7 +31,9 @@ Every time you start a new AI coding session, you re-explain your architecture, 
 If you believe AI should truly understand software projects, consider giving **Knowns** a star.
 
 <p align="center">
-  <img src="./images/task-workflow.gif" alt="Knowns task workflow demo" width="100%">
+  <video src="https://res.cloudinary.com/dkxhoyenc/video/upload/v1780569111/knowns-full-pipeline_uwhyk1.mp4" controls muted loop playsinline width="100%">
+    <a href="https://res.cloudinary.com/dkxhoyenc/video/upload/v1780569111/knowns-full-pipeline_uwhyk1.mp4">Watch the Knowns full pipeline demo</a>
+  </video>
 </p>
 
 ## Table of Contents
@@ -150,6 +152,7 @@ knowns --version
 # Initialize in your project
 cd your-project
 knowns init
+# Creates .knowns/ plus KNOWNS.md, CLAUDE.md, and AGENTS.md by default
 
 # or run without a global install
 npx knowns init
@@ -450,8 +453,10 @@ knowns lsp list
 knowns lsp install <language>
 # Use the MCP code tool for symbols, definitions, references, diagnostics, and edits
 
-# AI Guidelines
-knowns setup
+# AI setup
+knowns setup agents        # KNOWNS.md + AGENTS.md only
+knowns setup codex --global # user-level Codex MCP/skills/hooks
+knowns setup               # full interactive project integration setup
 knowns sync
 ```
 

@@ -183,6 +183,17 @@ func TestRunInitNoWizardUsesGlobalDefaults(t *testing.T) {
 	if !ok || len(platforms) != 2 || platforms[0] != "codex" || platforms[1] != "agents" {
 		t.Fatalf("expected global platforms, got %#v", settings["platforms"])
 	}
+	assertContains(t, readTextFile(t, filepath.Join(projectRoot, "KNOWNS.md")), "# KNOWNS")
+	assertContains(t, readTextFile(t, filepath.Join(projectRoot, "AGENTS.md")), "Compatibility entrypoint")
+	if _, err := os.Stat(filepath.Join(projectRoot, "CLAUDE.md")); !os.IsNotExist(err) {
+		t.Fatalf("expected CLAUDE.md not to be created when global defaults select codex+agents, got err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(projectRoot, ".codex", "config.toml")); !os.IsNotExist(err) {
+		t.Fatalf("expected init not to create project Codex config, got err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(projectRoot, ".mcp.json")); !os.IsNotExist(err) {
+		t.Fatalf("expected init not to create project MCP config, got err=%v", err)
+	}
 }
 
 func TestSettingsCommandSurface(t *testing.T) {
@@ -603,6 +614,20 @@ func TestCreateInstructionFilesQuietIncludesOpenCode(t *testing.T) {
 
 	if _, err := os.Stat(filepath.Join(projectRoot, "OPENCODE.md")); err != nil {
 		t.Fatalf("expected OPENCODE.md to be created: %v", err)
+	}
+}
+
+func TestCreateInstructionFilesForCodexCreatesAgentsShimOnly(t *testing.T) {
+	projectRoot := t.TempDir()
+
+	if err := createInstructionFilesForPlatforms(projectRoot, false, []string{"codex"}); err != nil {
+		t.Fatalf("createInstructionFilesForPlatforms returned error: %v", err)
+	}
+
+	assertContains(t, readTextFile(t, filepath.Join(projectRoot, "KNOWNS.md")), "# KNOWNS")
+	assertContains(t, readTextFile(t, filepath.Join(projectRoot, "AGENTS.md")), "Compatibility entrypoint")
+	if _, err := os.Stat(filepath.Join(projectRoot, "CLAUDE.md")); !os.IsNotExist(err) {
+		t.Fatalf("expected CLAUDE.md not to be created for codex-only instructions, got err=%v", err)
 	}
 }
 

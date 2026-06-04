@@ -93,7 +93,9 @@ Supported: `claude-code`, `opencode`, `codex`, `kiro`, `antigravity`, `cursor`, 
 Có thể edit `.knowns/config.json` trực tiếp, nhưng flow thường là:
 
 - `knowns init` cho lần đầu (project structure + git tracking)
-- `knowns setup` cho AI platform integrations
+- `knowns init` cũng tạo selected project instruction shims (`KNOWNS.md`, mặc định `CLAUDE.md` + `AGENTS.md`)
+- `knowns setup` cho AI platform integrations như MCP/config files, skills, runtime hooks
+- `knowns setup agents` khi chỉ cần `KNOWNS.md` + `AGENTS.md`
 - `knowns settings` để mở settings center tương tác cho project hiện tại
 - `knowns settings --global` để lưu defaults dùng lại cho các lần `knowns init` sau
 - `knowns config get/set/list/reset` cho script hoặc agent

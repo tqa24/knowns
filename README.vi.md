@@ -31,7 +31,9 @@ Mỗi lần mở session mới với AI, bạn lại phải giải thích lại 
 Nếu bạn nghĩ AI nên thực sự hiểu software project, cho **Knowns** một star nhé.
 
 <p align="center">
-  <img src="./images/task-workflow.gif" alt="Knowns task workflow demo" width="100%">
+  <video src="https://res.cloudinary.com/dkxhoyenc/video/upload/v1780569111/knowns-full-pipeline_uwhyk1.mp4" controls muted loop playsinline width="100%">
+    <a href="https://res.cloudinary.com/dkxhoyenc/video/upload/v1780569111/knowns-full-pipeline_uwhyk1.mp4">Xem demo full pipeline của Knowns</a>
+  </video>
 </p>
 
 ## Mục lục
@@ -150,6 +152,7 @@ knowns --version
 # Init trong project
 cd your-project
 knowns init
+# Mặc định tạo .knowns/ cùng KNOWNS.md, CLAUDE.md, AGENTS.md
 
 # Hoặc chạy không cần cài global
 npx knowns init
@@ -450,8 +453,10 @@ knowns lsp list
 knowns lsp install <language>
 knowns lsp cleanup
 
-# AI Guidelines
-knowns setup
+# AI setup
+knowns setup agents        # chỉ KNOWNS.md + AGENTS.md
+knowns setup codex --global # Codex MCP/skills/hooks ở user scope
+knowns setup               # interactive project integration setup đầy đủ
 knowns sync
 ```
 

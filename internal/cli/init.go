@@ -193,6 +193,81 @@ func hasPlatform(platforms []string, id string) bool {
 	return false
 }
 
+func hasExplicitPlatform(platforms []string, id string) bool {
+	for _, p := range platforms {
+		if p == id {
+			return true
+		}
+	}
+	return false
+}
+
+func shouldCreateInstructionFile(platforms []string, f instructionFile) bool {
+	if len(platforms) == 0 {
+		return true
+	}
+	if f.PlatformID == "agents" && hasExplicitPlatform(platforms, "codex") {
+		return true
+	}
+	return hasExplicitPlatform(platforms, f.PlatformID)
+}
+
+func defaultInstructionPlatforms() []string {
+	return []string{"claude-code", "agents"}
+}
+
+func instructionPlatformOptions(selected []string) []huh.Option[string] {
+	selectedSet := make(map[string]bool, len(selected))
+	for _, id := range selected {
+		if id == "codex" {
+			id = "agents"
+		}
+		selectedSet[id] = true
+	}
+	options := []struct {
+		label string
+		id    string
+	}{
+		{label: "CLAUDE.md  (Claude Code)", id: "claude-code"},
+		{label: "AGENTS.md  (Codex / generic agents)", id: "agents"},
+		{label: "OPENCODE.md  (OpenCode)", id: "opencode"},
+		{label: "GEMINI.md  (Gemini CLI)", id: "gemini"},
+		{label: ".github/copilot-instructions.md  (GitHub Copilot)", id: "copilot"},
+	}
+	result := make([]huh.Option[string], len(options))
+	for i, opt := range options {
+		result[i] = huh.NewOption(opt.label, opt.id).Selected(selectedSet[opt.id])
+	}
+	return result
+}
+
+func normalizeInstructionPlatforms(platforms []string) []string {
+	if len(platforms) == 0 {
+		return defaultInstructionPlatforms()
+	}
+	seen := make(map[string]bool, len(platforms))
+	normalized := make([]string, 0, len(platforms))
+	for _, id := range platforms {
+		if id == "codex" {
+			id = "agents"
+		}
+		switch id {
+		case "claude-code", "agents", "opencode", "gemini", "copilot":
+		default:
+			continue
+		}
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		normalized = append(normalized, id)
+	}
+	if len(normalized) == 0 {
+		return defaultInstructionPlatforms()
+	}
+	return normalized
+}
+
 // initConfig holds all wizard answers.
 type initConfig struct {
 	Name            string
@@ -301,7 +376,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	if interactive && len(args) == 0 {
 		// Load any existing config to pre-populate wizard defaults.
-		existingName, existingGitTrackingMode, existingGitTracking, existingSemanticEnabled, existingSemanticModel := defaultsForWizard(cwd, globalDefaults)
+		existingName, existingGitTrackingMode, existingGitTracking, existingSemanticEnabled, existingSemanticModel, existingPlatforms := defaultsForWizard(cwd, globalDefaults)
 		if existingCfg, err := storage.NewStore(root).Config.Load(); err == nil {
 			existingName = existingCfg.Name
 			existingGitTrackingMode = existingCfg.Settings.GitTrackingMode
@@ -313,10 +388,13 @@ func runInit(cmd *cobra.Command, args []string) error {
 				existingSemanticEnabled = &enabled
 				existingSemanticModel = existingCfg.Settings.SemanticSearch.Model
 			}
+			if len(existingCfg.Settings.Platforms) > 0 {
+				existingPlatforms = existingCfg.Settings.Platforms
+			}
 		}
 
 		// Run full wizard with huh
-		wizardCfg, err := runWizard(cwd, gitTracked, gitIgnored, gitAvailable, existingName, existingGitTrackingMode, existingGitTracking, existingSemanticEnabled, existingSemanticModel)
+		wizardCfg, err := runWizard(cwd, gitTracked, gitIgnored, gitAvailable, existingName, existingGitTrackingMode, existingGitTracking, existingSemanticEnabled, existingSemanticModel, existingPlatforms)
 		if err != nil {
 			if err == huh.ErrUserAborted {
 				fmt.Println(warnStyle.Render("Setup cancelled."))
@@ -339,7 +417,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		enableSemantic := isTTY()
 		semanticModel := "multilingual-e5-small"
 		embeddingSource := "local"
-		platforms := []string{"claude-code", "agents"}
+		platforms := defaultInstructionPlatforms()
 		enableChatUI := true
 		if globalDefaults != nil {
 			if globalDefaults.Settings.GitTrackingMode != "" {
@@ -473,6 +551,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 				return writeKnownsGitignore(cwd, cfg.GitTrackingMode, &cfg.GitTracking)
 			},
 		},
+		{
+			label: "Creating project instruction files",
+			run: func() error {
+				return createInstructionFilesForPlatforms(cwd, force, cfg.Platforms)
+			},
+		},
 	}
 
 	if !hasGitRepo && gitAvailable {
@@ -576,15 +660,16 @@ func loadGlobalProjectDefaults() (*storage.ProjectDefaults, error) {
 	return settings.ProjectDefaults, nil
 }
 
-func defaultsForWizard(cwd string, defaults *storage.ProjectDefaults) (string, string, *models.GitTracking, *bool, string) {
+func defaultsForWizard(cwd string, defaults *storage.ProjectDefaults) (string, string, *models.GitTracking, *bool, string, []string) {
 	name := filepath.Base(cwd)
 	var gitMode string
 	var gitTracking *models.GitTracking
 	var semanticEnabled *bool
 	var semanticModel string
+	platforms := defaultInstructionPlatforms()
 
 	if defaults == nil {
-		return name, gitMode, gitTracking, semanticEnabled, semanticModel
+		return name, gitMode, gitTracking, semanticEnabled, semanticModel, platforms
 	}
 	if defaults.ProjectName != "" {
 		name = defaults.ProjectName
@@ -596,10 +681,13 @@ func defaultsForWizard(cwd string, defaults *storage.ProjectDefaults) (string, s
 		semanticEnabled = &enabled
 		semanticModel = defaults.Settings.SemanticSearch.Model
 	}
-	return name, gitMode, gitTracking, semanticEnabled, semanticModel
+	if len(defaults.Settings.Platforms) > 0 {
+		platforms = defaults.Settings.Platforms
+	}
+	return name, gitMode, gitTracking, semanticEnabled, semanticModel, platforms
 }
 
-func runWizard(cwd string, gitTracked, gitIgnored bool, gitAvailable bool, existingName string, existingGitTrackingMode string, existingGitTracking *models.GitTracking, existingSemanticEnabled *bool, existingSemanticModel string) (*initConfig, error) {
+func runWizard(cwd string, gitTracked, gitIgnored bool, gitAvailable bool, existingName string, existingGitTrackingMode string, existingGitTracking *models.GitTracking, existingSemanticEnabled *bool, existingSemanticModel string, existingPlatforms []string) (*initConfig, error) {
 	defaultName := filepath.Base(cwd)
 	if existingName != "" {
 		defaultName = existingName
@@ -666,6 +754,20 @@ func runWizard(cwd string, gitTracked, gitIgnored bool, gitAvailable bool, exist
 	if gitGroup != nil {
 		groups = append(groups, gitGroup)
 	}
+	cfg.Platforms = normalizeInstructionPlatforms(existingPlatforms)
+	groups = append(groups, huh.NewGroup(
+		huh.NewMultiSelect[string]().
+			Title("Project instruction files").
+			Description("KNOWNS.md is always created as the canonical project guidance. Choose compatibility shims for agents that read project files.").
+			Options(instructionPlatformOptions(cfg.Platforms)...).
+			Validate(func(s []string) error {
+				if len(s) == 0 {
+					return fmt.Errorf("select at least one instruction file")
+				}
+				return nil
+			}).
+			Value(&cfg.Platforms),
+	))
 
 	form := huh.NewForm(groups...).
 		WithTheme(huh.ThemeCatppuccin()).
@@ -1223,7 +1325,7 @@ func createInstructionFilesForPlatforms(projectRoot string, force bool, platform
 	}
 
 	for _, f := range defaultInstructionFiles {
-		if !hasPlatform(platforms, f.PlatformID) {
+		if !shouldCreateInstructionFile(platforms, f) {
 			continue
 		}
 		if err := writeInstructionFile(projectRoot, f.Path, f.Platform, force); err != nil {
