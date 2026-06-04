@@ -279,23 +279,29 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	var cfg initConfig
+	globalDefaults, err := loadGlobalProjectDefaults()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to load global settings: %v\n", err)
+	}
 
 	// Determine if interactive mode
 	interactive := !noWizard
 	if interactive && isTTYFn() && terminalWidthFn() < 90 {
-		fmt.Println(warnStyle.Render("Terminal width is too small for the interactive setup wizard."))
-		fmt.Println(dimStyle.Render("  Falling back to non-interactive defaults. Re-run with a wider terminal for the full wizard."))
+		fmt.Println(warnStyle.Render("Terminal is too small for the interactive setup wizard."))
 		fmt.Println()
-		interactive = false
+		fmt.Println(RenderField("Minimum width", "90 columns"))
+		fmt.Println(RenderField("Current width", fmt.Sprintf("%d columns", terminalWidthFn())))
+		fmt.Println()
+		fmt.Println(dimStyle.Render("  Resize the terminal and rerun: knowns init"))
+		fmt.Println(dimStyle.Render("  Or run explicitly without the wizard: knowns init --no-wizard"))
+		fmt.Println(dimStyle.Render("  Or pass explicit flags such as: knowns init --no-wizard --git-tracked"))
+		fmt.Println()
+		return nil
 	}
 
 	if interactive && len(args) == 0 {
 		// Load any existing config to pre-populate wizard defaults.
-		var existingName string
-		var existingGitTrackingMode string
-		var existingGitTracking *models.GitTracking
-		var existingSemanticEnabled *bool
-		var existingSemanticModel string
+		existingName, existingGitTrackingMode, existingGitTracking, existingSemanticEnabled, existingSemanticModel := defaultsForWizard(cwd, globalDefaults)
 		if existingCfg, err := storage.NewStore(root).Config.Load(); err == nil {
 			existingName = existingCfg.Name
 			existingGitTrackingMode = existingCfg.Settings.GitTrackingMode
@@ -322,10 +328,66 @@ func runInit(cmd *cobra.Command, args []string) error {
 	} else {
 		// Non-interactive or name provided
 		name := filepath.Base(cwd)
+		if globalDefaults != nil && globalDefaults.ProjectName != "" {
+			name = globalDefaults.ProjectName
+		}
 		if len(args) > 0 {
 			name = args[0]
 		}
 		gitMode := "git-tracked"
+		gitTracking := models.GitTrackingDefaults()
+		enableSemantic := isTTY()
+		semanticModel := "multilingual-e5-small"
+		embeddingSource := "local"
+		platforms := []string{"claude-code", "agents"}
+		enableChatUI := true
+		if globalDefaults != nil {
+			if globalDefaults.Settings.GitTrackingMode != "" {
+				gitMode = globalDefaults.Settings.GitTrackingMode
+			}
+			if globalDefaults.Settings.GitTracking != nil {
+				gitTracking = *globalDefaults.Settings.GitTracking
+			}
+			if globalDefaults.Settings.SemanticSearch != nil {
+				enableSemantic = globalDefaults.Settings.SemanticSearch.Enabled
+				semanticModel = globalDefaults.Settings.SemanticSearch.Model
+				if globalDefaults.Settings.SemanticSearch.Provider != "" {
+					embeddingSource = globalDefaults.Settings.SemanticSearch.Provider
+				}
+			}
+			if len(globalDefaults.Settings.Platforms) > 0 {
+				platforms = globalDefaults.Settings.Platforms
+			}
+			if globalDefaults.Settings.EnableChatUI != nil {
+				enableChatUI = *globalDefaults.Settings.EnableChatUI
+			}
+		}
+		if force {
+			if existingCfg, err := storage.NewStore(root).Config.Load(); err == nil {
+				if existingCfg.Name != "" && len(args) == 0 {
+					name = existingCfg.Name
+				}
+				if existingCfg.Settings.GitTrackingMode != "" {
+					gitMode = existingCfg.Settings.GitTrackingMode
+				}
+				if existingCfg.Settings.GitTracking != nil {
+					gitTracking = *existingCfg.Settings.GitTracking
+				}
+				if existingCfg.Settings.SemanticSearch != nil {
+					enableSemantic = existingCfg.Settings.SemanticSearch.Enabled
+					semanticModel = existingCfg.Settings.SemanticSearch.Model
+					if existingCfg.Settings.SemanticSearch.Provider != "" {
+						embeddingSource = existingCfg.Settings.SemanticSearch.Provider
+					}
+				}
+				if len(existingCfg.Settings.Platforms) > 0 {
+					platforms = existingCfg.Settings.Platforms
+				}
+				if existingCfg.Settings.EnableChatUI != nil {
+					enableChatUI = *existingCfg.Settings.EnableChatUI
+				}
+			}
+		}
 		if gitTracked {
 			gitMode = "git-tracked"
 		} else if gitIgnored {
@@ -334,11 +396,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 		cfg = initConfig{
 			Name:            name,
 			GitTrackingMode: gitMode,
-			GitTracking:     models.GitTrackingDefaults(),
-			EnableSemantic:  isTTY(),
-			SemanticModel:   "multilingual-e5-small",
-			Platforms:       []string{"claude-code", "agents"},
-			EnableChatUI:    true,
+			GitTracking:     gitTracking,
+			EnableSemantic:  enableSemantic,
+			SemanticModel:   semanticModel,
+			EmbeddingSource: embeddingSource,
+			Platforms:       platforms,
+			EnableChatUI:    enableChatUI,
 		}
 	}
 
@@ -503,6 +566,37 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Println()
 	return maybeOpenBrowser(cwd, openFlag, noOpen)
+}
+
+func loadGlobalProjectDefaults() (*storage.ProjectDefaults, error) {
+	settings, err := storage.NewEmbeddingSettingsStore().Load()
+	if err != nil {
+		return nil, err
+	}
+	return settings.ProjectDefaults, nil
+}
+
+func defaultsForWizard(cwd string, defaults *storage.ProjectDefaults) (string, string, *models.GitTracking, *bool, string) {
+	name := filepath.Base(cwd)
+	var gitMode string
+	var gitTracking *models.GitTracking
+	var semanticEnabled *bool
+	var semanticModel string
+
+	if defaults == nil {
+		return name, gitMode, gitTracking, semanticEnabled, semanticModel
+	}
+	if defaults.ProjectName != "" {
+		name = defaults.ProjectName
+	}
+	gitMode = defaults.Settings.GitTrackingMode
+	gitTracking = defaults.Settings.GitTracking
+	if defaults.Settings.SemanticSearch != nil {
+		enabled := defaults.Settings.SemanticSearch.Enabled
+		semanticEnabled = &enabled
+		semanticModel = defaults.Settings.SemanticSearch.Model
+	}
+	return name, gitMode, gitTracking, semanticEnabled, semanticModel
 }
 
 func runWizard(cwd string, gitTracked, gitIgnored bool, gitAvailable bool, existingName string, existingGitTrackingMode string, existingGitTracking *models.GitTracking, existingSemanticEnabled *bool, existingSemanticModel string) (*initConfig, error) {

@@ -24,7 +24,11 @@ knowns sync --instructions
 knowns sync --model
 knowns update
 knowns update --check
+knowns settings
+knowns settings --global
 ```
+
+`knowns settings` mở settings center để chỉnh project name, git tracking, AI platforms, search, code intelligence, Browser/Chat UI, và maintenance guidance. Trong Search settings, Local ONNX models hiển thị trạng thái downloaded/not downloaded; nếu chọn model chưa download, Knowns có thể hỏi xác nhận rồi download trước khi lưu. `knowns settings --global` lưu defaults cho các lần `knowns init` sau. Dùng `knowns config get/set/list/reset` khi cần thao tác config bằng script hoặc agent.
 
 ## Task
 
