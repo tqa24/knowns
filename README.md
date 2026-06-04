@@ -31,9 +31,12 @@ Every time you start a new AI coding session, you re-explain your architecture, 
 If you believe AI should truly understand software projects, consider giving **Knowns** a star.
 
 <p align="center">
-  <video src="https://res.cloudinary.com/dkxhoyenc/video/upload/v1780569111/knowns-full-pipeline_uwhyk1.mp4" controls muted loop playsinline width="100%">
-    <a href="https://res.cloudinary.com/dkxhoyenc/video/upload/v1780569111/knowns-full-pipeline_uwhyk1.mp4">Watch the Knowns full pipeline demo</a>
-  </video>
+  <a href="https://player.cloudinary.com/embed/?cloud_name=dkxhoyenc&public_id=knowns-full-pipeline_uwhyk1">
+    <img src="./images/knowns-full-pipeline-20s.gif" alt="Knowns full pipeline demo preview" width="100%">
+  </a>
+</p>
+<p align="center">
+  <em>Click the preview to watch the full pipeline demo video.</em>
 </p>
 
 ## Table of Contents

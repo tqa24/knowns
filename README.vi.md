@@ -31,9 +31,12 @@ Mỗi lần mở session mới với AI, bạn lại phải giải thích lại 
 Nếu bạn nghĩ AI nên thực sự hiểu software project, cho **Knowns** một star nhé.
 
 <p align="center">
-  <video src="https://res.cloudinary.com/dkxhoyenc/video/upload/v1780569111/knowns-full-pipeline_uwhyk1.mp4" controls muted loop playsinline width="100%">
-    <a href="https://res.cloudinary.com/dkxhoyenc/video/upload/v1780569111/knowns-full-pipeline_uwhyk1.mp4">Xem demo full pipeline của Knowns</a>
-  </video>
+  <a href="https://player.cloudinary.com/embed/?cloud_name=dkxhoyenc&public_id=knowns-full-pipeline_uwhyk1">
+    <img src="./images/knowns-full-pipeline-20s.gif" alt="Knowns full pipeline demo preview" width="100%">
+  </a>
+</p>
+<p align="center">
+  <em>Click preview để xem video full pipeline.</em>
 </p>
 
 ## Mục lục
