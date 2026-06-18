@@ -224,6 +224,10 @@ func (s *Server) Stop(ctx context.Context) error {
 		if cmd.Process != nil {
 			_ = cmd.Process.Kill()
 		}
+		select {
+		case <-exited:
+		case <-time.After(2 * time.Second):
+		}
 		if logFile != nil {
 			_ = logFile.Close()
 		}

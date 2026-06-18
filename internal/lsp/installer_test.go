@@ -230,7 +230,11 @@ func TestInstall_NPMDependencyUsesManagedCache(t *testing.T) {
 		if err := os.MkdirAll(binDir, 0755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(binDir, "test-ls"), []byte("#!/bin/sh\n"), 0755); err != nil {
+		binaryName := "test-ls"
+		if runtime.GOOS == "windows" {
+			binaryName += ".cmd"
+		}
+		if err := os.WriteFile(filepath.Join(binDir, binaryName), []byte("#!/bin/sh\n"), 0755); err != nil {
 			t.Fatal(err)
 		}
 		return []byte("ok"), nil
@@ -252,7 +256,11 @@ func TestInstall_NPMDependencyUsesManagedCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Install failed: %v", err)
 	}
-	if !strings.Contains(path, filepath.Join("npmtest", "test-ls-1.2.3", "node_modules", ".bin", "test-ls")) {
+	wantPath := filepath.Join("npmtest", "test-ls-1.2.3", "node_modules", ".bin", "test-ls")
+	if runtime.GOOS == "windows" {
+		wantPath += ".cmd"
+	}
+	if !strings.Contains(path, wantPath) {
 		t.Fatalf("installed path %q does not use managed npm cache", path)
 	}
 	status := installer.Status(adapter)
