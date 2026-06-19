@@ -54,7 +54,7 @@ type CSharpResolveOptions struct {
 func CSharpBackends() []CSharpBackend {
 	return []CSharpBackend{
 		{ID: CSharpBackendRoslyn, Binary: Binary{Name: "roslyn-ls", CheckArgs: []string{"--version"}}},
-		{ID: CSharpBackendCSharp, Binary: Binary{Name: "csharp-ls", CheckArgs: []string{"--version"}}},
+		{ID: CSharpBackendCSharp, Binary: Binary{Name: "csharp-ls", CheckArgs: []string{"--version"}}, BuildArgs: csharpLSArgs},
 		{ID: CSharpBackendOmni, Binary: Binary{Name: "omnisharp", Args: []string{"--languageserver"}, CheckArgs: []string{"--version"}}},
 	}
 }
@@ -225,6 +225,13 @@ func resolveManagedRoslyn(ctx context.Context, root string, cfg Config, opts CSh
 
 func roslynDotnetArgs(serverPath string, _ CSharpProjectSelection) []string {
 	return []string{serverPath, "--stdio"}
+}
+
+func csharpLSArgs(selection CSharpProjectSelection) []string {
+	if selection.Kind != "sln" || selection.Path == "" {
+		return nil
+	}
+	return []string{"--solution", selection.Path}
 }
 
 func CSharpRoslynRuntimeDependency(cfg Config) RuntimeDependency {

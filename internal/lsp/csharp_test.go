@@ -144,6 +144,31 @@ func TestResolveCSharpBackendAutoFallbackRecordsAttempts(t *testing.T) {
 	}
 }
 
+func TestResolveCSharpBackendCSharpLSPUsesDiscoveredSolution(t *testing.T) {
+	root := t.TempDir()
+	solutionPath := filepath.Join(root, "App.sln")
+	if err := os.WriteFile(solutionPath, []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lookPath := func(name string) (string, error) {
+		if name == "csharp-ls" {
+			return "/bin/csharp-ls", nil
+		}
+		return "", errors.New("missing")
+	}
+
+	cmd, ok := ResolveCSharpBackend(context.Background(), root, Config{}, lookPath, func(context.Context, string, ...string) error { return nil })
+	if !ok {
+		t.Fatal("ResolveCSharpBackend() failed, want csharp-ls fallback")
+	}
+	if cmd.Backend != CSharpBackendCSharp || cmd.Path != "/bin/csharp-ls" {
+		t.Fatalf("command = %#v, want selected csharp-ls", cmd)
+	}
+	if !reflect.DeepEqual(cmd.Args, []string{"--solution", solutionPath}) {
+		t.Fatalf("csharp-ls args = %#v, want --solution %s", cmd.Args, solutionPath)
+	}
+}
+
 func TestResolveCSharpBackendExplicitDoesNotFallback(t *testing.T) {
 	cfg := Config{Languages: map[string]LanguageConfig{
 		CSharpLanguageID: {Backend: CSharpBackendOmni},
