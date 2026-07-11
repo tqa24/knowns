@@ -7,7 +7,7 @@ Skills are separate from MCP tools. MCP tools appear in clients as structured do
 ## Current skill paths
 
 - `.claude/skills` -> Claude Code
-- `.agents/skills` -> OpenCode, Codex, Antigravity, Generic Agents
+- `.agents/skills` -> OpenCode, Codex, Hermes Agent, Antigravity, Generic Agents
 - `.kiro/skills` -> Kiro
 
 ## Setup
@@ -18,6 +18,7 @@ Skills are generated via `knowns setup <target> --global` for normal personal as
 knowns setup claude --global    # Syncs Claude skills/config at user scope
 knowns setup opencode --global  # Syncs OpenCode skills/config at user scope
 knowns setup codex --global     # Syncs Codex skills/config at user scope
+knowns setup hermes --global    # Syncs Hermes external skill config at user scope
 knowns setup kiro --global      # Syncs Kiro skills/config at user scope
 knowns sync --skills   # Re-syncs all configured platforms
 ```

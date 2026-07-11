@@ -75,7 +75,7 @@ func platformNeedsClaudeSkills(p string) bool {
 
 // platformNeedsAgentSkills returns true if the platform writes to .agents/skills/.
 func platformNeedsAgentSkills(p string) bool {
-	return p == "agents" || p == "opencode" || p == "antigravity" || p == "codex" || p == "cursor" || p == "gemini"
+	return p == "agents" || p == "opencode" || p == "antigravity" || p == "codex" || p == "cursor" || p == "gemini" || p == "hermes"
 }
 
 // platformNeedsKiroSkills returns true if the platform writes to .kiro/skills/.

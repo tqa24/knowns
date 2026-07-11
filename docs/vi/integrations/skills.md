@@ -7,7 +7,7 @@ Skills tách biệt với MCP tools. MCP tools hiện trong client dưới dạn
 ## Skill paths
 
 - `.claude/skills` → Claude Code
-- `.agents/skills` → OpenCode, Codex, Antigravity, Generic Agents
+- `.agents/skills` → OpenCode, Codex, Hermes Agent, Antigravity, Generic Agents
 - `.kiro/skills` → Kiro
 
 ## Setup
@@ -18,6 +18,7 @@ Skills được tạo qua `knowns setup <target> --global` cho personal assistan
 knowns setup claude --global    # Sync Claude skills/config ở user scope
 knowns setup opencode --global  # Sync OpenCode skills/config ở user scope
 knowns setup codex --global     # Sync Codex skills/config ở user scope
+knowns setup hermes --global    # Sync Hermes external skill config ở user scope
 knowns setup kiro --global      # Sync Kiro skills/config ở user scope
 knowns sync --skills   # Re-sync tất cả platforms đã cấu hình
 ```

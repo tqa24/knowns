@@ -22,8 +22,13 @@ Without a target, an interactive selector is shown.
 Targets:
   claude    Generate CLAUDE.md, KNOWNS.md, .mcp.json, skills, and runtime hooks
   opencode  Generate OPENCODE.md, KNOWNS.md, opencode.json, skills, and runtime hooks
+  hermes    Generate AGENTS.md, KNOWNS.md, skills, and a project-pinned global Hermes MCP config
+  codex     Generate AGENTS.md, KNOWNS.md, .codex/config.toml, skills, and runtime hooks
   copilot   Generate .github/copilot-instructions.md and KNOWNS.md
   kiro      Generate .kiro steering/settings, KNOWNS.md, skills, and runtime hooks
+  cursor    Generate .cursor/mcp.json and KNOWNS.md
+  gemini    Generate GEMINI.md and KNOWNS.md
+  antigravity Generate Antigravity rules/config, KNOWNS.md, and skills
   agents    Generate AGENTS.md and KNOWNS.md
   all       Generate all supported AI integration files
 
@@ -79,6 +84,8 @@ func runSetupCmd(cmd *cobra.Command, args []string) error {
 			platforms = []string{"copilot"}
 		case "kiro":
 			platforms = []string{"kiro"}
+		case "hermes":
+			platforms = []string{"hermes"}
 		case "codex":
 			platforms = []string{"codex"}
 		case "cursor":
@@ -92,7 +99,7 @@ func runSetupCmd(cmd *cobra.Command, args []string) error {
 		case "all":
 			platforms = allPlatformIDs
 		default:
-			return fmt.Errorf("unknown setup target %q (expected: claude, opencode, copilot, kiro, codex, cursor, gemini, antigravity, agents, all)", target)
+			return fmt.Errorf("unknown setup target %q (expected: claude, opencode, hermes, copilot, kiro, codex, cursor, gemini, antigravity, agents, all)", target)
 		}
 	}
 
@@ -193,6 +200,14 @@ func buildSetupSteps(cwd string, force bool, target string, platforms []string) 
 			label: "Creating Codex MCP config",
 			run: func() error {
 				return createCodexMCPConfigQuiet(cwd)
+			},
+		})
+	}
+	if hasPlatform(platforms, "hermes") {
+		steps = append(steps, initStep{
+			label: "Creating Hermes global MCP config",
+			run: func() error {
+				return createHermesMCPConfigQuiet(cwd)
 			},
 		})
 	}

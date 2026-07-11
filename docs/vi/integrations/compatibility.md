@@ -18,7 +18,7 @@ Khi integrations thay đổi, project cũ có thể còn layout trước đây. 
 Mapping chính:
 
 - `.claude/skills` → Claude Code
-- `.agents/skills` → OpenCode, Codex, Antigravity, Generic Agents
+- `.agents/skills` → OpenCode, Codex, Hermes Agent, Antigravity, Generic Agents
 - `.kiro/skills` → Kiro
 
 ### Legacy
