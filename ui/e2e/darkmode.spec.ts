@@ -223,7 +223,7 @@ test.describe("Dark Mode on All Pages", () => {
 		});
 
 		await test.step("Docs visible in dark mode", async () => {
-			await expect(page.getByText("Theme Test Doc").first()).toBeVisible({ timeout: 5000 });
+			await expect(page.getByText("Theme Test Doc").first()).toBeVisible();
 		});
 	});
 

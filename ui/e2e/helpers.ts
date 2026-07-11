@@ -82,6 +82,18 @@ export async function startServer(): Promise<TestServer> {
 
 	// Create isolated project directory
 	const projectDir = mkdtempSync(join(tmpdir(), "knowns-e2e-"));
+	const homeDir = mkdtempSync(join(tmpdir(), "knowns-e2e-home-"));
+	const testEnv = {
+		...process.env,
+		HOME: homeDir,
+		USERPROFILE: homeDir,
+		NO_COLOR: "1",
+		NO_UPDATE_CHECK: "1",
+		KNOWN_RUNTIME_INLINE: "1",
+		// UI tests exercise the local fallback. Dedicated LSP fixture tests
+		// cover the shared daemon and native Windows named-pipe transport.
+		KNOWN_LSP_DAEMON: "0",
+	};
 
 	// Initialize git + knowns project
 	execSync("git init", { cwd: projectDir, stdio: "ignore" });
@@ -97,11 +109,13 @@ export async function startServer(): Promise<TestServer> {
 		execFileSync(BINARY, ["init", "E2E Test Project", "--no-wizard", "--no-open"], {
 			cwd: projectDir,
 			stdio: "ignore",
+			env: testEnv,
 		});
 	} else {
 		execSync(`${BINARY} init "E2E Test Project" --no-wizard --no-open`, {
 			cwd: projectDir,
 			stdio: "ignore",
+			env: testEnv,
 		});
 	}
 
@@ -113,7 +127,7 @@ export async function startServer(): Promise<TestServer> {
 		{
 			cwd: projectDir,
 			stdio: ["ignore", "pipe", "pipe"],
-			env: { ...process.env, NO_COLOR: "1" },
+			env: testEnv,
 		},
 	);
 
@@ -131,6 +145,7 @@ export async function startServer(): Promise<TestServer> {
 	} catch (err) {
 		serverProcess.kill("SIGTERM");
 		rmSync(projectDir, { recursive: true, force: true });
+		rmSync(homeDir, { recursive: true, force: true });
 		const detail = serverStderr ? `\nServer stderr:\n${serverStderr}` : "";
 		throw new Error(
 			`Server not ready at ${baseURL} after timeout.${detail}`,
@@ -146,14 +161,14 @@ export async function startServer(): Promise<TestServer> {
 				cwd: projectDir,
 				encoding: "utf-8",
 				timeout: 10000,
-				env: { ...process.env, NO_COLOR: "1" },
+				env: testEnv,
 			}).trim();
 		}
 		return execSync(`${BINARY} ${args}`, {
 			cwd: projectDir,
 			encoding: "utf-8",
 			timeout: 10000,
-			env: { ...process.env, NO_COLOR: "1" },
+			env: testEnv,
 		}).trim();
 	};
 
@@ -172,6 +187,11 @@ export async function startServer(): Promise<TestServer> {
 		}
 		try {
 			rmSync(projectDir, { recursive: true, force: true });
+		} catch {
+			// EBUSY on Windows — best effort cleanup
+		}
+		try {
+			rmSync(homeDir, { recursive: true, force: true });
 		} catch {
 			// EBUSY on Windows — best effort cleanup
 		}

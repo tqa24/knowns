@@ -18,7 +18,7 @@ test.describe("Audit Trail", () => {
 		});
 
 		await test.step("Audit page header is visible", async () => {
-			await expect(page.getByRole("heading", { name: "MCP Audit Trail" })).toBeVisible({ timeout: 5000 });
+			await expect(page.getByRole("heading", { name: "MCP Audit Trail" })).toBeVisible();
 		});
 
 		await test.step("Tabs are present", async () => {
