@@ -3,6 +3,31 @@ BINARY := knowns
 VERSION ?= $(shell git describe --tags 2>/dev/null || node -p "require('../knowns/package.json').version" 2>/dev/null || echo "dev")
 LDFLAGS := -s -w -X $(MODULE)/internal/util.Version=$(VERSION)
 BUILD_DIR := bin
+RUNTIME_DOCKER_IMAGE ?= knowns-runtime-smoke
+RUNTIME_DOCKER_CONTAINER ?= knowns-runtime-smoke-run
+RUNTIME_DOCKER_VERSION ?= dev-$(shell git rev-parse --short HEAD 2>/dev/null || echo local)-$(shell date +%s)
+RUNTIME_DOCKER_MEMORY ?= 768m
+RUNTIME_DOCKER_PIDS ?= 512
+RUNTIME_DOCKER_MCP_CLIENTS ?= 3
+RUNTIME_DOCKER_MCP_CALLS ?= 1
+RUNTIME_DOCKER_MCP_HOLD_SECONDS ?= 1
+RUNTIME_DOCKER_SEARCH_MODE ?= keyword
+RUNTIME_DOCKER_RUN_CODE ?= 0
+RUNTIME_DOCKER_AI_SESSIONS ?= 3
+RUNTIME_DOCKER_PROJECT ?= $(CURDIR)
+RUNTIME_DOCKER_PROJECT_CONTAINER ?= knowns-runtime-project-stress-run
+RUNTIME_DOCKER_PROJECT_QUERY ?= knowns runtime MCP
+RUNTIME_DOCKER_PROJECT_CODE_PATH ?= cmd/knowns/main.go
+RUNTIME_DOCKER_PROJECT_HOLD_SECONDS ?= 1
+RUNTIME_DOCKER_USER ?= $(shell id -u):$(shell id -g)
+RUNTIME_DOCKER_VERBOSE ?= 0
+RUNTIME_DOCKER_USE_ONNX ?= 0
+RUNTIME_DOCKER_ONNX_MODEL ?= gte-small
+RUNTIME_DOCKER_ONNX_REINDEX ?= 1
+RUNTIME_DOCKER_EMBED_BATCH_SIZE ?= 8
+RUNTIME_DOCKER_LSP_STRESS ?= 0
+RUNTIME_DOCKER_LSP_PATHS ?= cmd/knowns/main.go,ui/src/lib/utils.ts,ui/src/api/client.ts,tests/runtime-docker/fixtures/csharp/Program.cs
+RUNTIME_DOCKER_GOPLS_VERSION ?= v0.20.0
 
 # All 6 platform targets
 PLATFORMS := \
@@ -13,13 +38,108 @@ PLATFORMS := \
 	windows/amd64 \
 	windows/arm64
 
-.PHONY: all build clean test test-e2e test-e2e-semantic test-e2e-ui lint dev dev-go dev-ui dev-all install cross-compile ui embed npm-build release
+.PHONY: all build clean test test-e2e test-e2e-semantic test-e2e-ui lint dev dev-go dev-ui dev-all install cross-compile ui embed npm-build release runtime-docker-build runtime-docker-smoke runtime-docker-project-stress runtime-docker-ai-stress runtime-docker-shell
 
 all: ui build
 
 # Development build (current platform)
 build:
 	CGO_ENABLED=1 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY) ./cmd/knowns
+
+# Build the Linux Docker smoke image. The Dockerfile builds UI assets first,
+# then builds the Go binary inside Linux so the runtime image never uses a
+# host-OS binary.
+runtime-docker-build:
+	docker build \
+		-f tests/runtime-docker/Dockerfile \
+		--build-arg VERSION=$(RUNTIME_DOCKER_VERSION) \
+		--build-arg GOPLS_VERSION=$(RUNTIME_DOCKER_GOPLS_VERSION) \
+		-t $(RUNTIME_DOCKER_IMAGE) \
+		.
+
+# Run the runtime/daemon smoke test from the already-built local image under
+# a memory and PID cap, then print Docker's OOM state even if the smoke exits
+# non-zero.
+runtime-docker-smoke:
+	@docker image inspect $(RUNTIME_DOCKER_IMAGE) >/dev/null 2>&1 || { \
+		echo "Docker image $(RUNTIME_DOCKER_IMAGE) not found. Run: make runtime-docker-build"; \
+		exit 1; \
+	}
+	@docker rm -f $(RUNTIME_DOCKER_CONTAINER) >/dev/null 2>&1 || true
+	@set +e; \
+	docker run \
+		--pull=never \
+		--name $(RUNTIME_DOCKER_CONTAINER) \
+		--memory=$(RUNTIME_DOCKER_MEMORY) \
+		--memory-swap=$(RUNTIME_DOCKER_MEMORY) \
+		--pids-limit=$(RUNTIME_DOCKER_PIDS) \
+		-e MCP_CLIENTS=$(RUNTIME_DOCKER_MCP_CLIENTS) \
+		-e MCP_CALLS=$(RUNTIME_DOCKER_MCP_CALLS) \
+		-e MCP_HOLD_SECONDS=$(RUNTIME_DOCKER_MCP_HOLD_SECONDS) \
+		-e MCP_SEARCH_MODE=$(RUNTIME_DOCKER_SEARCH_MODE) \
+		-e RUN_CODE=$(RUNTIME_DOCKER_RUN_CODE) \
+		-e VERBOSE=$(RUNTIME_DOCKER_VERBOSE) \
+		$(RUNTIME_DOCKER_IMAGE); \
+	status=$$?; \
+	echo "=== docker inspect OOM state ==="; \
+	docker inspect -f 'oom={{.State.OOMKilled}} exit={{.State.ExitCode}} error={{.State.Error}}' $(RUNTIME_DOCKER_CONTAINER) || true; \
+	oom=$$(docker inspect -f '{{.State.OOMKilled}}' $(RUNTIME_DOCKER_CONTAINER) 2>/dev/null || echo false); \
+	docker rm -f $(RUNTIME_DOCKER_CONTAINER) >/dev/null 2>&1 || true; \
+	if [ "$$oom" = "true" ]; then exit 137; fi; \
+	exit $$status
+
+# Run 3 AI-session-like MCP stdio clients against this repository mounted into
+# the container. This uses the already-built image and does not rebuild.
+runtime-docker-project-stress:
+	@docker image inspect $(RUNTIME_DOCKER_IMAGE) >/dev/null 2>&1 || { \
+		echo "Docker image $(RUNTIME_DOCKER_IMAGE) not found. Run: make runtime-docker-build"; \
+		exit 1; \
+	}
+	@docker rm -f $(RUNTIME_DOCKER_PROJECT_CONTAINER) >/dev/null 2>&1 || true
+	@set +e; \
+	docker run \
+		--pull=never \
+		--name $(RUNTIME_DOCKER_PROJECT_CONTAINER) \
+		--user $(RUNTIME_DOCKER_USER) \
+		--memory=$(RUNTIME_DOCKER_MEMORY) \
+		--memory-swap=$(RUNTIME_DOCKER_MEMORY) \
+		--pids-limit=$(RUNTIME_DOCKER_PIDS) \
+		-v "$(RUNTIME_DOCKER_PROJECT):/workspace/project" \
+		-e HOME=/tmp/knowns-home \
+		-e PROJECT=/workspace/project \
+		-e MCP_CLIENTS=$(RUNTIME_DOCKER_AI_SESSIONS) \
+		-e MCP_CALLS=$(RUNTIME_DOCKER_MCP_CALLS) \
+		-e MCP_SEARCH_MODE=$(RUNTIME_DOCKER_SEARCH_MODE) \
+		-e RUN_CODE=$(RUNTIME_DOCKER_RUN_CODE) \
+		-e "MCP_QUERY=$(RUNTIME_DOCKER_PROJECT_QUERY)" \
+		-e MCP_CODE_PATH=$(RUNTIME_DOCKER_PROJECT_CODE_PATH) \
+		-e MCP_HOLD_SECONDS=$(RUNTIME_DOCKER_PROJECT_HOLD_SECONDS) \
+		-e VERBOSE=$(RUNTIME_DOCKER_VERBOSE) \
+		-e USE_ONNX=$(RUNTIME_DOCKER_USE_ONNX) \
+		-e ONNX_MODEL=$(RUNTIME_DOCKER_ONNX_MODEL) \
+		-e ONNX_REINDEX=$(RUNTIME_DOCKER_ONNX_REINDEX) \
+		-e KNOWNS_EMBED_BATCH_SIZE=$(RUNTIME_DOCKER_EMBED_BATCH_SIZE) \
+		-e LSP_STRESS=$(RUNTIME_DOCKER_LSP_STRESS) \
+		-e "LSP_PATHS=$(RUNTIME_DOCKER_LSP_PATHS)" \
+		--entrypoint /usr/bin/zsh \
+		$(RUNTIME_DOCKER_IMAGE) /opt/knowns/project_stress.zsh; \
+	status=$$?; \
+	echo "=== docker inspect OOM state ==="; \
+	docker inspect -f 'oom={{.State.OOMKilled}} exit={{.State.ExitCode}} error={{.State.Error}}' $(RUNTIME_DOCKER_PROJECT_CONTAINER) || true; \
+	oom=$$(docker inspect -f '{{.State.OOMKilled}}' $(RUNTIME_DOCKER_PROJECT_CONTAINER) 2>/dev/null || echo false); \
+	docker rm -f $(RUNTIME_DOCKER_PROJECT_CONTAINER) >/dev/null 2>&1 || true; \
+	if [ "$$oom" = "true" ]; then exit 137; fi; \
+	exit $$status
+
+runtime-docker-ai-stress: runtime-docker-project-stress
+
+runtime-docker-shell: runtime-docker-build
+	docker run --rm -it \
+		--entrypoint /usr/bin/zsh \
+		--memory=$(RUNTIME_DOCKER_MEMORY) \
+		--memory-swap=$(RUNTIME_DOCKER_MEMORY) \
+		--pids-limit=$(RUNTIME_DOCKER_PIDS) \
+		$(RUNTIME_DOCKER_IMAGE) -l
 
 # Development build with race detector (race requires CGO)
 dev:
