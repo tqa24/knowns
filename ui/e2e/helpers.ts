@@ -64,6 +64,8 @@ export interface TestServer {
 	projectDir: string;
 	/** Run a CLI command against the test project */
 	cli: (args: string) => string;
+	/** Invoke one MCP tool against the test project. */
+	mcp: (tool: string, args: Record<string, unknown>) => string;
 	/** Stop the server and clean up */
 	cleanup: () => void;
 }
@@ -172,6 +174,37 @@ export async function startServer(): Promise<TestServer> {
 		}).trim();
 	};
 
+	const mcp = (tool: string, args: Record<string, unknown>): string => {
+		const input = [
+			{
+				jsonrpc: "2.0",
+				id: 1,
+				method: "initialize",
+				params: {
+					protocolVersion: "2024-11-05",
+					capabilities: {},
+					clientInfo: { name: "knowns-e2e", version: "1.0.0" },
+				},
+			},
+			{
+				jsonrpc: "2.0",
+				id: 2,
+				method: "tools/call",
+				params: { name: tool, arguments: args },
+			},
+		]
+			.map((message) => JSON.stringify(message))
+			.join("\n");
+
+		return execFileSync(BINARY, ["mcp"], {
+			cwd: projectDir,
+			encoding: "utf-8",
+			timeout: 30000,
+			env: testEnv,
+			input: `${input}\n`,
+		}).trim();
+	};
+
 	const cleanup = () => {
 		serverProcess.kill("SIGTERM");
 		// Wait for process to fully exit before removing files
@@ -197,7 +230,7 @@ export async function startServer(): Promise<TestServer> {
 		}
 	};
 
-	return { baseURL, port, projectDir, cli, cleanup };
+	return { baseURL, port, projectDir, cli, mcp, cleanup };
 }
 
 /**

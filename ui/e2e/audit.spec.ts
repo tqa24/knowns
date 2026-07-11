@@ -47,9 +47,14 @@ test.describe("Audit Trail", () => {
 		});
 	});
 
-	test("performing CLI actions creates audit events", async ({ page }) => {
-		await test.step("Perform a CLI action", async () => {
-			server.cli('task create "Audit Trail Test" -d "Should appear in audit"');
+	test("performing MCP actions creates audit events", async ({ page }) => {
+		await test.step("Perform an MCP action", async () => {
+			const output = server.mcp("task", {
+				action: "create",
+				title: "Audit Trail Test",
+				description: "Should appear in audit",
+			});
+			expect(output).toContain('"id":2');
 		});
 
 		await test.step("Navigate to audit page", async () => {
