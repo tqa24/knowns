@@ -38,11 +38,13 @@ Configures AI tool integrations for an initialized project.
 knowns setup --global        # Interactive user-level platform selector
 knowns setup claude --global # Claude user-level MCP/skills/hooks
 knowns setup codex --global  # Codex user-level MCP/skills/hooks
+knowns setup hermes --global # Hermes user-level MCP/skills config
 knowns setup all --global    # All supported platforms at user scope
 knowns setup agents          # Lightweight repo-local agent shims only
 knowns setup                 # Interactive project-level platform selector
 knowns setup claude          # Project-level Claude files
 knowns setup codex           # Project-level Codex files
+knowns setup hermes          # Project-linked Hermes config and AGENTS.md
 ```
 
 Use `--global` for normal personal assistant setup. It updates user-level MCP config, skills, and runtime hooks, so the integration follows you across repositories. Use project-level setup only when you intentionally want repo-local platform artifacts.

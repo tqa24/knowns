@@ -822,6 +822,11 @@ func syncMCPConfigs() error {
 		updated += n
 	}
 
+	// Sync ~/.hermes/config.yaml
+	if n, err := syncHermesMCPConfig(projectRoot, cmd, args); err == nil {
+		updated += n
+	}
+
 	// Sync opencode.json
 	if n, err := syncOpenCodeConfig(projectRoot, cmd, args); err == nil {
 		updated += n

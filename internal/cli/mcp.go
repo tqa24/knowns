@@ -62,6 +62,13 @@ var mcpPlatforms = []mcpPlatform{
 	{id: "codex", label: "Codex", scope: "project", setup: func(root string) (string, error) {
 		return filepath.Join(root, ".codex", "config.toml"), createCodexMCPConfigQuiet(root)
 	}},
+	{id: "hermes", label: "Hermes Agent", scope: "global", setup: func(root string) (string, error) {
+		home, err := osUserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(home, ".hermes", "config.yaml"), createHermesMCPConfigQuiet(root)
+	}},
 }
 
 func init() {

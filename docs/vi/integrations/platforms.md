@@ -8,6 +8,7 @@ Knowns generate và sync artifacts khác nhau cho từng AI platform qua `knowns
 - `opencode`
 - `codex`
 - `kiro`
+- `hermes`
 - `antigravity`
 - `cursor`
 - `gemini`
@@ -22,6 +23,7 @@ Knowns generate và sync artifacts khác nhau cho từng AI platform qua `knowns
 | OpenCode | `.agents/skills` | `opencode.json` | plugin/runtime |
 | Codex | `.agents/skills` | `.codex/config.toml` | hooks |
 | Kiro | `.kiro/skills` | `.kiro/settings/mcp.json` | hooks |
+| Hermes Agent | `.agents/skills` | `~/.hermes/config.yaml` (user-level) | no |
 | Antigravity | `.agents/skills` | `~/.gemini/antigravity/mcp_config.json` | rules + global config |
 | Cursor | none by default | `.cursor/mcp.json` | no |
 | Gemini CLI | none by default | platform-managed/global | no |
@@ -37,6 +39,7 @@ knowns setup claude --global      # Claude user-level MCP/skills/hooks
 knowns setup opencode --global    # OpenCode user-level MCP/skills/hooks
 knowns setup codex --global       # Codex user-level MCP/skills/hooks
 knowns setup kiro --global        # Kiro user-level MCP/skills/hooks
+knowns setup hermes --global      # Hermes user-level MCP/skills config
 knowns setup antigravity --global # Antigravity/Gemini global MCP config
 knowns setup cursor --global      # Cursor user-level MCP config
 knowns setup gemini --global      # Gemini global MCP config
@@ -47,6 +50,7 @@ knowns setup agents               # chỉ lightweight repo-local agent shims
 ## Ghi chú
 
 - `.agents/skills` là primary path cho agent-compatible platforms
+- Chi tiết setup Hermes nằm ở [Hermes Agent](./hermes.md)
 - `knowns init` tạo selected lightweight instruction shims mặc định, như `CLAUDE.md` và `AGENTS.md`
 - dùng `knowns setup <target> --global` cho personal assistant setup thông thường trên nhiều repository
 - chỉ dùng `knowns setup <target>` khi bạn chủ ý muốn project-level MCP/config files, skills, runtime hooks

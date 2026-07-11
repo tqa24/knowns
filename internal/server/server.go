@@ -31,6 +31,7 @@ import (
 	"github.com/howznguyen/knowns/internal/agents/opencode"
 	"github.com/howznguyen/knowns/internal/lsp"
 	"github.com/howznguyen/knowns/internal/lsp/adapters"
+	"github.com/howznguyen/knowns/internal/lspdaemon"
 	"github.com/howznguyen/knowns/internal/models"
 	serverreadiness "github.com/howznguyen/knowns/internal/readiness"
 	"github.com/howznguyen/knowns/internal/registry"
@@ -90,6 +91,7 @@ type openCodeConfigResolution struct {
 
 const openCodeHealthMonitorInterval = 15 * time.Second
 const serviceStatusMonitorInterval = 7 * time.Second
+const defaultLSPLeaseCleanupTimeout = 2 * time.Second
 
 func deriveOpenCodePortCandidates(browserPort int, defaultPort int) []int {
 	seen := make(map[int]struct{})
@@ -426,6 +428,8 @@ func (s *Server) StartWithListener(listener net.Listener) error {
 }
 
 func (s *Server) serve(listener net.Listener) error {
+	defer s.releaseLSPDaemonLease()
+
 	// Port is bound — now safe to write the port file.
 	if err := s.writePortFile(); err != nil {
 		fmt.Fprintf(os.Stderr, "warn: could not write .server-port: %v\n", err)
@@ -494,6 +498,28 @@ func (s *Server) serve(listener net.Listener) error {
 
 	log.Printf("[server] Shutdown complete")
 	return nil
+}
+
+func (s *Server) releaseLSPDaemonLease() {
+	roots := make(map[string]struct{}, 2)
+	if s.projectRoot != "" {
+		roots[s.projectRoot] = struct{}{}
+	}
+	if s.manager != nil {
+		if store := s.manager.GetStore(); store != nil && store.Root != "" {
+			roots[filepath.Dir(store.Root)] = struct{}{}
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultLSPLeaseCleanupTimeout)
+	defer cancel()
+	for root := range roots {
+		client, err := lspdaemon.NewClient(root)
+		if err != nil {
+			continue
+		}
+		_ = client.TryReleaseLease(ctx, "webui")
+	}
 }
 
 // reinitOpenCode tears down the existing OpenCode runtime and starts a fresh
@@ -846,8 +872,19 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	readinessOpts := serverreadiness.Options{Runtime: rtStatus}
-	if s.lspManager != nil {
-		readinessOpts.LSP = s.lspManager.RuntimeStatuses(r.Context())
+	if lspdaemon.DisabledByEnv() {
+		log.Printf("[server] %s", lspdaemon.DisabledWarning())
+		if s.lspManager != nil {
+			readinessOpts.LSP = lspdaemon.AnnotateLocalStatuses(s.lspManager.RuntimeStatuses(r.Context()), lspdaemon.DaemonStateDisabledByEnv)
+		}
+	} else if client, err := lspdaemon.EnsureClient(r.Context(), s.projectRoot); err == nil {
+		_, _ = client.AcquireLease(r.Context(), "webui", lspdaemon.LeaseTTLFromEnv())
+		if statuses, err := client.RuntimeStatuses(r.Context()); err == nil {
+			readinessOpts.LSP = statuses
+		}
+	}
+	if s.lspManager != nil && len(readinessOpts.LSP) == 0 {
+		readinessOpts.LSP = lspdaemon.AnnotateLocalStatuses(s.lspManager.RuntimeStatuses(r.Context()), lspdaemon.DaemonStateUnavailable)
 	}
 	payload := serverreadiness.BuildReadiness(store, readinessOpts)
 	writeJSON(w, http.StatusOK, payload)

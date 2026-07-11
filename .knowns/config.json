@@ -67,10 +67,16 @@
     "lsp": {
       "enabled": true,
       "languages": {
+        "csharp": {
+          "enabled": true
+        },
         "go": {
           "enabled": true
         },
         "javascript": {
+          "enabled": true
+        },
+        "python": {
           "enabled": true
         },
         "scss": {

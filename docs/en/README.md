@@ -82,6 +82,7 @@ Use these docs if you want to:
 ### Integrations
 
 - [Platforms](./integrations/platforms.md)
+- [Hermes Agent](./integrations/hermes.md)
 - [Skills](./integrations/skills.md)
 - [Templates](./integrations/templates.md)
 - [Auto sync](./integrations/auto-sync.md)

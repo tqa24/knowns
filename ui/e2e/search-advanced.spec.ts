@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { startServer, type TestServer } from "./helpers";
 
 let server: TestServer;
@@ -17,31 +17,38 @@ test.afterAll(() => {
 	server?.cleanup();
 });
 
+async function openSearchDialog(page: Page) {
+	await page.goto(`${server.baseURL}/kanban`);
+	const searchButton = page.getByRole("button", { name: /search/i }).first();
+	await expect(searchButton).toBeVisible();
+	await searchButton.click();
+	const searchInput = page.getByPlaceholder("Search tasks and docs...");
+	await expect(searchInput).toBeVisible();
+	return searchInput;
+}
+
 test.describe("Search Command Dialog", () => {
 	test("opens search with Cmd+K and shows results", async ({ page }) => {
 		await test.step("Navigate to kanban", async () => {
 			await page.goto(`${server.baseURL}/kanban`);
-			await page.waitForTimeout(1000);
+			await expect(page.getByRole("button", { name: /search/i }).first()).toBeVisible();
 		});
 
 		await test.step("Open search dialog with Cmd+K", async () => {
-			await page.keyboard.press("Meta+k");
-			await page.waitForTimeout(300);
+			await page.keyboard.press("ControlOrMeta+k");
 		});
 
 		await test.step("Search dialog is visible", async () => {
-			const searchInput = page.getByPlaceholder(/search/i).first();
-			await expect(searchInput).toBeVisible({ timeout: 3000 });
+			await expect(page.getByPlaceholder("Search tasks and docs...")).toBeVisible();
 		});
 
 		await test.step("Type search query", async () => {
-			await page.keyboard.type("Auth");
-			await page.waitForTimeout(500);
+			await page.getByPlaceholder("Search tasks and docs...").fill("Auth");
 		});
 
 		await test.step("Results show matching tasks and docs", async () => {
 			// Should find "Auth Module" task and "Auth Guide" doc
-			await expect(page.getByText("Auth Module").first()).toBeVisible({ timeout: 5000 });
+			await expect(page.getByText("Auth Module").first()).toBeVisible();
 		});
 
 		await test.step("Close search with Escape", async () => {
@@ -51,20 +58,13 @@ test.describe("Search Command Dialog", () => {
 	});
 
 	test("search finds tasks by description content", async ({ page }) => {
-		await test.step("Navigate and open search", async () => {
-			await page.goto(`${server.baseURL}/kanban`);
-			await page.waitForTimeout(500);
-			await page.keyboard.press("Meta+k");
-			await page.waitForTimeout(300);
-		});
-
-		await test.step("Search for description content", async () => {
-			await page.keyboard.type("authentication");
-			await page.waitForTimeout(500);
+		await test.step("Open search and enter description content", async () => {
+			const searchInput = await openSearchDialog(page);
+			await searchInput.fill("authentication");
 		});
 
 		await test.step("Task with matching description found", async () => {
-			await expect(page.getByText("Auth Module").first()).toBeVisible({ timeout: 5000 });
+			await expect(page.getByText("Auth Module").first()).toBeVisible();
 		});
 
 		await test.step("Cleanup", async () => {
@@ -73,20 +73,13 @@ test.describe("Search Command Dialog", () => {
 	});
 
 	test("search finds docs", async ({ page }) => {
-		await test.step("Navigate and open search", async () => {
-			await page.goto(`${server.baseURL}/kanban`);
-			await page.waitForTimeout(500);
-			await page.keyboard.press("Meta+k");
-			await page.waitForTimeout(300);
-		});
-
-		await test.step("Search for doc", async () => {
-			await page.keyboard.type("Architecture");
-			await page.waitForTimeout(500);
+		await test.step("Open search and enter doc title", async () => {
+			const searchInput = await openSearchDialog(page);
+			await searchInput.fill("Architecture");
 		});
 
 		await test.step("Doc result appears", async () => {
-			await expect(page.getByText("Architecture").first()).toBeVisible({ timeout: 5000 });
+			await expect(page.getByText("Architecture").first()).toBeVisible();
 		});
 
 		await test.step("Cleanup", async () => {
@@ -95,20 +88,13 @@ test.describe("Search Command Dialog", () => {
 	});
 
 	test("empty search shows no results message", async ({ page }) => {
-		await test.step("Navigate and open search", async () => {
-			await page.goto(`${server.baseURL}/kanban`);
-			await page.waitForTimeout(500);
-			await page.keyboard.press("Meta+k");
-			await page.waitForTimeout(300);
-		});
-
-		await test.step("Search for non-existent term", async () => {
-			await page.keyboard.type("zzzznonexistent12345");
-			await page.waitForTimeout(500);
+		await test.step("Open search and enter non-existent term", async () => {
+			const searchInput = await openSearchDialog(page);
+			await searchInput.fill("zzzznonexistent12345");
 		});
 
 		await test.step("No results shown", async () => {
-			await expect(page.getByText(/no result/i).first()).toBeVisible({ timeout: 5000 });
+			await expect(page.getByText(/no result/i).first()).toBeVisible();
 		});
 
 		await test.step("Cleanup", async () => {
@@ -117,25 +103,18 @@ test.describe("Search Command Dialog", () => {
 	});
 
 	test("clicking search result navigates to it", async ({ page }) => {
-		await test.step("Navigate and open search", async () => {
-			await page.goto(`${server.baseURL}/kanban`);
-			await page.waitForTimeout(500);
-			await page.keyboard.press("Meta+k");
-			await page.waitForTimeout(300);
-		});
-
-		await test.step("Search and click a task result", async () => {
-			await page.keyboard.type("Login Page");
-			await page.waitForTimeout(500);
+		await test.step("Open search and click a task result", async () => {
+			const searchInput = await openSearchDialog(page);
+			await searchInput.fill("Login Page");
 			// Click the CommandItem (role="option") containing "Login Page", not the input text
 			const resultItem = page.locator('[role="option"]').filter({ hasText: "Login Page" }).first();
-			await expect(resultItem).toBeVisible({ timeout: 5000 });
+			await expect(resultItem).toBeVisible();
 			await resultItem.click();
 			await page.waitForTimeout(500);
 		});
 
 		await test.step("Task detail opens", async () => {
-			await expect(page.getByRole("heading", { name: "Login Page", exact: true })).toBeVisible({ timeout: 5000 });
+			await expect(page.getByRole("heading", { name: "Login Page", exact: true })).toBeVisible();
 		});
 	});
 });
@@ -144,7 +123,7 @@ test.describe("Sidebar Search", () => {
 	test("sidebar search input filters navigation", async ({ page }) => {
 		await test.step("Navigate to dashboard", async () => {
 			await page.goto(server.baseURL);
-			await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible({ timeout: 5000 });
+			await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
 		});
 
 		await test.step("Find search button or input in sidebar", async () => {

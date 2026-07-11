@@ -79,6 +79,7 @@ Nội dung tiếng Việt bám theo `docs/en/` nhưng viết lại cho dễ đ�
 ### Tích hợp
 
 - [Platforms](./integrations/platforms.md)
+- [Hermes Agent](./integrations/hermes.md)
 - [Skills](./integrations/skills.md)
 - [Templates](./integrations/templates.md)
 - [Auto sync](./integrations/auto-sync.md)

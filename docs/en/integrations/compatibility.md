@@ -18,7 +18,7 @@ As integrations evolve, older projects may still contain previously generated la
 Current primary mapping:
 
 - `.claude/skills` -> Claude Code
-- `.agents/skills` -> OpenCode, Codex, Antigravity, Generic Agents
+- `.agents/skills` -> OpenCode, Codex, Hermes Agent, Antigravity, Generic Agents
 - `.kiro/skills` -> Kiro
 
 ### Legacy behavior

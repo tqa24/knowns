@@ -40,6 +40,10 @@ func TestLSPFixture_ASPNETCoreWebAPI(t *testing.T) {
 	requireTool(t, "csharp-ls")
 
 	env := testEnv(t)
+	// Browser shutdown is forceful on Windows, so give the short-lived daemon
+	// enough time to expire its lease and close log/LSP process handles before
+	// testing.TempDir cleanup removes the isolated home.
+	t.Cleanup(func() { time.Sleep(5 * time.Second) })
 	binary := knownsBinary(t)
 	projectDir := cloneASPNetFixture(t)
 	initKnownsProject(t, binary, projectDir, env)
@@ -128,7 +132,7 @@ func TestLSPFixture_ASPNETCoreWebAPI(t *testing.T) {
 
 		var payload languageListResponse
 		url := fmt.Sprintf("http://127.0.0.1:%d/api/lsp/languages", port)
-		waitForJSON(t, url, 60*time.Second, &payload)
+		waitForJSON(t, url, 90*time.Second, &payload)
 		csharp := requireLanguage(t, payload.Languages, "csharp")
 		if csharp.Backend == "" {
 			t.Fatalf("expected API csharp backend; stderr=%s payload=%+v", truncate(stderr.String(), 800), csharp)
@@ -209,6 +213,8 @@ func testEnv(t *testing.T) []string {
 		"NO_COLOR=1",
 		"NO_UPDATE_CHECK=1",
 		"KNOWNS_RUNTIME_INLINE=1",
+		"KNOWNS_LSP_DAEMON_IDLE_TIMEOUT=2s",
+		"KNOWNS_LSP_DAEMON_LEASE_TTL=2s",
 		"HOME="+home,
 		"USERPROFILE="+home,
 		"DOTNET_CLI_HOME="+home,
@@ -542,7 +548,14 @@ func freePort(t *testing.T) int {
 
 func waitForJSON(t *testing.T, url string, timeout time.Duration, target any) {
 	t.Helper()
-	client := &http.Client{Timeout: 3 * time.Second}
+	requestTimeout := 35 * time.Second
+	if timeout < requestTimeout {
+		requestTimeout = timeout
+	}
+	// Runtime status collection may probe multiple language backends. Keep one
+	// request alive long enough to finish instead of creating a retry storm of
+	// overlapping status requests every three seconds on slower Windows hosts.
+	client := &http.Client{Timeout: requestTimeout}
 	deadline := time.Now().Add(timeout)
 	var lastErr error
 	for time.Now().Before(deadline) {

@@ -179,10 +179,10 @@ func resolveSyncPlatformSelection(platform string, configPlatforms []string) ([]
 		return allPlatformIDs, nil
 	case "claude":
 		return []string{"claude-code"}, nil
-	case "claude-code", "opencode", "codex", "kiro", "antigravity", "cursor", "gemini", "copilot", "agents":
+	case "claude-code", "opencode", "codex", "kiro", "hermes", "antigravity", "cursor", "gemini", "copilot", "agents":
 		return []string{normalized}, nil
 	default:
-		return nil, fmt.Errorf("unknown platform %q (available: claude, opencode, codex, kiro, antigravity, cursor, gemini, copilot, agents, all)", platform)
+		return nil, fmt.Errorf("unknown platform %q (available: claude, opencode, codex, kiro, hermes, antigravity, cursor, gemini, copilot, agents, all)", platform)
 	}
 }
 
@@ -193,7 +193,7 @@ func resolveSyncPlatformTargets(platform string, configPlatforms []string) ([]st
 
 	normalized := strings.ToLower(strings.TrimSpace(platform))
 	switch normalized {
-	case "codex", "cursor", "antigravity":
+	case "codex", "cursor", "hermes", "antigravity":
 		return []string{normalized}, nil
 	case "all":
 		return configPlatforms, nil
@@ -225,6 +225,13 @@ func runSyncPlatformConfigs(projectRoot string, force bool, platforms []string) 
 			return err
 		}
 		fmt.Printf("  %s %s\n", StyleSuccess.Render("[codex]"), StyleDim.Render(".codex/config.toml synced."))
+	}
+
+	if hasPlatform(platforms, "hermes") {
+		if err := createHermesMCPConfigQuiet(projectRoot); err != nil {
+			return err
+		}
+		fmt.Printf("  %s %s\n", StyleSuccess.Render("[hermes]"), StyleDim.Render("~/.hermes/config.yaml synced."))
 	}
 
 	if hasPlatform(platforms, "antigravity") {
@@ -344,7 +351,7 @@ func runSyncInstructions(projectRoot string, platform string, force bool, config
 		{name: "opencode", label: "OpenCode", filePath: filepath.Join(projectRoot, "OPENCODE.md"), configIDs: []string{"opencode"}, aliases: []string{"opencode"}},
 		{name: "gemini", label: "Gemini CLI", filePath: filepath.Join(projectRoot, "GEMINI.md"), configIDs: []string{"gemini"}, aliases: []string{"gemini"}},
 		{name: "copilot", label: "GitHub Copilot", filePath: filepath.Join(projectRoot, ".github", "copilot-instructions.md"), configIDs: []string{"copilot"}, aliases: []string{"copilot"}},
-		{name: "agents", label: "Generic AI", filePath: filepath.Join(projectRoot, "AGENTS.md"), configIDs: []string{"agents", "codex"}, aliases: []string{"agents", "codex"}},
+		{name: "agents", label: "Generic AI", filePath: filepath.Join(projectRoot, "AGENTS.md"), configIDs: []string{"agents", "codex", "hermes"}, aliases: []string{"agents", "codex", "hermes"}},
 	}
 
 	// Filter by --platform flag first (single platform override).
@@ -356,7 +363,7 @@ func runSyncInstructions(projectRoot string, platform string, force bool, config
 			}
 		}
 		if len(filtered) == 0 {
-			return fmt.Errorf("unknown platform %q (available: claude, opencode, codex, gemini, copilot, agents)", platform)
+			return fmt.Errorf("unknown platform %q (available: claude, opencode, codex, hermes, gemini, copilot, agents)", platform)
 		}
 		platforms = filtered
 	} else if len(configPlatforms) > 0 {

@@ -120,10 +120,10 @@ Creates a .knowns/ directory with the required structure and a default config.js
 }
 
 // allPlatformIDs is the full ordered list of supported platform identifiers.
-var allPlatformIDs = []string{"claude-code", "opencode", "codex", "kiro", "antigravity", "cursor", "gemini", "copilot", "agents"}
+var allPlatformIDs = []string{"claude-code", "opencode", "codex", "kiro", "hermes", "antigravity", "cursor", "gemini", "copilot", "agents"}
 
 // wizardPlatformIDs is the subset shown in the wizard multi-select.
-var wizardPlatformIDs = []string{"claude-code", "opencode", "codex", "kiro", "antigravity", "cursor", "gemini", "copilot", "agents"}
+var wizardPlatformIDs = []string{"claude-code", "opencode", "codex", "kiro", "hermes", "antigravity", "cursor", "gemini", "copilot", "agents"}
 
 // platformLabel returns the human-readable label for a platform ID.
 func platformLabel(id string) string {
@@ -135,6 +135,8 @@ func platformLabel(id string) string {
 		return "Google Gemini  (GEMINI.md)"
 	case "antigravity":
 		return "Antigravity  (.agents/rules/knowns.md, ~/.gemini/antigravity/mcp_config.json)"
+	case "hermes":
+		return "Hermes Agent  (AGENTS.md, .agents/skills, ~/.hermes/config.yaml)"
 	case "cursor":
 		return "Cursor  (.cursor/mcp.json)"
 	case "copilot":
@@ -206,7 +208,7 @@ func shouldCreateInstructionFile(platforms []string, f instructionFile) bool {
 	if len(platforms) == 0 {
 		return true
 	}
-	if f.PlatformID == "agents" && hasExplicitPlatform(platforms, "codex") {
+	if f.PlatformID == "agents" && (hasExplicitPlatform(platforms, "codex") || hasExplicitPlatform(platforms, "hermes")) {
 		return true
 	}
 	return hasExplicitPlatform(platforms, f.PlatformID)
@@ -219,7 +221,7 @@ func defaultInstructionPlatforms() []string {
 func instructionPlatformOptions(selected []string) []huh.Option[string] {
 	selectedSet := make(map[string]bool, len(selected))
 	for _, id := range selected {
-		if id == "codex" {
+		if id == "codex" || id == "hermes" {
 			id = "agents"
 		}
 		selectedSet[id] = true

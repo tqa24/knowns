@@ -11,6 +11,7 @@ import (
 
 	"github.com/howznguyen/knowns/internal/models"
 	"github.com/howznguyen/knowns/internal/runtimeinstall"
+	"gopkg.in/yaml.v3"
 )
 
 func TestCreateOpenCodeConfigQuietCreatesConfig(t *testing.T) {
@@ -429,6 +430,69 @@ func TestCreateAntigravityMCPConfigQuietUsesAbsoluteProjectPath(t *testing.T) {
 	}
 }
 
+func TestCreateHermesMCPConfigQuietUsesAbsoluteProjectPathAndSkills(t *testing.T) {
+	execLookPath = func(string) (string, error) { return "/usr/local/bin/knowns", nil }
+	home := t.TempDir()
+	osUserHomeDir = func() (string, error) { return home, nil }
+	t.Cleanup(func() {
+		execLookPath = defaultExecLookPath
+		osUserHomeDir = os.UserHomeDir
+	})
+
+	projectRoot := t.TempDir()
+
+	if err := createHermesMCPConfigQuiet(projectRoot); err != nil {
+		t.Fatalf("createHermesMCPConfigQuiet returned error: %v", err)
+	}
+
+	config := readYAMLFile(t, filepath.Join(home, ".hermes", "config.yaml"))
+	mcpServers := getMap(t, config, "mcp_servers")
+	knowns := getMap(t, mcpServers, "knowns")
+
+	if got := knowns["command"]; got != "knowns" {
+		t.Fatalf("expected command knowns, got %#v", got)
+	}
+
+	args := anyStringSlice(knowns["args"])
+	expected := []string{"mcp", "--stdio", "--project", projectRoot}
+	if !sameStrings(args, expected) {
+		t.Fatalf("expected args %v, got %v", expected, args)
+	}
+
+	skills := getMap(t, config, "skills")
+	externalDirs := anyStringSlice(skills["external_dirs"])
+	expectedSkillDir := filepath.Join(projectRoot, ".agents", "skills")
+	if !sameStrings(externalDirs, []string{expectedSkillDir}) {
+		t.Fatalf("expected external_dirs %v, got %v", []string{expectedSkillDir}, externalDirs)
+	}
+}
+
+func TestSetupGlobalHermesMCPUsesGlobalSkillsWithoutProject(t *testing.T) {
+	execLookPath = func(string) (string, error) { return "/usr/local/bin/knowns", nil }
+	t.Cleanup(func() { execLookPath = defaultExecLookPath })
+
+	home := t.TempDir()
+	if err := setupGlobalHermesMCP(home); err != nil {
+		t.Fatalf("setupGlobalHermesMCP returned error: %v", err)
+	}
+
+	config := readYAMLFile(t, filepath.Join(home, ".hermes", "config.yaml"))
+	mcpServers := getMap(t, config, "mcp_servers")
+	knowns := getMap(t, mcpServers, "knowns")
+	args := anyStringSlice(knowns["args"])
+	expected := []string{"mcp", "--stdio"}
+	if !sameStrings(args, expected) {
+		t.Fatalf("expected args %v, got %v", expected, args)
+	}
+
+	skills := getMap(t, config, "skills")
+	externalDirs := anyStringSlice(skills["external_dirs"])
+	expectedSkillDir := filepath.Join(home, ".agents", "skills")
+	if !sameStrings(externalDirs, []string{expectedSkillDir}) {
+		t.Fatalf("expected external_dirs %v, got %v", []string{expectedSkillDir}, externalDirs)
+	}
+}
+
 func TestRunSyncPlatformConfigsSkipsWhenPlatformsUnset(t *testing.T) {
 	projectRoot := t.TempDir()
 	home := t.TempDir()
@@ -452,9 +516,12 @@ func TestRunSyncPlatformConfigsSkipsWhenPlatformsUnset(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(home, ".gemini", "antigravity", "mcp_config.json")); !os.IsNotExist(err) {
 		t.Fatalf("expected antigravity MCP config not to be created, got err=%v", err)
 	}
+	if _, err := os.Stat(filepath.Join(home, ".hermes", "config.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("expected hermes MCP config not to be created, got err=%v", err)
+	}
 }
 
-func TestRunSyncPlatformConfigsCreatesCursorAndAntigravityArtifacts(t *testing.T) {
+func TestRunSyncPlatformConfigsCreatesCursorHermesAndAntigravityArtifacts(t *testing.T) {
 	projectRoot := t.TempDir()
 	home := t.TempDir()
 	execLookPath = func(string) (string, error) { return "/usr/local/bin/knowns", nil }
@@ -464,12 +531,17 @@ func TestRunSyncPlatformConfigsCreatesCursorAndAntigravityArtifacts(t *testing.T
 		osUserHomeDir = os.UserHomeDir
 	})
 
-	platforms := []string{"cursor", "antigravity"}
+	platforms := []string{"cursor", "hermes", "antigravity"}
 	if err := runSyncPlatformConfigs(projectRoot, true, platforms); err != nil {
 		t.Fatalf("runSyncPlatformConfigs returned error: %v", err)
 	}
 
 	_ = readJSONFile(t, filepath.Join(projectRoot, ".cursor", "mcp.json"))
+	hermesConfig := readYAMLFile(t, filepath.Join(home, ".hermes", "config.yaml"))
+	hermesKnowns := getMap(t, getMap(t, hermesConfig, "mcp_servers"), "knowns")
+	if got := anyStringSlice(hermesKnowns["args"]); !sameStrings(got, []string{"mcp", "--stdio", "--project", projectRoot}) {
+		t.Fatalf("unexpected hermes args: %v", got)
+	}
 	assertContains(t, readTextFile(t, filepath.Join(projectRoot, ".agents", "rules", "knowns.md")), "trigger: always_on")
 	config := readJSONFile(t, filepath.Join(home, ".gemini", "antigravity", "mcp_config.json"))
 	mcpServers := getMap(t, config, "mcpServers")
@@ -500,6 +572,7 @@ func TestResolveSyncPlatformTargets(t *testing.T) {
 		{name: "config defaults", platform: "", config: []string{"cursor"}, want: []string{"cursor"}},
 		{name: "codex override", platform: "codex", config: []string{"agents"}, want: []string{"codex"}},
 		{name: "cursor override", platform: "cursor", config: []string{"agents"}, want: []string{"cursor"}},
+		{name: "hermes override", platform: "hermes", config: []string{"agents"}, want: []string{"hermes"}},
 		{name: "antigravity override", platform: "antigravity", config: nil, want: []string{"antigravity"}},
 		{name: "instruction-only platform returns none", platform: "claude", config: []string{"claude-code"}, want: nil},
 		{name: "unknown platform errors", platform: "unknown", config: nil, wantError: true},
@@ -540,6 +613,7 @@ func TestResolveSyncPlatformSelection(t *testing.T) {
 		{name: "config defaults", platform: "", config: []string{"codex", "agents"}, want: []string{"codex", "agents"}},
 		{name: "claude alias", platform: "claude", config: nil, want: []string{"claude-code"}},
 		{name: "codex target", platform: "codex", config: []string{"agents"}, want: []string{"codex"}},
+		{name: "hermes target", platform: "hermes", config: []string{"agents"}, want: []string{"hermes"}},
 		{name: "all target", platform: "all", config: nil, want: allPlatformIDs},
 		{name: "unknown platform errors", platform: "unknown", config: nil, wantError: true},
 	}
@@ -595,6 +669,21 @@ func TestRunSyncInstructionsCreatesAgentsForCodexPlatform(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(projectRoot, "CLAUDE.md")); !os.IsNotExist(err) {
 		t.Fatalf("expected CLAUDE.md not to be created for --platform codex, got err=%v", err)
+	}
+}
+
+func TestRunSyncInstructionsCreatesAgentsForHermesPlatform(t *testing.T) {
+	projectRoot := t.TempDir()
+
+	if err := runSyncInstructions(projectRoot, "hermes", true, nil); err != nil {
+		t.Fatalf("runSyncInstructions returned error: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(projectRoot, "AGENTS.md")); err != nil {
+		t.Fatalf("expected AGENTS.md to be created for --platform hermes: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(projectRoot, "CLAUDE.md")); !os.IsNotExist(err) {
+		t.Fatalf("expected CLAUDE.md not to be created for --platform hermes, got err=%v", err)
 	}
 }
 
@@ -852,6 +941,22 @@ func readJSONFile(t *testing.T, path string) map[string]any {
 
 	var result map[string]any
 	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("unmarshal file %s: %v", path, err)
+	}
+
+	return result
+}
+
+func readYAMLFile(t *testing.T, path string) map[string]any {
+	t.Helper()
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read file %s: %v", path, err)
+	}
+
+	var result map[string]any
+	if err := yaml.Unmarshal(data, &result); err != nil {
 		t.Fatalf("unmarshal file %s: %v", path, err)
 	}
 

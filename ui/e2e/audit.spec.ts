@@ -18,7 +18,7 @@ test.describe("Audit Trail", () => {
 		});
 
 		await test.step("Audit page header is visible", async () => {
-			await expect(page.getByRole("heading", { name: "MCP Audit Trail" })).toBeVisible({ timeout: 5000 });
+			await expect(page.getByRole("heading", { name: "MCP Audit Trail" })).toBeVisible();
 		});
 
 		await test.step("Tabs are present", async () => {
@@ -47,9 +47,14 @@ test.describe("Audit Trail", () => {
 		});
 	});
 
-	test("performing CLI actions creates audit events", async ({ page }) => {
-		await test.step("Perform a CLI action", async () => {
-			server.cli('task create "Audit Trail Test" -d "Should appear in audit"');
+	test("performing MCP actions creates audit events", async ({ page }) => {
+		await test.step("Perform an MCP action", async () => {
+			const output = server.mcp("tasks", {
+				action: "create",
+				title: "Audit Trail Test",
+				description: "Should appear in audit",
+			});
+			expect(output).toContain('"id":2');
 		});
 
 		await test.step("Navigate to audit page", async () => {

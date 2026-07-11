@@ -37,6 +37,8 @@ func runGlobalSetup(cmd *cobra.Command, args []string, force bool) error {
 			platforms = []string{"copilot"}
 		case "kiro":
 			platforms = []string{"kiro"}
+		case "hermes":
+			platforms = []string{"hermes"}
 		case "codex":
 			platforms = []string{"codex"}
 		case "cursor":
@@ -50,7 +52,7 @@ func runGlobalSetup(cmd *cobra.Command, args []string, force bool) error {
 		case "all":
 			platforms = allPlatformIDs
 		default:
-			return fmt.Errorf("unknown setup target %q (expected: claude, opencode, copilot, kiro, codex, cursor, gemini, antigravity, agents, all)", target)
+			return fmt.Errorf("unknown setup target %q (expected: claude, opencode, hermes, copilot, kiro, codex, cursor, gemini, antigravity, agents, all)", target)
 		}
 	}
 
@@ -69,7 +71,7 @@ func buildGlobalSetupSteps(force bool, platforms []string) []initStep {
 	var steps []initStep
 
 	// 1. Global skills
-	if hasPlatform(platforms, "claude-code") || hasPlatform(platforms, "kiro") || hasPlatform(platforms, "codex") || hasPlatform(platforms, "opencode") || hasPlatform(platforms, "antigravity") || hasPlatform(platforms, "cursor") || hasPlatform(platforms, "gemini") || hasPlatform(platforms, "agents") {
+	if hasPlatform(platforms, "claude-code") || hasPlatform(platforms, "kiro") || hasPlatform(platforms, "codex") || hasPlatform(platforms, "opencode") || hasPlatform(platforms, "hermes") || hasPlatform(platforms, "antigravity") || hasPlatform(platforms, "cursor") || hasPlatform(platforms, "gemini") || hasPlatform(platforms, "agents") {
 		steps = append(steps, initStep{
 			label: "Syncing global skills",
 			run: func() error {
@@ -100,6 +102,14 @@ func buildGlobalSetupSteps(force bool, platforms []string) []initStep {
 			label: "Configuring OpenCode global MCP",
 			run: func() error {
 				return setupGlobalOpenCodeMCP(home)
+			},
+		})
+	}
+	if hasPlatform(platforms, "hermes") {
+		steps = append(steps, initStep{
+			label: "Configuring Hermes global MCP",
+			run: func() error {
+				return setupGlobalHermesMCP(home)
 			},
 		})
 	}
@@ -211,34 +221,7 @@ func upsertGlobalMCPJSON(configPath string, serverKey string) error {
 }
 
 func setupGlobalClaudeCodeMCP(home string) error {
-	configPath := filepath.Join(home, ".claude", "settings.json")
-	dir := filepath.Dir(configPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return err
-	}
-
-	config := map[string]any{}
-	if data, err := os.ReadFile(configPath); err == nil {
-		_ = json.Unmarshal(data, &config)
-	}
-
-	servers, ok := config["mcpServers"].(map[string]any)
-	if !ok || servers == nil {
-		servers = make(map[string]any)
-	}
-
-	cmd, args := mcpCommand()
-	servers["knowns"] = map[string]any{
-		"command": cmd,
-		"args":    args,
-	}
-	config["mcpServers"] = servers
-
-	data, err := json.MarshalIndent(config, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(configPath, append(data, '\n'), 0644)
+	return upsertGlobalMCPJSON(filepath.Join(home, ".claude.json"), "knowns")
 }
 
 func setupGlobalClaudeDesktopMCP(home string) error {
@@ -357,7 +340,7 @@ func syncGlobalSkills(home string, platforms []string) error {
 		targets["kiro"] = filepath.Join(home, ".kiro", "skills")
 	}
 	// All other platforms share ~/.agents/skills/ (agentskills.io standard)
-	for _, p := range []string{"codex", "opencode", "antigravity", "gemini", "cursor", "agents"} {
+	for _, p := range []string{"codex", "opencode", "hermes", "antigravity", "gemini", "cursor", "agents"} {
 		if hasPlatform(platforms, p) {
 			targets["agents"] = filepath.Join(home, ".agents", "skills")
 			break
